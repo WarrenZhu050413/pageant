@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
-from typing import Literal
+from typing import Any, Generic, Literal, TypeVar
 
 # Valid values for image generation parameters
 ImageSizeType = Literal["1K", "2K", "4K"]
@@ -181,11 +181,18 @@ class GenerateFromPromptsRequest(BaseModel):
     context_image_ids: list[str] = []
     session_id: str | None = None
     category: str = "Custom"
-    # Image generation parameters
-    image_size: str | None = None
-    aspect_ratio: str | None = None
+    # Image generation parameters (validated)
+    image_size: ImageSizeType | None = None
+    aspect_ratio: AspectRatioType | None = None
     seed: int | None = None
-    safety_level: str | None = None
+    safety_level: SafetyLevelType | None = None
+
+    @field_validator("seed")
+    @classmethod
+    def validate_seed(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("seed must be a non-negative integer")
+        return v
 
 
 # === Sessions ===
@@ -273,16 +280,21 @@ class ReorderChaptersRequest(BaseModel):
 class SettingsRequest(BaseModel):
     variation_prompt: str
     iteration_prompt: str | None = None  # Prompt for "More Like This"
-    # Image generation defaults
-    image_size: str | None = None  # "1K", "2K", "4K"
-    aspect_ratio: str | None = None  # "1:1", "16:9", etc.
+    # Image generation defaults (validated)
+    image_size: ImageSizeType | None = None
+    aspect_ratio: AspectRatioType | None = None
     seed: int | None = None  # Default seed (None = random)
-    safety_level: str | None = None  # "BLOCK_NONE", etc.
+    safety_level: SafetyLevelType | None = None
+
+    @field_validator("seed")
+    @classmethod
+    def validate_seed(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("seed must be a non-negative integer")
+        return v
 
 
 # === Standardized Response Models ===
-from typing import Any, Generic, TypeVar
-
 T = TypeVar("T")
 
 
