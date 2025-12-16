@@ -13,6 +13,7 @@ import {
   Sparkles,
   ChevronDown,
   Zap,
+  Settings2,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -20,8 +21,16 @@ import { Button, Input, Textarea } from '../ui';
 import { PromptPreviewModal } from '../modals/PromptPreviewModal';
 import { ImagePickerModal } from '../modals/ImagePickerModal';
 import type { Template } from '../../types';
+import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from '../../types';
 
 type ImagePickerSource = 'favorites' | 'collection';
+
+// Price per image for display
+const SIZE_PRICES: Record<string, string> = {
+  '1K': '$0.039',
+  '2K': '$0.134',
+  '4K': '$0.24',
+};
 
 export function GenerateTab() {
   const [title, setTitle] = useState('');
@@ -31,6 +40,13 @@ export function GenerateTab() {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [imagePickerSource, setImagePickerSource] = useState<ImagePickerSource>('favorites');
+
+  // Advanced options state (per-request overrides)
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [imageSize, setImageSize] = useState<string>('');
+  const [aspectRatio, setAspectRatio] = useState<string>('');
+  const [seed, setSeed] = useState<string>('');
+  const [safetyLevel, setSafetyLevel] = useState<string>('');
 
   const contextImageIds = useStore((s) => s.contextImageIds);
   const removeContextImage = useStore((s) => s.removeContextImage);

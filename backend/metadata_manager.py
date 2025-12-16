@@ -139,3 +139,26 @@ class MetadataManager:
             (p for p in metadata.get("prompts", []) if p.get("id") == prompt_id),
             None
         )
+
+    def delete_image_file(
+        self, metadata: dict, image_id: str, image_path: str | None
+    ) -> None:
+        """Delete an image file from disk and remove from favorites.
+
+        Handles missing files gracefully (no exception if file doesn't exist).
+
+        Args:
+            metadata: The metadata dictionary (modified in place)
+            image_id: The image ID to remove from favorites
+            image_path: The relative path to the image file (can be None)
+        """
+        # Delete file from disk if path provided
+        if image_path:
+            full_path = self.images_dir / image_path
+            if full_path.exists():
+                full_path.unlink()
+
+        # Remove from favorites if present
+        favorites = metadata.get("favorites", [])
+        if image_id in favorites:
+            favorites.remove(image_id)

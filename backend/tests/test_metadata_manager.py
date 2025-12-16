@@ -348,3 +348,107 @@ class TestMetadataManagerContextManager:
             saved = json.load(f)
         assert len(saved["prompts"]) == 1
         assert saved["prompts"][0]["id"] == "before-error"
+
+
+class TestMetadataManagerDeleteImage:
+    """Test delete_image_file functionality."""
+
+    def test_delete_image_removes_file(self, tmp_path):
+        """delete_image_file removes the image file from disk."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        # Create test image file
+        image_file = images_dir / "test-image.png"
+        image_file.write_bytes(b"\x89PNG\r\n\x1a\n")
+        assert image_file.exists()
+
+        metadata = {
+            "prompts": [],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+
+        manager = MetadataManager(metadata_path, images_dir)
+        manager.delete_image_file(metadata, "img-1", "test-image.png")
+
+        assert not image_file.exists()
+
+    def test_delete_image_removes_from_favorites(self, tmp_path):
+        """delete_image_file removes image ID from favorites list."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        # Create test image file
+        (images_dir / "test.png").write_bytes(b"\x89PNG")
+
+        metadata = {
+            "prompts": [],
+            "favorites": ["img-1", "img-2", "img-3"],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+
+        manager = MetadataManager(metadata_path, images_dir)
+        manager.delete_image_file(metadata, "img-2", "test.png")
+
+        assert metadata["favorites"] == ["img-1", "img-3"]
+
+    def test_delete_image_handles_missing_file(self, tmp_path):
+        """delete_image_file handles missing files gracefully."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [],
+            "favorites": ["img-1"],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+
+        manager = MetadataManager(metadata_path, images_dir)
+        # Should not raise an exception
+        manager.delete_image_file(metadata, "img-1", "nonexistent.png")
+
+        # Should still remove from favorites
+        assert metadata["favorites"] == []
+
+    def test_delete_image_handles_none_path(self, tmp_path):
+        """delete_image_file handles None image_path gracefully."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [],
+            "favorites": ["img-1"],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+
+        manager = MetadataManager(metadata_path, images_dir)
+        # Should not raise an exception
+        manager.delete_image_file(metadata, "img-1", None)
+
+        # Should still remove from favorites
+        assert metadata["favorites"] == []
