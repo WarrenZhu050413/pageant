@@ -825,16 +825,11 @@ async def delete_prompt(prompt_id: str):
 
     for i, prompt in enumerate(metadata.get("prompts", [])):
         if prompt["id"] == prompt_id:
-            # Delete all image files
+            # Delete all image files and remove from favorites
             for img in prompt.get("images", []):
-                # Skip if no image_path (e.g., failed generation)
-                if img.get("image_path"):
-                    img_path = IMAGES_DIR / img["image_path"]
-                    if img_path.exists():
-                        img_path.unlink()
-                # Remove from favorites
-                if img["id"] in metadata.get("favorites", []):
-                    metadata["favorites"].remove(img["id"])
+                _metadata_manager.delete_image_file(
+                    metadata, img["id"], img.get("image_path")
+                )
 
             # Remove prompt
             metadata["prompts"].pop(i)
@@ -861,16 +856,11 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
         for i, prompt in enumerate(metadata.get("prompts", [])):
             if prompt["id"] == prompt_id:
                 found = True
-                # Delete all image files
+                # Delete all image files and remove from favorites
                 for img in prompt.get("images", []):
-                    # Skip if no image_path (e.g., failed generation)
-                    if img.get("image_path"):
-                        img_path = IMAGES_DIR / img["image_path"]
-                        if img_path.exists():
-                            img_path.unlink()
-                    # Remove from favorites
-                    if img["id"] in metadata.get("favorites", []):
-                        metadata["favorites"].remove(img["id"])
+                    _metadata_manager.delete_image_file(
+                        metadata, img["id"], img.get("image_path")
+                    )
 
                 # Remove prompt
                 metadata["prompts"].pop(i)
@@ -893,15 +883,10 @@ async def delete_image(image_id: str):
     for prompt in metadata.get("prompts", []):
         for i, img in enumerate(prompt.get("images", [])):
             if img["id"] == image_id:
-                # Delete file (skip if no image_path)
-                if img.get("image_path"):
-                    img_path = IMAGES_DIR / img["image_path"]
-                    if img_path.exists():
-                        img_path.unlink()
-
-                # Remove from favorites
-                if image_id in metadata.get("favorites", []):
-                    metadata["favorites"].remove(image_id)
+                # Delete file and remove from favorites
+                _metadata_manager.delete_image_file(
+                    metadata, image_id, img.get("image_path")
+                )
 
                 # Remove from prompt
                 prompt["images"].pop(i)
@@ -1530,14 +1515,10 @@ async def batch_delete_images(req: BatchDeleteRequest):
         for prompt in metadata.get("prompts", []):
             for i, img in enumerate(prompt.get("images", [])):
                 if img["id"] == image_id:
-                    # Delete file
-                    img_path = IMAGES_DIR / img["image_path"]
-                    if img_path.exists():
-                        img_path.unlink()
-
-                    # Remove from favorites
-                    if image_id in metadata.get("favorites", []):
-                        metadata["favorites"].remove(image_id)
+                    # Delete file and remove from favorites
+                    _metadata_manager.delete_image_file(
+                        metadata, image_id, img.get("image_path")
+                    )
 
                     # Remove from prompt
                     prompt["images"].pop(i)
@@ -2238,14 +2219,11 @@ async def delete_session(session_id: str, delete_prompts: bool = False):
                     if p.get("session_id") == session_id
                 ]
                 for prompt in prompts_to_delete:
-                    # Delete image files
+                    # Delete image files and remove from favorites
                     for img in prompt.get("images", []):
-                        img_path = IMAGES_DIR / img["image_path"]
-                        if img_path.exists():
-                            img_path.unlink()
-                        # Remove from favorites
-                        if img["id"] in metadata.get("favorites", []):
-                            metadata["favorites"].remove(img["id"])
+                        _metadata_manager.delete_image_file(
+                            metadata, img["id"], img.get("image_path")
+                        )
 
                 metadata["prompts"] = [
                     p for p in metadata.get("prompts", [])

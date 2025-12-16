@@ -166,6 +166,14 @@ export function GenerateTab() {
     return finalPrompt;
   };
 
+  // Build image generation params from advanced options
+  const buildImageParams = () => ({
+    image_size: imageSize || undefined,
+    aspect_ratio: aspectRatio || undefined,
+    seed: seed ? parseInt(seed, 10) : undefined,
+    safety_level: safetyLevel || undefined,
+  });
+
   // Generate variations (two-phase workflow - default)
   const handleGenerateVariations = () => {
     if (!prompt.trim() || !title.trim()) return;
@@ -174,6 +182,7 @@ export function GenerateTab() {
       prompt: buildFinalPrompt(),
       title: title.trim(),
       count,
+      ...buildImageParams(),
     });
 
     // Clear form after submitting
@@ -181,6 +190,12 @@ export function GenerateTab() {
     setPrompt('');
     setCount(4);
     setShowDropdown(false);
+    // Reset advanced options
+    setImageSize('');
+    setAspectRatio('');
+    setSeed('');
+    setSafetyLevel('');
+    setShowAdvanced(false);
   };
 
   // Direct generate (bypass variations preview)
@@ -191,6 +206,7 @@ export function GenerateTab() {
       prompt: buildFinalPrompt(),
       title: title.trim(),
       count,
+      ...buildImageParams(),
     });
 
     // Clear form after submitting
@@ -198,6 +214,12 @@ export function GenerateTab() {
     setPrompt('');
     setCount(4);
     setShowDropdown(false);
+    // Reset advanced options
+    setImageSize('');
+    setAspectRatio('');
+    setSeed('');
+    setSafetyLevel('');
+    setShowAdvanced(false);
   };
 
   const isDisabled = isGenerating || isGeneratingVariations || !prompt.trim() || !title.trim();
@@ -405,6 +427,142 @@ export function GenerateTab() {
         className="min-h-[150px]"
         data-prompt-input
       />
+
+      {/* Advanced Options */}
+      <div className="border border-border rounded-lg overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className={clsx(
+            'w-full px-3 py-2 flex items-center justify-between',
+            'text-xs font-medium text-ink-secondary',
+            'hover:bg-canvas-muted transition-colors'
+          )}
+        >
+          <span className="flex items-center gap-2">
+            <Settings2 size={14} />
+            Advanced Options
+            {(imageSize || aspectRatio || seed || safetyLevel) && (
+              <span className="px-1.5 py-0.5 bg-brass-muted text-brass-dark rounded text-[0.625rem]">
+                Modified
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            size={14}
+            className={clsx(
+              'transition-transform',
+              showAdvanced && 'rotate-180'
+            )}
+          />
+        </button>
+
+        <AnimatePresence>
+          {showAdvanced && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="p-3 border-t border-border space-y-3 bg-canvas-subtle">
+                {/* Image Size */}
+                <div>
+                  <label className="block text-[0.625rem] font-medium text-ink-tertiary uppercase tracking-wide mb-1.5">
+                    Image Size
+                  </label>
+                  <div className="flex gap-1.5">
+                    {IMAGE_SIZE_OPTIONS.map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setImageSize(imageSize === size ? '' : size)}
+                        className={clsx(
+                          'flex-1 px-2 py-1.5 rounded text-xs font-medium transition-colors',
+                          'border',
+                          imageSize === size
+                            ? 'bg-brass-muted border-brass text-brass-dark'
+                            : 'bg-surface border-border text-ink-secondary hover:bg-canvas-muted'
+                        )}
+                      >
+                        {size}
+                        <span className="block text-[0.5rem] text-ink-muted mt-0.5">
+                          {SIZE_PRICES[size]}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Aspect Ratio */}
+                <div>
+                  <label className="block text-[0.625rem] font-medium text-ink-tertiary uppercase tracking-wide mb-1.5">
+                    Aspect Ratio
+                  </label>
+                  <select
+                    value={aspectRatio}
+                    onChange={(e) => setAspectRatio(e.target.value)}
+                    className={clsx(
+                      'w-full px-2 py-1.5 rounded text-xs',
+                      'bg-surface border border-border',
+                      'text-ink-primary focus:outline-none focus:ring-1 focus:ring-brass/30'
+                    )}
+                  >
+                    <option value="">Default (1:1)</option>
+                    {ASPECT_RATIO_OPTIONS.map((ratio) => (
+                      <option key={ratio} value={ratio}>
+                        {ratio}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Seed */}
+                <div>
+                  <label className="block text-[0.625rem] font-medium text-ink-tertiary uppercase tracking-wide mb-1.5">
+                    Seed (for reproducibility)
+                  </label>
+                  <input
+                    type="number"
+                    value={seed}
+                    onChange={(e) => setSeed(e.target.value)}
+                    placeholder="Random"
+                    className={clsx(
+                      'w-full px-2 py-1.5 rounded text-xs',
+                      'bg-surface border border-border',
+                      'text-ink-primary placeholder:text-ink-muted',
+                      'focus:outline-none focus:ring-1 focus:ring-brass/30'
+                    )}
+                  />
+                </div>
+
+                {/* Safety Level */}
+                <div>
+                  <label className="block text-[0.625rem] font-medium text-ink-tertiary uppercase tracking-wide mb-1.5">
+                    Safety Filter
+                  </label>
+                  <select
+                    value={safetyLevel}
+                    onChange={(e) => setSafetyLevel(e.target.value)}
+                    className={clsx(
+                      'w-full px-2 py-1.5 rounded text-xs',
+                      'bg-surface border border-border',
+                      'text-ink-primary focus:outline-none focus:ring-1 focus:ring-brass/30'
+                    )}
+                  >
+                    <option value="">Default</option>
+                    <option value="BLOCK_NONE">Block None</option>
+                    <option value="BLOCK_ONLY_HIGH">Block Only High</option>
+                    <option value="BLOCK_MEDIUM_AND_ABOVE">Block Medium & Above</option>
+                    <option value="BLOCK_LOW_AND_ABOVE">Block Low & Above</option>
+                  </select>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       {/* Generate Button with Dropdown */}
       <div className="relative" ref={dropdownRef}>
