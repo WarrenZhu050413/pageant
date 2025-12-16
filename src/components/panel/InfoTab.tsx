@@ -1,6 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Bookmark, Trash2 } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { clsx } from 'clsx';
+import { Bookmark, Trash2, Image as ImageIcon } from 'lucide-react';
 import { useStore } from '../../store';
+import { getImageUrl } from '../../api';
 import { Badge, Button, Input, Textarea, Dialog } from '../ui';
 
 export function InfoTab() {
@@ -8,6 +10,46 @@ export function InfoTab() {
   const currentImage = useStore((s) => s.getCurrentImage());
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const deletePrompt = useStore((s) => s.deletePrompt);
+  const prompts = useStore((s) => s.prompts);
+  const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
+  const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
+
+  // Find reference images for this prompt
+  const referenceImages = useMemo(() => {
+    if (!currentPrompt) return [];
+
+    const contextIds = currentPrompt.context_image_ids || [];
+    const inputId = currentPrompt.input_image_id;
+
+    // Combine input_image_id with context_image_ids (input first if it exists)
+    const allIds = inputId && !contextIds.includes(inputId)
+      ? [inputId, ...contextIds]
+      : contextIds;
+
+    // Find the actual images across all prompts
+    return allIds
+      .map((id) => {
+        for (const p of prompts) {
+          const img = p.images.find((i) => i.id === id);
+          if (img) {
+            return { image: img, promptId: p.id, promptTitle: p.title };
+          }
+        }
+        return null;
+      })
+      .filter(Boolean) as { image: { id: string; image_path: string }; promptId: string; promptTitle: string }[];
+  }, [currentPrompt, prompts]);
+
+  const handleReferenceImageClick = (promptId: string, imageId: string) => {
+    setCurrentPrompt(promptId);
+    const prompt = prompts.find((p) => p.id === promptId);
+    if (prompt) {
+      const index = prompt.images.findIndex((img) => img.id === imageId);
+      if (index !== -1) {
+        setCurrentImageIndex(index);
+      }
+    }
+  };
 
   const [notes, setNotes] = useState('');
   const [caption, setCaption] = useState('');
@@ -71,11 +113,10 @@ export function InfoTab() {
     <div className="p-4 space-y-6">
       {/* Prompt Info */}
       <section>
-        <div className="flex items-start justify-between gap-2 mb-2">
+        <div className="mb-2">
           <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-ink">
             {currentPrompt.title}
           </h3>
-          <Badge variant="brass">{currentPrompt.category}</Badge>
         </div>
 
         <div className="p-3 rounded-lg bg-canvas-subtle">
@@ -84,6 +125,42 @@ export function InfoTab() {
           </p>
         </div>
       </section>
+
+      {/* Reference Images */}
+      {referenceImages.length > 0 && (
+        <section>
+          <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
+            <ImageIcon size={12} className="inline mr-1" />
+            Reference Images ({referenceImages.length})
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {referenceImages.map(({ image, promptId, promptTitle }) => (
+              <button
+                key={image.id}
+                onClick={() => handleReferenceImageClick(promptId, image.id)}
+                className={clsx(
+                  'relative w-16 h-16 rounded-lg overflow-hidden',
+                  'bg-canvas-muted',
+                  'ring-2 ring-brass/30 hover:ring-brass',
+                  'transition-all hover:scale-105',
+                  'group'
+                )}
+                title={promptTitle}
+              >
+                <img
+                  src={getImageUrl(image.image_path)}
+                  alt=""
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-ink/0 group-hover:bg-ink/20 transition-colors" />
+              </button>
+            ))}
+          </div>
+          <p className="text-[0.65rem] text-ink-muted mt-2">
+            These images were used as context for generation. Click to view.
+          </p>
+        </section>
+      )}
 
       {/* Image-specific info */}
       {currentImage && (
@@ -209,8 +286,8 @@ export function InfoTab() {
           </Button>
           <Button
             variant="danger"
-            onClick={() => {
-              deletePrompt(currentPrompt.id);
+            onClick={async () => {
+              await deletePrompt(currentPrompt.id);
               setIsDeleteDialogOpen(false);
             }}
           >

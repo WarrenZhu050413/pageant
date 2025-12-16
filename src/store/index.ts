@@ -12,6 +12,8 @@ import type {
   RightTab,
   SelectionMode,
   ImageData,
+  DesignPreferences,
+  DesignAxis,
 } from '../types';
 import * as api from '../api';
 
@@ -98,6 +100,13 @@ interface AppStore {
   deleteImage: (imageId: string) => Promise<void>;
   deletePrompt: (promptId: string) => Promise<void>;
   batchDelete: () => Promise<void>;
+  batchDeletePrompts: (promptIds: string[]) => Promise<void>;
+
+  // Prompt selection (for bulk operations)
+  selectedPromptIds: Set<string>;
+  togglePromptSelection: (id: string) => void;
+  selectAllPrompts: () => void;
+  clearPromptSelection: () => void;
 
   // Image notes
   updateImageNotes: (imageId: string, notes: string, caption?: string) => Promise<void>;
@@ -119,11 +128,19 @@ interface AppStore {
   // Upload
   uploadImages: (files: File[]) => Promise<void>;
 
-  // Sessions
-  createSession: (name: string) => void;
-  switchSession: (id: string) => void;
-  deleteSession: (id: string) => void;
-  updateNotes: (notes: string) => void;
+  // Sessions (server-side)
+  createSession: (name: string) => Promise<void>;
+  switchSession: (id: string) => Promise<void>;
+  deleteSession: (id: string) => Promise<void>;
+  updateNotes: (notes: string) => Promise<void>;
+
+  // Design Axis System
+  designPreferences: DesignPreferences | null;
+  totalRated: number;
+  updateDesignTags: (imageId: string, tags: string[]) => Promise<void>;
+  toggleAxisLike: (imageId: string, axis: DesignAxis, tag: string, liked: boolean) => Promise<void>;
+  fetchDesignPreferences: () => Promise<void>;
+  resetDesignPreferences: () => Promise<void>;
 
   // Error handling
   setError: (error: string | null) => void;
@@ -168,18 +185,34 @@ export const useStore = create<AppStore>()(
       currentSessionId: null,
       notes: '',
 
+      // Prompt selection for bulk operations
+      selectedPromptIds: new Set(),
+
+      // Design Axis System
+      designPreferences: null,
+      totalRated: 0,
+
       // Initialize app
       initialize: async () => {
         try {
-          const [prompts, templates, collections, settings] = await Promise.all([
+          const [prompts, templates, collections, settings, sessions] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTemplates(),
             api.fetchCollections(),
             api.fetchSettings(),
+            api.fetchSessions(),
           ]);
 
           const favResponse = await api.fetchFavorites();
           const favoriteIds = favResponse.map((f) => f.id);
+
+          // Convert SessionData to Session type
+          const sessionsTyped: Session[] = sessions.map((s) => ({
+            id: s.id,
+            name: s.name,
+            notes: s.notes,
+            created_at: s.created_at,
+          }));
 
           set({
             prompts,
@@ -187,6 +220,7 @@ export const useStore = create<AppStore>()(
             collections,
             settings,
             favorites: favoriteIds,
+            sessions: sessionsTyped,
             currentPromptId: prompts[0]?.id || null,
           });
         } catch (error) {
@@ -307,7 +341,7 @@ export const useStore = create<AppStore>()(
 
       // Generation
       generate: async ({ prompt, title, category, count }) => {
-        const { contextImageIds, pendingPrompts } = get();
+        const { contextImageIds, pendingPrompts, currentSessionId } = get();
 
         // Create pending prompt
         const tempId = `pending-${Date.now()}`;
@@ -323,6 +357,7 @@ export const useStore = create<AppStore>()(
             category,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+            session_id: currentSessionId || undefined,
           });
 
           // Remove pending and refresh
@@ -442,6 +477,54 @@ export const useStore = create<AppStore>()(
         } catch (error) {
           set({ error: (error as Error).message });
         }
+      },
+
+      batchDeletePrompts: async (promptIds) => {
+        if (promptIds.length === 0) return;
+
+        try {
+          await api.batchDeletePrompts(promptIds);
+          await get().refreshData();
+
+          // Clear selection and navigate if needed
+          const { currentPromptId, prompts } = get();
+          const newSelectedPromptIds = new Set<string>();
+
+          // If current prompt was deleted, navigate to first remaining
+          if (currentPromptId && promptIds.includes(currentPromptId)) {
+            const remaining = prompts.filter((p) => !promptIds.includes(p.id));
+            set({
+              currentPromptId: remaining[0]?.id || null,
+              currentImageIndex: 0,
+              selectedPromptIds: newSelectedPromptIds,
+            });
+          } else {
+            set({ selectedPromptIds: newSelectedPromptIds });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      // Prompt selection
+      togglePromptSelection: (id) => {
+        const { selectedPromptIds } = get();
+        const newSelected = new Set(selectedPromptIds);
+        if (newSelected.has(id)) {
+          newSelected.delete(id);
+        } else {
+          newSelected.add(id);
+        }
+        set({ selectedPromptIds: newSelected });
+      },
+
+      selectAllPrompts: () => {
+        const { prompts } = get();
+        set({ selectedPromptIds: new Set(prompts.map((p) => p.id)) });
+      },
+
+      clearPromptSelection: () => {
+        set({ selectedPromptIds: new Set() });
       },
 
       // Image notes
@@ -574,54 +657,178 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // Sessions
-      createSession: (name) => {
-        const id = `session-${Date.now()}`;
-        const session: Session = {
-          id,
-          name,
-          notes: '',
-          created_at: new Date().toISOString(),
-        };
+      // Sessions (server-side)
+      createSession: async (name) => {
+        try {
+          const session = await api.createSession({ name, notes: '' });
+          const newSession: Session = {
+            id: session.id,
+            name: session.name,
+            notes: session.notes,
+            created_at: session.created_at,
+          };
 
-        set((state) => ({
-          sessions: [session, ...state.sessions].slice(0, 5),
-          currentSessionId: id,
-          notes: '',
-        }));
-      },
-
-      switchSession: (id) => {
-        const { sessions, currentSessionId, notes } = get();
-
-        // Save current session notes
-        if (currentSessionId) {
-          const updatedSessions = sessions.map((s) =>
-            s.id === currentSessionId ? { ...s, notes } : s
-          );
-          set({ sessions: updatedSessions });
-        }
-
-        // Load new session
-        const session = sessions.find((s) => s.id === id);
-        if (session) {
-          set({ currentSessionId: id, notes: session.notes });
+          set((state) => ({
+            sessions: [newSession, ...state.sessions],
+            currentSessionId: session.id,
+            notes: '',
+          }));
+        } catch (error) {
+          set({ error: (error as Error).message });
         }
       },
 
-      deleteSession: (id) => {
-        const { sessions, currentSessionId } = get();
-        const newSessions = sessions.filter((s) => s.id !== id);
+      switchSession: async (id) => {
+        const { currentSessionId, notes } = get();
 
-        set({
-          sessions: newSessions,
-          currentSessionId: currentSessionId === id ? null : currentSessionId,
-          notes: currentSessionId === id ? '' : get().notes,
-        });
+        // Save current session notes to server if needed
+        if (currentSessionId && notes) {
+          try {
+            await api.updateSession(currentSessionId, { notes });
+          } catch {
+            // Ignore errors when saving notes
+          }
+        }
+
+        // Switch to new session and filter prompts
+        set({ currentSessionId: id });
+
+        // Refresh data with session filter
+        try {
+          const prompts = id ? await api.fetchPromptsForSession(id) : await api.fetchPrompts();
+          const session = get().sessions.find((s) => s.id === id);
+          set({
+            prompts,
+            notes: session?.notes || '',
+            currentPromptId: prompts[0]?.id || null,
+            currentImageIndex: 0,
+          });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
       },
 
-      updateNotes: (notes) => {
+      deleteSession: async (id) => {
+        try {
+          await api.deleteSession(id, false); // Don't delete prompts, just clear session_id
+
+          const { sessions, currentSessionId } = get();
+          const newSessions = sessions.filter((s) => s.id !== id);
+
+          set({
+            sessions: newSessions,
+            currentSessionId: currentSessionId === id ? null : currentSessionId,
+            notes: currentSessionId === id ? '' : get().notes,
+          });
+
+          // Refresh prompts if we just deleted the current session
+          if (currentSessionId === id) {
+            const prompts = await api.fetchPrompts();
+            set({
+              prompts,
+              currentPromptId: prompts[0]?.id || null,
+            });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      updateNotes: async (notes) => {
         set({ notes });
+
+        // Debounced save to server (save on blur in UI instead)
+        const { currentSessionId } = get();
+        if (currentSessionId) {
+          // Update local session immediately
+          const { sessions } = get();
+          set({
+            sessions: sessions.map((s) =>
+              s.id === currentSessionId ? { ...s, notes } : s
+            ),
+          });
+        }
+      },
+
+      // Design Axis System
+      updateDesignTags: async (imageId, tags) => {
+        try {
+          await api.updateDesignTags(imageId, tags);
+
+          // Update local state
+          const { prompts } = get();
+          const updatedPrompts = prompts.map((p) => ({
+            ...p,
+            images: p.images.map((img) =>
+              img.id === imageId ? { ...img, design_tags: tags } : img
+            ),
+          }));
+          set({ prompts: updatedPrompts });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      toggleAxisLike: async (imageId, axis, tag, liked) => {
+        try {
+          await api.toggleAxisLike(imageId, axis, tag, liked);
+
+          // Update local state
+          const { prompts } = get();
+          const updatedPrompts = prompts.map((p) => ({
+            ...p,
+            images: p.images.map((img) => {
+              if (img.id !== imageId) return img;
+
+              const currentAxisTags = img.liked_axes?.[axis] || [];
+              let newAxisTags: string[];
+
+              if (liked) {
+                // Add tag if not present
+                newAxisTags = currentAxisTags.includes(tag)
+                  ? currentAxisTags
+                  : [...currentAxisTags, tag];
+              } else {
+                // Remove tag
+                newAxisTags = currentAxisTags.filter((t) => t !== tag);
+              }
+
+              return {
+                ...img,
+                liked_axes: { ...img.liked_axes, [axis]: newAxisTags },
+              };
+            }),
+          }));
+          set({ prompts: updatedPrompts });
+
+          // Refresh preferences after toggling
+          get().fetchDesignPreferences();
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      fetchDesignPreferences: async () => {
+        try {
+          const response = await api.fetchDesignPreferences();
+          set({
+            designPreferences: response.preferences,
+            totalRated: response.total_rated,
+          });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      resetDesignPreferences: async () => {
+        try {
+          await api.resetDesignPreferences();
+          set({ designPreferences: null, totalRated: 0 });
+          // Refresh data to clear liked_axes from images
+          await get().refreshData();
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
       },
 
       // Error handling

@@ -32,6 +32,16 @@ class ImageResult:
     usage: dict[str, Any] | None = None
 
 
+@dataclass
+class TextResult:
+    """Text generation result (optionally with web search grounding)."""
+    text: str
+    grounding_sources: list[dict[str, Any]] = field(default_factory=list)
+    search_queries: list[str] = field(default_factory=list)
+    model: str = ""
+    usage: dict[str, Any] | None = None
+
+
 class GeminiService:
     """Service for Gemini image and text generation."""
 
@@ -120,6 +130,98 @@ class GeminiService:
             usage=usage,
         )
 
+    async def generate_text(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        google_search: bool = False,
+    ) -> TextResult:
+        """Generate text, optionally grounded with Google Search.
+
+        Args:
+            prompt: The input prompt
+            system_prompt: Optional system instructions
+            google_search: If True, enable Google Search grounding
+
+        Returns:
+            TextResult with text and optional grounding sources
+        """
+        model_name = self.DEFAULT_TEXT_MODEL
+        start_time = time.time()
+
+        search_label = " (with search)" if google_search else ""
+        print(f"[{model_name}] Generating text{search_label}...")
+
+        # Build config
+        config_kwargs: dict[str, Any] = {}
+        if google_search:
+            config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+        if system_prompt:
+            config_kwargs["system_instruction"] = system_prompt
+
+        config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+        except Exception as e:
+            elapsed = time.time() - start_time
+            print(f"[ERROR] Generation failed after {elapsed:.1f}s: {e}")
+            raise
+
+        elapsed = time.time() - start_time
+
+        # Extract text response
+        text = ""
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            text += part.text
+
+        # Extract grounding metadata (only present when google_search=True)
+        grounding_sources = []
+        search_queries = []
+
+        if google_search and response.candidates:
+            for candidate in response.candidates:
+                grounding_meta = getattr(candidate, "grounding_metadata", None)
+                if grounding_meta:
+                    if hasattr(grounding_meta, "web_search_queries"):
+                        search_queries = list(grounding_meta.web_search_queries or [])
+
+                    if hasattr(grounding_meta, "grounding_chunks"):
+                        for chunk in grounding_meta.grounding_chunks or []:
+                            if hasattr(chunk, "web") and chunk.web:
+                                grounding_sources.append({
+                                    "uri": getattr(chunk.web, "uri", None),
+                                    "title": getattr(chunk.web, "title", None),
+                                })
+
+        # Extract usage
+        usage = None
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            usage = {
+                "prompt_tokens": getattr(response.usage_metadata, "prompt_token_count", None),
+                "completion_tokens": getattr(response.usage_metadata, "candidates_token_count", None),
+                "total_tokens": getattr(response.usage_metadata, "total_token_count", None),
+            }
+
+        src_info = f", {len(grounding_sources)} sources" if google_search else ""
+        print(f"[OK] Generated in {elapsed:.1f}s ({len(text)} chars{src_info})")
+
+        return TextResult(
+            text=text,
+            grounding_sources=grounding_sources,
+            search_queries=search_queries,
+            model=model_name,
+            usage=usage,
+        )
+
     async def generate_prompt_variations(
         self,
         base_prompt: str,
@@ -136,39 +238,9 @@ class GeminiService:
         Returns:
             Raw XML response from the model (to be parsed by caller)
         """
-        model_name = self.DEFAULT_TEXT_MODEL
-        start_time = time.time()
-
-        # Format the system prompt with user's base prompt and count
         formatted_prompt = system_prompt.format(
             base_prompt=base_prompt,
             count=count,
         )
-
-        print(f"[{model_name}] Generating {count} prompt variations...")
-
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=formatted_prompt,
-            )
-        except Exception as e:
-            elapsed = time.time() - start_time
-            print(f"[ERROR] Variation generation failed after {elapsed:.1f}s: {e}")
-            raise
-
-        elapsed = time.time() - start_time
-
-        # Extract text response
-        text = ""
-        if response.candidates:
-            for candidate in response.candidates:
-                if candidate.content and candidate.content.parts:
-                    for part in candidate.content.parts:
-                        if hasattr(part, "text") and part.text:
-                            text = part.text
-                            break
-
-        print(f"[OK] Generated variations in {elapsed:.1f}s ({len(text)} chars)")
-
-        return text
+        result = await self.generate_text(formatted_prompt)
+        return result.text

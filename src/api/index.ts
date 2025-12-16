@@ -8,6 +8,9 @@ import type {
   GenerateResponse,
   UploadResponse,
   ImageData,
+  LikedAxes,
+  DesignPreferences,
+  DesignAxis,
 } from '../types';
 
 const API_BASE = '/api';
@@ -104,6 +107,15 @@ export async function batchFavorite(
   await request('/batch/favorite', {
     method: 'POST',
     body: JSON.stringify({ image_ids: imageIds, favorite }),
+  });
+}
+
+export async function batchDeletePrompts(
+  promptIds: string[]
+): Promise<{ deleted_ids: string[]; errors: string[] }> {
+  return request('/batch/delete-prompts', {
+    method: 'POST',
+    body: JSON.stringify({ prompt_ids: promptIds }),
   });
 }
 
@@ -264,4 +276,111 @@ export function getExportGalleryUrl(): string {
 // Image URL helper
 export function getImageUrl(imagePath: string): string {
   return `/images/${imagePath}`;
+}
+
+// Design Axis System
+export async function updateDesignTags(
+  imageId: string,
+  tags: string[]
+): Promise<{ id: string; design_tags: string[] }> {
+  return request(`/images/${imageId}/design-tags`, {
+    method: 'PATCH',
+    body: JSON.stringify({ tags }),
+  });
+}
+
+export async function toggleAxisLike(
+  imageId: string,
+  axis: DesignAxis,
+  tag: string,
+  liked: boolean
+): Promise<{ id: string; liked_axes: LikedAxes }> {
+  return request(`/images/${imageId}/like-axis`, {
+    method: 'PATCH',
+    body: JSON.stringify({ axis, tag, liked }),
+  });
+}
+
+export async function fetchDesignPreferences(): Promise<{
+  preferences: DesignPreferences;
+  total_rated: number;
+}> {
+  return request('/preferences');
+}
+
+export async function resetDesignPreferences(): Promise<{
+  success: boolean;
+  cleared_count: number;
+}> {
+  return request('/preferences/reset', { method: 'POST' });
+}
+
+// Sessions
+export interface SessionData {
+  id: string;
+  name: string;
+  notes: string;
+  created_at: string;
+  prompt_count?: number;
+}
+
+export async function fetchSessions(): Promise<SessionData[]> {
+  const response = await request<{ sessions: SessionData[] }>('/sessions');
+  return response.sessions || [];
+}
+
+export async function createSession(data: {
+  name: string;
+  notes?: string;
+}): Promise<SessionData> {
+  const response = await request<{ session: SessionData }>('/sessions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return response.session;
+}
+
+export async function updateSession(
+  id: string,
+  data: { name?: string; notes?: string }
+): Promise<SessionData> {
+  const response = await request<{ session: SessionData }>(`/sessions/${id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  });
+  return response.session;
+}
+
+export async function deleteSession(
+  id: string,
+  deletePrompts: boolean = false
+): Promise<void> {
+  await request(`/sessions/${id}?delete_prompts=${deletePrompts}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function fetchPromptsForSession(sessionId: string): Promise<Prompt[]> {
+  const response = await request<{ prompts: Prompt[] }>(`/prompts?session_id=${sessionId}`);
+  return response.prompts || [];
+}
+
+export async function addPromptsToSession(
+  sessionId: string,
+  promptIds: string[]
+): Promise<void> {
+  await request(`/sessions/${sessionId}/prompts`, {
+    method: 'POST',
+    body: JSON.stringify(promptIds),
+  });
+}
+
+export async function removePromptsFromSession(
+  sessionId: string,
+  promptIds: string[]
+): Promise<void> {
+  await request(`/sessions/${sessionId}/prompts`, {
+    method: 'DELETE',
+    body: JSON.stringify(promptIds),
+  });
 }

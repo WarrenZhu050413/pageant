@@ -14,6 +14,7 @@ import base64
 import io
 import json
 import logging
+import os
 import re
 import uuid
 import zipfile
@@ -46,6 +47,10 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Gemini Pageant API")
 
+# Include analysis routes for new features
+from analysis_routes import router as analysis_router
+app.include_router(analysis_router)
+
 # CORS for local development
 app.add_middleware(
     CORSMiddleware,
@@ -61,8 +66,37 @@ IMAGES_DIR = BASE_DIR / "generated_images"
 METADATA_PATH = IMAGES_DIR / "metadata.json"
 
 # Initialize Gemini service
-API_KEY_PATH = Path.home() / ".gemini" / "apikey.txt"
-api_key = API_KEY_PATH.read_text().strip()
+# API key can be configured via:
+# 1. Environment variable: GEMINI_API_KEY (direct key)
+# 2. Environment variable: GEMINI_API_KEY_PATH (path to file)
+# 3. Default path: ~/.gemini/apikey_backup.txt
+def load_api_key() -> str:
+    # Direct API key from environment
+    if api_key := os.environ.get("GEMINI_API_KEY"):
+        return api_key.strip()
+
+    # Path to API key file from environment
+    if key_path_str := os.environ.get("GEMINI_API_KEY_PATH"):
+        key_path = Path(key_path_str).expanduser()
+        if key_path.exists():
+            return key_path.read_text().strip()
+        raise FileNotFoundError(f"API key file not found: {key_path}")
+
+    # Default path
+    default_path = Path.home() / ".gemini" / "apikey_backup.txt"
+    if default_path.exists():
+        return default_path.read_text().strip()
+
+    # Fallback to old path for backward compatibility
+    old_path = Path.home() / ".gemini" / "apikey.txt"
+    if old_path.exists():
+        return old_path.read_text().strip()
+
+    raise FileNotFoundError(
+        "Gemini API key not found. Set GEMINI_API_KEY env var or create ~/.gemini/apikey_backup.txt"
+    )
+
+api_key = load_api_key()
 gemini = GeminiService(api_key=api_key)
 
 
@@ -75,6 +109,18 @@ class GenerateRequest(BaseModel):
     input_image_id: str | None = None  # For single image-to-image (legacy)
     context_image_ids: list[str] = []  # Multiple context images
     collection_id: str | None = None  # Use a collection as context
+    session_id: str | None = None  # Session to associate with
+
+
+# === Sessions ===
+class SessionRequest(BaseModel):
+    name: str
+    notes: str = ""
+
+
+class SessionUpdateRequest(BaseModel):
+    name: str | None = None
+    notes: str | None = None
 
 
 class PromptResponse(BaseModel):
@@ -190,6 +236,7 @@ def load_metadata() -> dict:
         "templates": [],  # Prompt templates library
         "stories": [],  # Story sequences with chapters
         "collections": [],  # Image collections for multi-image context
+        "sessions": [],  # Named sessions for organizing work
     }
 
 
@@ -457,6 +504,7 @@ async def generate_images(req: GenerateRequest):
         "input_image_id": req.input_image_id,  # Legacy single image
         "context_image_ids": context_image_ids,  # All context images used
         "collection_id": req.collection_id,  # Collection used as context
+        "session_id": req.session_id,  # Session this prompt belongs to
         "created_at": datetime.now().isoformat(),
         "images": images,
     }
@@ -476,11 +524,17 @@ async def generate_images(req: GenerateRequest):
 
 
 @app.get("/api/prompts")
-async def list_prompts():
-    """List all prompts with their images."""
+async def list_prompts(session_id: str | None = None):
+    """List all prompts with their images, optionally filtered by session."""
     metadata = load_metadata()
+    prompts = metadata.get("prompts", [])
+
+    # Filter by session if specified
+    if session_id:
+        prompts = [p for p in prompts if p.get("session_id") == session_id]
+
     return {
-        "prompts": metadata.get("prompts", []),
+        "prompts": prompts,
         "favorites": metadata.get("favorites", []),
     }
 
@@ -518,6 +572,44 @@ async def delete_prompt(prompt_id: str):
             return {"success": True, "deleted_id": prompt_id}
 
     raise HTTPException(status_code=404, detail="Prompt not found")
+
+
+class BatchDeletePromptsRequest(BaseModel):
+    prompt_ids: list[str]
+
+
+@app.post("/api/batch/delete-prompts")
+async def batch_delete_prompts(req: BatchDeletePromptsRequest):
+    """Delete multiple prompts and all their images."""
+    metadata = load_metadata()
+    deleted_ids = []
+    errors = []
+
+    for prompt_id in req.prompt_ids:
+        found = False
+        for i, prompt in enumerate(metadata.get("prompts", [])):
+            if prompt["id"] == prompt_id:
+                found = True
+                # Delete all image files
+                for img in prompt.get("images", []):
+                    img_path = IMAGES_DIR / img["image_path"]
+                    if img_path.exists():
+                        img_path.unlink()
+                    # Remove from favorites
+                    if img["id"] in metadata.get("favorites", []):
+                        metadata["favorites"].remove(img["id"])
+
+                # Remove prompt
+                metadata["prompts"].pop(i)
+                deleted_ids.append(prompt_id)
+                logger.info(f"Batch deleted prompt: {prompt_id}")
+                break
+
+        if not found:
+            errors.append(f"Prompt not found: {prompt_id}")
+
+    save_metadata(metadata)
+    return {"success": True, "deleted_ids": deleted_ids, "errors": errors}
 
 
 @app.delete("/api/images/{image_id}")
@@ -1469,6 +1561,310 @@ async def reorder_chapters(story_id: str, req: ReorderChaptersRequest):
             return story
 
     raise HTTPException(status_code=404, detail="Story not found")
+
+
+# ============================================================
+# FEATURE 6: Design Axis System (Tags & Preferences)
+# ============================================================
+
+class DesignTagsRequest(BaseModel):
+    tags: list[str]
+
+
+class LikeAxisRequest(BaseModel):
+    axis: str  # typeface, colors, layout, mood, composition, style
+    tag: str  # specific tag value like "sans-serif", "elegant"
+    liked: bool  # True to add, False to remove
+
+
+@app.patch("/api/images/{image_id}/design-tags")
+async def update_design_tags(image_id: str, req: DesignTagsRequest):
+    """Update design tags for an image."""
+    metadata = load_metadata()
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == image_id:
+                img["design_tags"] = req.tags
+                save_metadata(metadata)
+                logger.info(f"Updated design tags for {image_id}: {req.tags}")
+                return {"id": image_id, "design_tags": req.tags}
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+@app.patch("/api/images/{image_id}/like-axis")
+async def toggle_axis_like(image_id: str, req: LikeAxisRequest):
+    """Toggle axis preference for a specific tag value on an image.
+
+    liked_axes is now a dict of string arrays: { axis: ["tag1", "tag2"] }
+    """
+    valid_axes = ["typeface", "colors", "layout", "mood", "composition", "style"]
+    if req.axis not in valid_axes:
+        raise HTTPException(status_code=400, detail=f"Invalid axis. Must be one of: {valid_axes}")
+
+    metadata = load_metadata()
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == image_id:
+                if "liked_axes" not in img:
+                    img["liked_axes"] = {}
+
+                # Initialize axis as array if needed
+                if req.axis not in img["liked_axes"] or not isinstance(img["liked_axes"][req.axis], list):
+                    img["liked_axes"][req.axis] = []
+
+                axis_tags = img["liked_axes"][req.axis]
+
+                if req.liked:
+                    # Add tag if not present
+                    if req.tag not in axis_tags:
+                        axis_tags.append(req.tag)
+                else:
+                    # Remove tag if present
+                    if req.tag in axis_tags:
+                        axis_tags.remove(req.tag)
+
+                save_metadata(metadata)
+                logger.info(f"Updated axis preference for {image_id}: {req.axis}[{req.tag}]={req.liked}")
+                return {"id": image_id, "liked_axes": img["liked_axes"]}
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+@app.get("/api/preferences")
+async def get_design_preferences():
+    """Get aggregated design preferences across all rated images.
+
+    liked_axes format: { axis: ["tag1", "tag2"] }
+    Returns count of each tag that was liked.
+    """
+    metadata = load_metadata()
+
+    # Initialize preference counters
+    preferences = {
+        "typeface": {},
+        "colors": {},
+        "layout": {},
+        "mood": {},
+        "composition": {},
+        "style": {},
+    }
+    total_rated = 0
+
+    # Aggregate preferences from all images
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            liked_axes = img.get("liked_axes", {})
+
+            # Check if this image has any liked tags
+            has_likes = False
+            for axis, tags in liked_axes.items():
+                if isinstance(tags, list) and len(tags) > 0:
+                    has_likes = True
+                    # Count each liked tag
+                    for tag in tags:
+                        if axis in preferences:
+                            if tag not in preferences[axis]:
+                                preferences[axis][tag] = 0
+                            preferences[axis][tag] += 1
+
+            if has_likes:
+                total_rated += 1
+
+    return {
+        "preferences": preferences,
+        "total_rated": total_rated,
+    }
+
+
+@app.post("/api/preferences/reset")
+async def reset_design_preferences():
+    """Clear all design preferences (liked_axes) from all images."""
+    metadata = load_metadata()
+    cleared_count = 0
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if "liked_axes" in img:
+                img["liked_axes"] = {}
+                cleared_count += 1
+
+    save_metadata(metadata)
+    logger.info(f"Reset design preferences for {cleared_count} images")
+    return {"success": True, "cleared_count": cleared_count}
+
+
+# ============================================================
+# FEATURE 7: Sessions (Named Working Contexts)
+# ============================================================
+
+@app.get("/api/sessions")
+async def list_sessions():
+    """List all sessions."""
+    metadata = load_metadata()
+    sessions = metadata.get("sessions", [])
+
+    # Enrich with prompt count
+    enriched = []
+    for session in sessions:
+        prompt_count = len([
+            p for p in metadata.get("prompts", [])
+            if p.get("session_id") == session["id"]
+        ])
+        enriched.append({
+            **session,
+            "prompt_count": prompt_count,
+        })
+
+    return {"sessions": enriched}
+
+
+@app.post("/api/sessions")
+async def create_session(req: SessionRequest):
+    """Create a new session."""
+    metadata = load_metadata()
+    if "sessions" not in metadata:
+        metadata["sessions"] = []
+
+    session_id = f"session-{uuid.uuid4().hex[:8]}"
+    now = datetime.now().isoformat()
+
+    session = {
+        "id": session_id,
+        "name": req.name,
+        "notes": req.notes,
+        "created_at": now,
+    }
+
+    metadata["sessions"].append(session)
+    save_metadata(metadata)
+    logger.info(f"Created session: {session_id} - {req.name}")
+
+    return {"success": True, "session": session}
+
+
+@app.get("/api/sessions/{session_id}")
+async def get_session(session_id: str):
+    """Get a session with its prompts."""
+    metadata = load_metadata()
+
+    for session in metadata.get("sessions", []):
+        if session["id"] == session_id:
+            # Get prompts for this session
+            session_prompts = [
+                p for p in metadata.get("prompts", [])
+                if p.get("session_id") == session_id
+            ]
+            return {
+                **session,
+                "prompts": session_prompts,
+                "prompt_count": len(session_prompts),
+            }
+
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.patch("/api/sessions/{session_id}")
+async def update_session(session_id: str, req: SessionUpdateRequest):
+    """Update a session's name or notes."""
+    metadata = load_metadata()
+
+    for session in metadata.get("sessions", []):
+        if session["id"] == session_id:
+            if req.name is not None:
+                session["name"] = req.name
+            if req.notes is not None:
+                session["notes"] = req.notes
+
+            save_metadata(metadata)
+            logger.info(f"Updated session: {session_id}")
+            return {"success": True, "session": session}
+
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.delete("/api/sessions/{session_id}")
+async def delete_session(session_id: str, delete_prompts: bool = False):
+    """Delete a session. Optionally delete all prompts in the session."""
+    metadata = load_metadata()
+    sessions = metadata.get("sessions", [])
+
+    for i, session in enumerate(sessions):
+        if session["id"] == session_id:
+            # Handle prompts in the session
+            if delete_prompts:
+                # Delete all prompts and their images
+                prompts_to_delete = [
+                    p for p in metadata.get("prompts", [])
+                    if p.get("session_id") == session_id
+                ]
+                for prompt in prompts_to_delete:
+                    # Delete image files
+                    for img in prompt.get("images", []):
+                        img_path = IMAGES_DIR / img["image_path"]
+                        if img_path.exists():
+                            img_path.unlink()
+                        # Remove from favorites
+                        if img["id"] in metadata.get("favorites", []):
+                            metadata["favorites"].remove(img["id"])
+
+                metadata["prompts"] = [
+                    p for p in metadata.get("prompts", [])
+                    if p.get("session_id") != session_id
+                ]
+                logger.info(f"Deleted {len(prompts_to_delete)} prompts from session {session_id}")
+            else:
+                # Just clear session_id from prompts
+                for prompt in metadata.get("prompts", []):
+                    if prompt.get("session_id") == session_id:
+                        prompt["session_id"] = None
+
+            # Delete the session
+            sessions.pop(i)
+            save_metadata(metadata)
+            logger.info(f"Deleted session: {session_id}")
+            return {"success": True, "deleted_id": session_id}
+
+    raise HTTPException(status_code=404, detail="Session not found")
+
+
+@app.post("/api/sessions/{session_id}/prompts")
+async def add_prompts_to_session(session_id: str, prompt_ids: list[str]):
+    """Add existing prompts to a session."""
+    metadata = load_metadata()
+
+    # Verify session exists
+    session_exists = any(s["id"] == session_id for s in metadata.get("sessions", []))
+    if not session_exists:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    added = []
+    for prompt in metadata.get("prompts", []):
+        if prompt["id"] in prompt_ids:
+            prompt["session_id"] = session_id
+            added.append(prompt["id"])
+
+    save_metadata(metadata)
+    logger.info(f"Added {len(added)} prompts to session {session_id}")
+    return {"success": True, "added": added}
+
+
+@app.delete("/api/sessions/{session_id}/prompts")
+async def remove_prompts_from_session(session_id: str, prompt_ids: list[str]):
+    """Remove prompts from a session (doesn't delete them)."""
+    metadata = load_metadata()
+
+    removed = []
+    for prompt in metadata.get("prompts", []):
+        if prompt["id"] in prompt_ids and prompt.get("session_id") == session_id:
+            prompt["session_id"] = None
+            removed.append(prompt["id"])
+
+    save_metadata(metadata)
+    logger.info(f"Removed {len(removed)} prompts from session {session_id}")
+    return {"success": True, "removed": removed}
 
 
 # === Settings Endpoints ===

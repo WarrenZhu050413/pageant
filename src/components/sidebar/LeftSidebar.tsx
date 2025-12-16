@@ -6,6 +6,7 @@ import {
   FolderOpen,
   BookmarkIcon,
   Star,
+  BarChart3,
   ChevronDown,
 } from 'lucide-react';
 import { useStore } from '../../store';
@@ -15,6 +16,7 @@ import { PromptsTab } from './PromptsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { TemplatesTab } from './TemplatesTab';
 import { FavoritesTab } from './FavoritesTab';
+import { PreferencesTab } from './PreferencesTab';
 import { SessionsPanel } from './SessionsPanel';
 import { NotesPanel } from './NotesPanel';
 
@@ -23,6 +25,7 @@ const tabs = [
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} /> },
   { id: 'templates', label: 'Templates', icon: <BookmarkIcon size={14} /> },
   { id: 'favorites', label: 'Favorites', icon: <Star size={14} /> },
+  { id: 'preferences', label: 'Style', icon: <BarChart3 size={14} /> },
 ];
 
 export function LeftSidebar() {
@@ -65,6 +68,7 @@ export function LeftSidebar() {
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'templates' && <TemplatesTab />}
             {leftTab === 'favorites' && <FavoritesTab />}
+            {leftTab === 'preferences' && <PreferencesTab />}
           </motion.div>
         </AnimatePresence>
       </div>

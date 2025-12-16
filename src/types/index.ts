@@ -1,5 +1,37 @@
 // Data Models - matching backend structures
 
+// Design Axis System - for tagging and preference tracking
+export const DESIGN_AXES = {
+  typeface: ['sans-serif', 'serif', 'monospace', 'display', 'handwritten'],
+  colors: ['monochromatic', 'complementary', 'analogous', 'vibrant', 'muted', 'pastel', 'warm', 'cool'],
+  layout: ['centered', 'asymmetric', 'grid', 'organic', 'dense', 'spacious'],
+  mood: ['elegant', 'minimal', 'ornate', 'playful', 'serious', 'bold', 'subtle'],
+  composition: ['close-up', 'wide', 'rule-of-thirds', 'symmetrical'],
+  style: ['photorealistic', 'illustrated', '3D', 'line-art', 'collage', 'retro', 'modern', 'futuristic'],
+} as const;
+
+export type DesignAxis = keyof typeof DESIGN_AXES;
+
+// LikedAxes stores specific tag values that were liked per axis
+// e.g., { typeface: ["sans-serif"], mood: ["elegant", "minimal"] }
+export interface LikedAxes {
+  typeface?: string[];
+  colors?: string[];
+  layout?: string[];
+  mood?: string[];
+  composition?: string[];
+  style?: string[];
+}
+
+export interface DesignPreferences {
+  typeface: Record<string, number>;
+  colors: Record<string, number>;
+  layout: Record<string, number>;
+  mood: Record<string, number>;
+  composition: Record<string, number>;
+  style: Record<string, number>;
+}
+
 export interface ImageData {
   id: string;
   image_path: string;
@@ -10,6 +42,9 @@ export interface ImageData {
   variation_type?: string;
   notes?: string;
   caption?: string;
+  // Design axis system
+  design_tags?: string[];
+  liked_axes?: LikedAxes;
 }
 
 export interface Prompt {
@@ -19,6 +54,11 @@ export interface Prompt {
   category: string;
   created_at: string;
   images: ImageData[];
+  // Reference images used for generation
+  input_image_id?: string;
+  context_image_ids?: string[];
+  parent_prompt_id?: string;
+  session_id?: string;
   _pending?: boolean;
   _count?: number;
 }
@@ -81,6 +121,7 @@ export interface GenerateRequest {
   input_image_id?: string;
   context_image_ids?: string[];
   collection_id?: string;
+  session_id?: string;
 }
 
 export interface GenerateResponse {
@@ -98,7 +139,7 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid' | 'compare';
-export type LeftTab = 'prompts' | 'collections' | 'templates' | 'favorites';
+export type LeftTab = 'prompts' | 'collections' | 'templates' | 'favorites' | 'preferences';
 export type RightTab = 'info' | 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select' | 'batch';
 

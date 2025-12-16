@@ -10,6 +10,7 @@ import {
   Upload,
   FolderUp,
   Loader2,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -19,8 +20,8 @@ import type { Template } from '../../types';
 export function GenerateTab() {
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [category, setCategory] = useState('Custom');
   const [count, setCount] = useState(4);
+  const [usePreferences, setUsePreferences] = useState(true);
 
   const contextImageIds = useStore((s) => s.contextImageIds);
   const removeContextImage = useStore((s) => s.removeContextImage);
@@ -34,6 +35,41 @@ export function GenerateTab() {
   const favorites = useStore((s) => s.favorites);
   const collections = useStore((s) => s.collections);
   const getCurrentImage = useStore((s) => s.getCurrentImage);
+  const designPreferences = useStore((s) => s.designPreferences);
+  const fetchDesignPreferences = useStore((s) => s.fetchDesignPreferences);
+
+  // Fetch preferences on mount
+  useEffect(() => {
+    fetchDesignPreferences();
+  }, [fetchDesignPreferences]);
+
+  // Build preference summary string
+  const getPreferenceSummary = () => {
+    if (!designPreferences) return '';
+
+    const summaryParts: string[] = [];
+    const axes = ['mood', 'typeface', 'colors', 'layout', 'style', 'composition'] as const;
+
+    for (const axis of axes) {
+      const prefs = designPreferences[axis] || {};
+      const entries = Object.entries(prefs);
+      if (entries.length === 0) continue;
+
+      const total = entries.reduce((sum, [, count]) => sum + count, 0);
+      const sorted = entries.sort((a, b) => b[1] - a[1]);
+
+      if (sorted.length > 0) {
+        const topPercentage = Math.round((sorted[0][1] / total) * 100);
+        if (topPercentage >= 40) {
+          summaryParts.push(sorted[0][0]);
+        }
+      }
+    }
+
+    return summaryParts.join(', ');
+  };
+
+  const preferenceSummary = getPreferenceSummary();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -54,7 +90,6 @@ export function GenerateTab() {
     const handler = (e: CustomEvent<Template>) => {
       setPrompt(e.detail.prompt);
       setTitle(e.detail.name);
-      setCategory(e.detail.category);
     };
     document.addEventListener('use-template', handler as EventListener);
     return () => document.removeEventListener('use-template', handler as EventListener);
@@ -63,10 +98,15 @@ export function GenerateTab() {
   const handleGenerate = () => {
     if (!prompt.trim() || !title.trim()) return;
 
+    // Optionally append style preferences to prompt
+    let finalPrompt = prompt.trim();
+    if (usePreferences && preferenceSummary) {
+      finalPrompt = `${finalPrompt}\n\nStyle preferences: ${preferenceSummary}`;
+    }
+
     generate({
-      prompt: prompt.trim(),
+      prompt: finalPrompt,
       title: title.trim(),
-      category: category.trim() || 'Custom',
       count,
     });
 
@@ -133,13 +173,43 @@ export function GenerateTab() {
         </div>
       </div>
 
-      {/* Category */}
-      <Input
-        label="Category"
-        value={category}
-        onChange={(e) => setCategory(e.target.value)}
-        placeholder="Custom"
-      />
+      {/* Style Preferences Toggle */}
+      {preferenceSummary && (
+        <div className="space-y-2">
+          <label
+            className={clsx(
+              'flex items-center gap-2 p-3 rounded-lg cursor-pointer',
+              'border transition-colors',
+              usePreferences
+                ? 'border-brass bg-brass-muted/30'
+                : 'border-border bg-canvas-subtle hover:bg-canvas-muted'
+            )}
+          >
+            <input
+              type="checkbox"
+              checked={usePreferences}
+              onChange={(e) => setUsePreferences(e.target.checked)}
+              className="sr-only"
+            />
+            <div
+              className={clsx(
+                'w-4 h-4 rounded flex items-center justify-center',
+                usePreferences ? 'bg-brass text-surface' : 'bg-canvas-muted'
+              )}
+            >
+              {usePreferences && <Sparkles size={10} />}
+            </div>
+            <div className="flex-1">
+              <div className="text-xs font-medium text-ink">
+                Include style preferences
+              </div>
+              <div className="text-[0.65rem] text-ink-muted">
+                {preferenceSummary}
+              </div>
+            </div>
+          </label>
+        </div>
+      )}
 
       {/* Context Images */}
       <div className="space-y-2">

@@ -7,10 +7,14 @@ import {
   Copy,
   Sparkles,
   Trash2,
+  Download,
+  Plus,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { IconButton } from '../ui';
+import { DesignTagBar, AxisPreferenceButtons } from '../design';
+import type { DesignAxis } from '../../types';
 
 export function SingleView() {
   const currentPrompt = useStore((s) => s.getCurrentPrompt());
@@ -26,6 +30,9 @@ export function SingleView() {
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const selectedIds = useStore((s) => s.selectedIds);
+  const updateDesignTags = useStore((s) => s.updateDesignTags);
+  const toggleAxisLike = useStore((s) => s.toggleAxisLike);
+  const addContextImage = useStore((s) => s.addContextImage);
 
   if (!currentPrompt || !currentImage) {
     return (
@@ -107,6 +114,17 @@ export function SingleView() {
                   </IconButton>
                   <IconButton
                     variant="default"
+                    tooltip="Use as context"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addContextImage(currentImage.id);
+                    }}
+                    className="bg-surface/90 backdrop-blur-sm"
+                  >
+                    <Plus size={18} />
+                  </IconButton>
+                  <IconButton
+                    variant="default"
                     tooltip="Copy prompt"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -116,6 +134,20 @@ export function SingleView() {
                   >
                     <Copy size={18} />
                   </IconButton>
+                  <a
+                    href={getImageUrl(currentImage.image_path)}
+                    download={`${currentPrompt.title}-${currentImage.id}.${currentImage.image_path.split('.').pop()}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex"
+                  >
+                    <IconButton
+                      variant="default"
+                      tooltip="Download"
+                      className="bg-surface/90 backdrop-blur-sm"
+                    >
+                      <Download size={18} />
+                    </IconButton>
+                  </a>
                   <IconButton
                     variant="danger"
                     tooltip="Delete"
@@ -214,6 +246,27 @@ export function SingleView() {
             />
           );
         })}
+      </div>
+
+      {/* Design Axis System */}
+      <div className="px-6 pb-4 space-y-3">
+        <DesignTagBar
+          tags={currentImage.design_tags || []}
+          onTagsChange={(tags) => updateDesignTags(currentImage.id, tags)}
+        />
+        <AxisPreferenceButtons
+          tags={currentImage.design_tags || []}
+          likedAxes={currentImage.liked_axes || {}}
+          onTagToggle={(axis: DesignAxis, tag: string, liked: boolean) =>
+            toggleAxisLike(currentImage.id, axis, tag, liked)
+          }
+          onAddTag={(tag) => {
+            const currentTags = currentImage.design_tags || [];
+            if (!currentTags.includes(tag)) {
+              updateDesignTags(currentImage.id, [...currentTags, tag]);
+            }
+          }}
+        />
       </div>
     </div>
   );
