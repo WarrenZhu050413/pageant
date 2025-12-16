@@ -17,6 +17,7 @@ import type {
   LibraryItem,
   LibraryItemType,
   PromptVariation,
+  ImageGenerationParams,
 } from '../types';
 import * as api from '../api';
 
@@ -66,12 +67,7 @@ interface AppStore {
   variationsTitle: string;
   showPromptPreview: boolean;
   // Image generation params for variations (stored for use in generateFromVariations)
-  variationsImageParams: {
-    image_size?: string;
-    aspect_ratio?: string;
-    seed?: number;
-    safety_level?: string;
-  };
+  variationsImageParams: ImageGenerationParams;
 
   // Actions
   initialize: () => Promise<void>;
@@ -1178,6 +1174,12 @@ export const useStore = create<AppStore>()(
         sessions: state.sessions,
         currentSessionId: state.currentSessionId,
         notes: state.notes,
+        // Persist variations workflow state to survive page refresh
+        promptVariations: state.promptVariations,
+        variationsBasePrompt: state.variationsBasePrompt,
+        variationsTitle: state.variationsTitle,
+        showPromptPreview: state.showPromptPreview,
+        variationsImageParams: state.variationsImageParams,
       }),
     }
   )
