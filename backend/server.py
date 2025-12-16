@@ -743,28 +743,10 @@ async def generate_images(req: GenerateRequest):
         # Fallback if parsing failed or not enough variations
         if len(variations) < count:
             logger.warning(f"Only parsed {len(variations)} variations, needed {count}. Using fallback.")
-            # Fill with original prompt + legacy suffixes
-            while len(variations) < count:
-                idx = len(variations)
-                suffix_idx = idx % len(VARIATION_SUFFIXES)
-                variations.append({
-                    "id": str(idx + 1),
-                    "type": "fallback",
-                    "description": req.prompt + VARIATION_SUFFIXES[suffix_idx],
-                    "mood": "neutral",
-                })
+            variations = generate_fallback_variations(req.prompt, count, variations)
     except Exception as e:
         logger.error(f"Variation generation failed: {e}, using fallback")
-        # Complete fallback to legacy behavior
-        variations = [
-            {
-                "id": str(i + 1),
-                "type": "fallback",
-                "description": req.prompt + (VARIATION_SUFFIXES[i % len(VARIATION_SUFFIXES)] if i > 0 else ""),
-                "mood": "neutral",
-            }
-            for i in range(count)
-        ]
+        variations = generate_fallback_variations(req.prompt, count)
 
     # === Step 2: Generate images from varied prompts in parallel ===
     tasks = [
@@ -1452,26 +1434,10 @@ async def generate_more_like_this(image_id: str, count: int = 4):
 
         # Fallback if parsing failed
         if len(variations) < count:
-            while len(variations) < count:
-                idx = len(variations)
-                suffix_idx = idx % len(VARIATION_SUFFIXES)
-                variations.append({
-                    "id": str(idx + 1),
-                    "type": "fallback",
-                    "description": base_variation_prompt + VARIATION_SUFFIXES[suffix_idx],
-                    "mood": "neutral",
-                })
+            variations = generate_fallback_variations(base_variation_prompt, count, variations)
     except Exception as e:
         logger.error(f"Variation generation failed for iteration: {e}, using fallback")
-        variations = [
-            {
-                "id": str(i + 1),
-                "type": "fallback",
-                "description": base_variation_prompt + (VARIATION_SUFFIXES[i % len(VARIATION_SUFFIXES)] if i > 0 else ""),
-                "mood": "neutral",
-            }
-            for i in range(count)
-        ]
+        variations = generate_fallback_variations(base_variation_prompt, count)
 
     # Load default image generation params from settings
     settings = metadata.get("settings", {})
