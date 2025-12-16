@@ -23,7 +23,7 @@ import { NotesPanel } from './NotesPanel';
 const tabs = [
   { id: 'prompts', label: 'Prompts', icon: <FileText size={14} /> },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} /> },
-  { id: 'templates', label: 'Templates', icon: <BookmarkIcon size={14} /> },
+  { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} /> },
   { id: 'favorites', label: 'Favorites', icon: <Star size={14} /> },
   { id: 'preferences', label: 'Style', icon: <BarChart3 size={14} /> },
 ];
@@ -66,7 +66,7 @@ export function LeftSidebar() {
           >
             {leftTab === 'prompts' && <PromptsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
-            {leftTab === 'templates' && <TemplatesTab />}
+            {leftTab === 'library' && <TemplatesTab />}
             {leftTab === 'favorites' && <FavoritesTab />}
             {leftTab === 'preferences' && <PreferencesTab />}
           </motion.div>

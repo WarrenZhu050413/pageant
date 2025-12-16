@@ -11,6 +11,8 @@ import type {
   LikedAxes,
   DesignPreferences,
   DesignAxis,
+  LibraryItem,
+  LibraryItemType,
 } from '../types';
 
 const API_BASE = '/api';
@@ -143,6 +145,38 @@ export async function deleteTemplate(id: string): Promise<void> {
 
 export async function useTemplate(id: string): Promise<void> {
   await request(`/templates/${id}/use`, { method: 'POST' });
+}
+
+// Design Library
+export async function fetchLibraryItems(): Promise<LibraryItem[]> {
+  const response = await request<{ items: LibraryItem[] }>('/library');
+  return response.items || [];
+}
+
+export async function createLibraryItem(data: {
+  type: LibraryItemType;
+  name: string;
+  description?: string;
+  text?: string;
+  style_tags?: string[];
+  prompt?: string;
+  category?: string;
+  tags?: string[];
+}): Promise<LibraryItem> {
+  const response = await request<{ item: LibraryItem }>('/library', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+  return response.item;
+}
+
+export async function deleteLibraryItem(id: string): Promise<void> {
+  await request(`/library/${id}`, { method: 'DELETE' });
+}
+
+export async function useLibraryItem(id: string): Promise<LibraryItem> {
+  const response = await request<{ item: LibraryItem }>(`/library/${id}/use`, { method: 'POST' });
+  return response.item;
 }
 
 // Collections

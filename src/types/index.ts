@@ -74,6 +74,32 @@ export interface Template {
   created_at: string;
 }
 
+// Design Library - unified system for saving design building blocks
+export type LibraryItemType = 'fragment' | 'preset' | 'template';
+
+export interface LibraryItem {
+  id: string;
+  type: LibraryItemType;
+  name: string;
+  description?: string;
+  created_at: string;
+  use_count: number;
+  last_used?: string;
+
+  // For fragments: short text snippets to insert
+  text?: string;
+
+  // For presets: style tag combinations
+  style_tags?: string[];
+
+  // For templates: full prompts
+  prompt?: string;
+
+  // Common: categorization
+  category?: string;
+  tags?: string[];
+}
+
 export interface Collection {
   id: string;
   name: string;
@@ -140,7 +166,7 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid' | 'compare';
-export type LeftTab = 'prompts' | 'collections' | 'templates' | 'favorites' | 'preferences';
+export type LeftTab = 'prompts' | 'collections' | 'library' | 'favorites' | 'preferences';
 export type RightTab = 'info' | 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select' | 'batch';
 

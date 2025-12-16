@@ -1,8 +1,32 @@
 # Pageant
 
-**Image Generation Studio** - A React frontend for AI image generation with Gemini.
+**Starter repo for experimenting with Gemini Nano Banana Pro image generation.**
 
-![Pageant Screenshot](https://via.placeholder.com/800x450?text=Pageant+Screenshot)
+Everything you'd want in an image experimentation interface: multiple view modes, prompt organization, collections, favorites, batch operations, and keyboard shortcuts. Fork it, hack on it, make cool stuff.
+
+## Quick Start
+
+```bash
+# 1. Install Bun and uv (if you haven't)
+curl -fsSL https://bun.sh/install | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# 2. Install dependencies
+make install
+
+# 3. Get your Gemini API key from Google AI Studio
+#    https://aistudio.google.com/app/apikey
+#    Click "Create API key" → copy it
+
+# 4. Save the key
+mkdir -p ~/.gemini
+echo "your-key-here" > ~/.gemini/apikey.txt
+
+# 5. Run
+make dev
+```
+
+Open **http://localhost:5173** and start generating.
 
 ## Features
 
@@ -29,34 +53,6 @@
 ### Backend
 - **FastAPI** (Python)
 - **Google Gemini API** for image generation
-
-## Quick Start
-
-```bash
-# Install frontend dependencies
-bun install
-
-# Install backend dependencies (using uv)
-uv sync
-
-# Create images directory (generated images will be stored here)
-mkdir -p generated_images
-
-# Start development servers
-make dev
-```
-
-Or run frontend and backend separately:
-
-```bash
-# Terminal 1: Frontend
-bun run dev
-
-# Terminal 2: Backend
-uv run uvicorn backend.server:app --port 8765
-```
-
-Visit **http://localhost:5173**
 
 ## Project Structure
 
@@ -164,11 +160,10 @@ bun run preview
 
 ## Environment Variables
 
-Create a `.env` file:
-
-```env
-GEMINI_API_KEY=your_api_key_here
-```
+The Gemini API key can be configured via:
+1. `~/.gemini/apikey.txt` (recommended, see Quick Start)
+2. `GEMINI_API_KEY` environment variable
+3. `GEMINI_API_KEY_PATH` pointing to a key file
 
 ## License
 

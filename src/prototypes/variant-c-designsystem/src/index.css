@@ -1,0 +1,17 @@
+@import 'tailwindcss';
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro", "Inter", sans-serif;
+  --font-mono: "SF Mono", "Monaco", monospace;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: #fafafa;
+  margin: 0;
+  padding: 0;
+}
+
+#root {
+  min-height: 100vh;
+}

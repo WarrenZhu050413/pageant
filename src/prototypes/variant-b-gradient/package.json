@@ -1,10 +1,10 @@
 {
-  "name": "prompt-archaeologist",
+  "name": "style-gradient-explorer",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 5173",
+    "dev": "vite --port 5174",
     "build": "tsc && vite build",
     "preview": "vite preview"
   },
@@ -18,7 +18,6 @@
     "@types/react": "^19.0.1",
     "@types/react-dom": "^19.0.1",
     "@vitejs/plugin-react": "^4.3.4",
-    "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.0.0",
     "typescript": "^5.6.3",

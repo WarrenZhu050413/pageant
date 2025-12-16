@@ -14,6 +14,8 @@ import type {
   ImageData,
   DesignPreferences,
   DesignAxis,
+  LibraryItem,
+  LibraryItemType,
 } from '../types';
 import * as api from '../api';
 
@@ -27,6 +29,7 @@ interface AppStore {
   prompts: Prompt[];
   favorites: string[];
   templates: Template[];
+  libraryItems: LibraryItem[];
   collections: Collection[];
   stories: Story[];
   settings: Settings | null;
@@ -116,6 +119,20 @@ interface AppStore {
   deleteTemplate: (id: string) => Promise<void>;
   useTemplate: (id: string) => Promise<Template | undefined>;
 
+  // Design Library
+  createLibraryItem: (data: {
+    type: LibraryItemType;
+    name: string;
+    description?: string;
+    text?: string;
+    style_tags?: string[];
+    prompt?: string;
+    category?: string;
+    tags?: string[];
+  }) => Promise<void>;
+  deleteLibraryItem: (id: string) => Promise<void>;
+  useLibraryItem: (id: string) => Promise<LibraryItem | undefined>;
+
   // Collections
   createCollection: (name: string, description?: string) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
@@ -161,6 +178,7 @@ export const useStore = create<AppStore>()(
       prompts: [],
       favorites: [],
       templates: [],
+      libraryItems: [],
       collections: [],
       stories: [],
       settings: null,
@@ -195,9 +213,10 @@ export const useStore = create<AppStore>()(
       // Initialize app
       initialize: async () => {
         try {
-          const [prompts, templates, collections, settings, sessions] = await Promise.all([
+          const [prompts, templates, libraryItems, collections, settings, sessions] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTemplates(),
+            api.fetchLibraryItems(),
             api.fetchCollections(),
             api.fetchSettings(),
             api.fetchSessions(),
@@ -217,6 +236,7 @@ export const useStore = create<AppStore>()(
           set({
             prompts,
             templates,
+            libraryItems,
             collections,
             settings,
             favorites: favoriteIds,
@@ -230,16 +250,17 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [prompts, templates, collections] = await Promise.all([
+          const [prompts, templates, libraryItems, collections] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTemplates(),
+            api.fetchLibraryItems(),
             api.fetchCollections(),
           ]);
 
           const favResponse = await api.fetchFavorites();
           const favoriteIds = favResponse.map((f) => f.id);
 
-          set({ prompts, templates, collections, favorites: favoriteIds });
+          set({ prompts, templates, libraryItems, collections, favorites: favoriteIds });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -572,6 +593,39 @@ export const useStore = create<AppStore>()(
           await api.useTemplate(id);
           const { templates } = get();
           return templates.find((t) => t.id === id);
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return undefined;
+        }
+      },
+
+      // Design Library
+      createLibraryItem: async (data) => {
+        try {
+          await api.createLibraryItem(data);
+          const libraryItems = await api.fetchLibraryItems();
+          set({ libraryItems });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      deleteLibraryItem: async (id) => {
+        try {
+          await api.deleteLibraryItem(id);
+          const libraryItems = await api.fetchLibraryItems();
+          set({ libraryItems });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      useLibraryItem: async (id) => {
+        try {
+          const item = await api.useLibraryItem(id);
+          const libraryItems = await api.fetchLibraryItems();
+          set({ libraryItems });
+          return item;
         } catch (error) {
           set({ error: (error as Error).message });
           return undefined;

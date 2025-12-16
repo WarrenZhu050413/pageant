@@ -848,6 +848,91 @@ async def use_template(template_id: str):
 
 
 # ============================================================
+# FEATURE 1b: Design Library (Fragments, Presets, Templates)
+# ============================================================
+
+class LibraryItemRequest(BaseModel):
+    type: str  # 'fragment', 'preset', 'template'
+    name: str
+    description: str = ""
+    text: str | None = None  # For fragments
+    style_tags: list[str] | None = None  # For presets
+    prompt: str | None = None  # For templates
+    category: str = ""
+    tags: list[str] = []
+
+
+@app.get("/api/library")
+async def list_library_items():
+    """List all design library items."""
+    metadata = load_metadata()
+    return {"items": metadata.get("library", [])}
+
+
+@app.post("/api/library")
+async def create_library_item(req: LibraryItemRequest):
+    """Create a new library item (fragment, preset, or template)."""
+    if req.type not in ("fragment", "preset", "template"):
+        raise HTTPException(status_code=400, detail="Invalid type. Must be fragment, preset, or template")
+
+    metadata = load_metadata()
+    if "library" not in metadata:
+        metadata["library"] = []
+
+    item_id = f"lib-{uuid.uuid4().hex[:8]}"
+    item = {
+        "id": item_id,
+        "type": req.type,
+        "name": req.name,
+        "description": req.description,
+        "created_at": datetime.now().isoformat(),
+        "use_count": 0,
+        "category": req.category,
+        "tags": req.tags,
+    }
+
+    # Type-specific fields
+    if req.type == "fragment":
+        item["text"] = req.text or ""
+    elif req.type == "preset":
+        item["style_tags"] = req.style_tags or []
+    elif req.type == "template":
+        item["prompt"] = req.prompt or ""
+
+    metadata["library"].append(item)
+    save_metadata(metadata)
+    logger.info(f"Created library item: {item_id} - {req.name} ({req.type})")
+    return {"success": True, "item": item}
+
+
+@app.delete("/api/library/{item_id}")
+async def delete_library_item(item_id: str):
+    """Delete a library item."""
+    metadata = load_metadata()
+    library = metadata.get("library", [])
+    for i, item in enumerate(library):
+        if item["id"] == item_id:
+            library.pop(i)
+            save_metadata(metadata)
+            logger.info(f"Deleted library item: {item_id}")
+            return {"success": True}
+    raise HTTPException(status_code=404, detail="Library item not found")
+
+
+@app.post("/api/library/{item_id}/use")
+async def use_library_item(item_id: str):
+    """Increment use count for a library item."""
+    metadata = load_metadata()
+    for item in metadata.get("library", []):
+        if item["id"] == item_id:
+            item["use_count"] = item.get("use_count", 0) + 1
+            item["last_used"] = datetime.now().isoformat()
+            save_metadata(metadata)
+            return {"success": True, "item": item}
+    raise HTTPException(status_code=404, detail="Library item not found")
+
+
+# ============================================================
 # FEATURE 2: Export & Share
 # ============================================================
 
