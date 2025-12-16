@@ -31,11 +31,12 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={clsx(
-              'relative flex items-center gap-1.5 px-2.5 py-2.5 flex-shrink-0',
-              'text-[0.75rem] font-medium whitespace-nowrap',
+              'relative flex items-center gap-1 px-1.5 py-2 flex-shrink-0',
+              'text-[0.65rem] font-medium whitespace-nowrap',
               'transition-colors duration-150',
               isActive ? 'text-ink' : 'text-ink-tertiary hover:text-ink-secondary'
             )}
+            title={tab.label}
           >
             {tab.icon}
             {tab.label}

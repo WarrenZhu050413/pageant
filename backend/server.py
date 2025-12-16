@@ -23,7 +23,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -47,9 +47,6 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Gemini Pageant API")
 
-# Include analysis routes for new features
-from analysis_routes import router as analysis_router
-app.include_router(analysis_router)
 
 # CORS for local development
 app.add_middleware(
@@ -100,6 +97,12 @@ api_key = load_api_key()
 gemini = GeminiService(api_key=api_key)
 
 
+# Image generation parameter options (matching frontend)
+IMAGE_SIZE_OPTIONS = ["1K", "2K", "4K"]
+ASPECT_RATIO_OPTIONS = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
+SAFETY_LEVEL_OPTIONS = ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+
+
 # Request/Response models
 class GenerateRequest(BaseModel):
     prompt: str
@@ -110,6 +113,54 @@ class GenerateRequest(BaseModel):
     context_image_ids: list[str] = []  # Multiple context images
     collection_id: str | None = None  # Use a collection as context
     session_id: str | None = None  # Session to associate with
+    # Image generation parameters
+    image_size: str | None = None  # "1K", "2K", "4K"
+    aspect_ratio: str | None = None  # "1:1", "16:9", etc.
+    seed: int | None = None  # For reproducibility
+    safety_level: str | None = None  # "BLOCK_NONE", etc.
+
+
+# === NEW: Two-Phase Generation Models ===
+class GeneratePromptsRequest(BaseModel):
+    """Request for generating prompt variations only (phase 1)."""
+    prompt: str
+    count: int = 4
+    context_image_ids: list[str] = []
+    # Image generation parameters (for phase 2)
+    image_size: str | None = None
+    aspect_ratio: str | None = None
+    seed: int | None = None
+    safety_level: str | None = None
+
+
+class PromptVariation(BaseModel):
+    """A single prompt variation."""
+    id: str
+    text: str
+    mood: str = ""
+    type: str = ""
+
+
+class GeneratePromptsResponse(BaseModel):
+    """Response with prompt variations."""
+    success: bool
+    variations: list[PromptVariation] = []
+    base_prompt: str = ""
+    error: str | None = None
+
+
+class GenerateFromPromptsRequest(BaseModel):
+    """Request for generating images from edited prompts (phase 2)."""
+    title: str
+    prompts: list[dict]  # [{ text: str, mood?: str }]
+    context_image_ids: list[str] = []
+    session_id: str | None = None
+    category: str = "Custom"
+    # Image generation parameters
+    image_size: str | None = None
+    aspect_ratio: str | None = None
+    seed: int | None = None
+    safety_level: str | None = None
 
 
 # === Sessions ===
@@ -197,6 +248,11 @@ class ReorderChaptersRequest(BaseModel):
 class SettingsRequest(BaseModel):
     variation_prompt: str
     iteration_prompt: str | None = None  # Prompt for "More Like This"
+    # Image generation defaults
+    image_size: str | None = None  # "1K", "2K", "4K"
+    aspect_ratio: str | None = None  # "1:1", "16:9", etc.
+    seed: int | None = None  # Default seed (None = random)
+    safety_level: str | None = None  # "BLOCK_NONE", etc.
 
 
 def load_metadata() -> dict:
@@ -277,24 +333,73 @@ Generate {count} scene descriptions for AI image generation.
 
 
 def parse_scene_variations(xml_response: str) -> list[dict]:
-    """Parse XML scene variations from text model response.
+    """Parse XML scene variations from text model response using ElementTree.
 
     Args:
-        xml_response: Raw XML string from text model
+        xml_response: Raw XML string from text model (may have surrounding text)
 
     Returns:
-        List of dicts with id, type, description, mood
+        List of dicts with id, type, description, mood, and optional design tags
     """
+    import xml.etree.ElementTree as ET
+
     scenes = []
-    pattern = r'<scene id="(\d+)" type="(\w+)">\s*<description>(.*?)</description>\s*<mood>(.*?)</mood>\s*</scene>'
-    for match in re.finditer(pattern, xml_response, re.DOTALL):
-        scenes.append({
-            "id": match.group(1),
-            "type": match.group(2),
-            "description": match.group(3).strip(),
-            "mood": match.group(4).strip(),
-        })
+
+    # Extract the <scenes>...</scenes> block from the response
+    scenes_match = re.search(r'<scenes>(.*?)</scenes>', xml_response, re.DOTALL)
+    if not scenes_match:
+        logger.warning("No <scenes> block found in response")
+        return scenes
+
+    try:
+        # Wrap in root element and parse
+        xml_content = f"<root>{scenes_match.group(1)}</root>"
+        root = ET.fromstring(xml_content)
+
+        for scene_elem in root.findall('scene'):
+            scene = {
+                "id": scene_elem.get('id', ''),
+                "type": scene_elem.get('type', ''),
+                "description": (scene_elem.findtext('description') or '').strip(),
+                "mood": (scene_elem.findtext('mood') or '').strip(),
+            }
+
+            # Parse design block - dynamically extract all child elements as axes
+            design_elem = scene_elem.find('design')
+            if design_elem is not None:
+                design_tags = {}
+                for axis_elem in design_elem:
+                    axis = axis_elem.tag
+                    if axis_elem.text:
+                        tags = [t.strip() for t in axis_elem.text.split(',') if t.strip()]
+                        if tags:
+                            design_tags[axis] = tags
+                scene["design"] = design_tags
+
+            scenes.append(scene)
+
+    except ET.ParseError as e:
+        logger.warning(f"XML parse error, falling back to regex: {e}")
+        # Fallback to regex for malformed XML
+        pattern = r'<scene id="(\d+)" type="(\w+)">\s*<description>(.*?)</description>\s*<mood>(.*?)</mood>'
+        for match in re.finditer(pattern, xml_response, re.DOTALL):
+            scenes.append({
+                "id": match.group(1),
+                "type": match.group(2),
+                "description": match.group(3).strip(),
+                "mood": match.group(4).strip(),
+            })
+
     return scenes
+
+
+def _flatten_design(design: dict) -> list[str]:
+    """Flatten design tags dict into a flat list of tags."""
+    tags = []
+    for axis_tags in design.values():
+        if isinstance(axis_tags, list):
+            tags.extend(axis_tags)
+    return tags
 
 
 # Legacy: Variation suffixes (kept for fallback/testing)
@@ -315,9 +420,12 @@ VARIATION_SUFFIXES = [
 async def _generate_single_image(
     prompt: str,
     index: int,
-    input_image_bytes: bytes | None = None,
-    input_mime_type: str = "image/png",
+    context_images: list[tuple[bytes, str, str | None]] | None = None,
     add_variation: bool = True,
+    image_size: str | None = None,
+    aspect_ratio: str | None = None,
+    seed: int | None = None,
+    safety_level: str | None = None,
 ) -> dict:
     """Generate a single image and save it."""
     try:
@@ -329,8 +437,11 @@ async def _generate_single_image(
 
         result = await gemini.generate_image(
             varied_prompt,
-            input_image=input_image_bytes,
-            input_mime_type=input_mime_type,
+            context_images=context_images,
+            image_size=image_size,
+            aspect_ratio=aspect_ratio,
+            seed=seed,
+            safety_level=safety_level,
         )
 
         if not result.images:
@@ -357,7 +468,9 @@ async def _generate_single_image(
             "varied_prompt": varied_prompt,  # Store the actual prompt used
         }
     except Exception as e:
-        return {"success": False, "error": str(e), "index": index}
+        error_type = type(e).__name__
+        logger.error(f"Image generation #{index} failed: {error_type}: {str(e)}")
+        return {"success": False, "error": str(e), "index": index, "error_type": error_type}
 
 
 def _find_image_by_id(metadata: dict, image_id: str) -> tuple[dict | None, Path | None]:
@@ -372,22 +485,190 @@ def _find_image_by_id(metadata: dict, image_id: str) -> tuple[dict | None, Path 
     return None, None
 
 
-def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str]]:
-    """Load multiple context images. Returns list of (bytes, mime_type) tuples."""
+def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None]]:
+    """Load multiple context images. Returns list of (bytes, mime_type, notes) tuples."""
     context_images = []
     for img_id in image_ids:
         img_data, img_path = _find_image_by_id(metadata, img_id)
         if img_data and img_path:
+            # Only send caption to API (notes are user workspace only)
+            caption = img_data.get("caption", "") or ""
+            context_desc = caption.strip() if caption else None
+
             context_images.append((
                 img_path.read_bytes(),
-                img_data.get("mime_type", "image/png")
+                img_data.get("mime_type", "image/png"),
+                context_desc,
             ))
     return context_images
 
 
+# ============================================================
+# TWO-PHASE GENERATION: Prompt Variations → Image Generation
+# ============================================================
+
+@app.post("/api/generate-prompts", response_model=GeneratePromptsResponse)
+async def generate_prompt_variations(req: GeneratePromptsRequest):
+    """Generate prompt variations only (Phase 1 of two-phase generation).
+
+    Returns text variations that the user can review, edit, and select
+    before committing to image generation.
+    """
+    count = min(max(1, req.count), 10)  # Clamp between 1 and 10
+    logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'")
+
+    metadata = load_metadata()
+
+    # Load variation system prompt
+    variation_prompt = metadata.get("settings", {}).get(
+        "variation_prompt",
+        load_default_variation_prompt()
+    )
+
+    try:
+        logger.info(f"Generating {count} prompt variations...")
+        xml_response = await gemini.generate_prompt_variations(
+            base_prompt=req.prompt,
+            count=count,
+            system_prompt=variation_prompt,
+        )
+        parsed_variations = parse_scene_variations(xml_response)
+        logger.info(f"Parsed {len(parsed_variations)} scene variations")
+
+        # Convert to response model with unique IDs
+        variations = []
+        for i, var in enumerate(parsed_variations[:count]):
+            variations.append(PromptVariation(
+                id=f"var-{uuid.uuid4().hex[:8]}",
+                text=var["description"],
+                mood=var.get("mood", ""),
+                type=var.get("type", ""),
+            ))
+
+        # Fill with fallbacks if not enough variations
+        while len(variations) < count:
+            idx = len(variations)
+            suffix_idx = idx % len(VARIATION_SUFFIXES)
+            variations.append(PromptVariation(
+                id=f"var-{uuid.uuid4().hex[:8]}",
+                text=req.prompt + VARIATION_SUFFIXES[suffix_idx],
+                mood="neutral",
+                type="fallback",
+            ))
+
+        return GeneratePromptsResponse(
+            success=True,
+            variations=variations,
+            base_prompt=req.prompt,
+        )
+
+    except Exception as e:
+        logger.error(f"Variation generation failed: {e}")
+        return GeneratePromptsResponse(
+            success=False,
+            error=str(e),
+            base_prompt=req.prompt,
+        )
+
+
+@app.post("/api/generate-images", response_model=PromptResponse)
+async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
+    """Generate images from user-edited prompts (Phase 2 of two-phase generation).
+
+    Takes an array of prompt texts (possibly edited by user) and generates
+    images from each in parallel.
+    """
+    if not req.prompts:
+        return PromptResponse(success=False, errors=["No prompts provided"])
+
+    count = len(req.prompts)
+    logger.info(f"Generate images from {count} prompts, title='{req.title}'")
+
+    metadata = load_metadata()
+
+    # Load context images if specified (with notes for interleaved input)
+    context_images = None
+    if req.context_image_ids:
+        context_images = _load_context_images(metadata, req.context_image_ids)
+        if context_images:
+            logger.info(f"Using {len(context_images)} context image(s) with interleaved notes")
+
+    # Generate images in parallel from provided prompts
+    tasks = [
+        _generate_single_image(
+            prompt_data.get("text", ""),
+            i,
+            context_images=context_images,
+            add_variation=False,  # Prompts already varied/edited by user
+            image_size=req.image_size,
+            aspect_ratio=req.aspect_ratio,
+            seed=req.seed,
+            safety_level=req.safety_level,
+        )
+        for i, prompt_data in enumerate(req.prompts)
+    ]
+    results = await asyncio.gather(*tasks)
+
+    # Process results and add metadata from prompts
+    images = []
+    errors = []
+    for i, result in enumerate(results):
+        if result.get("success"):
+            del result["success"]
+            # Add mood and design from original prompt data if available
+            if i < len(req.prompts):
+                result["mood"] = req.prompts[i].get("mood", "")
+                result["variation_type"] = "user-edited"
+                # Add design tags if passed from frontend
+                if "design" in req.prompts[i]:
+                    result["design_tags"] = _flatten_design(req.prompts[i]["design"])
+                    result["annotations"] = req.prompts[i]["design"]
+            images.append(result)
+        else:
+            errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
+
+    if not images:
+        logger.error(f"Generation failed: {errors}")
+        return PromptResponse(success=False, errors=errors)
+
+    # Create prompt entry (combine all prompts into one entry)
+    prompt_id = f"prompt-{uuid.uuid4().hex[:8]}"
+    combined_prompt = "\n---\n".join(p.get("text", "")[:200] for p in req.prompts[:3])
+    if len(req.prompts) > 3:
+        combined_prompt += f"\n... and {len(req.prompts) - 3} more"
+
+    prompt_entry = {
+        "id": prompt_id,
+        "prompt": combined_prompt,
+        "title": req.title or "Untitled",
+        "category": req.category,
+        "context_image_ids": req.context_image_ids,
+        "session_id": req.session_id,
+        "created_at": datetime.now().isoformat(),
+        "images": images,
+        "generation_mode": "two-phase",  # Mark as two-phase generation
+    }
+
+    metadata["prompts"].append(prompt_entry)
+    save_metadata(metadata)
+
+    logger.info(f"Generated {len(images)} images from prompts, prompt_id={prompt_id}")
+
+    return PromptResponse(
+        success=True,
+        prompt_id=prompt_id,
+        images=images,
+        errors=errors,
+    )
+
+
+# ============================================================
+# DIRECT GENERATION (Legacy/Bypass mode)
+# ============================================================
+
 @app.post("/api/generate", response_model=PromptResponse)
 async def generate_images(req: GenerateRequest):
-    """Generate images from a prompt using 2-step variation system.
+    """Generate images from a prompt using 2-step variation system (Direct mode).
 
     Step 1: Generate varied prompt descriptions via text model
     Step 2: Generate images from those prompts in parallel
@@ -413,14 +694,12 @@ async def generate_images(req: GenerateRequest):
                         context_image_ids.append(img_id)
                 break
 
-    # Load context images (for image-to-image generation)
-    input_image_bytes = None
-    input_mime_type = "image/png"
+    # Load context images (for image-to-image generation with interleaved notes)
+    context_images = None
     if context_image_ids:
         context_images = _load_context_images(metadata, context_image_ids)
         if context_images:
-            input_image_bytes, input_mime_type = context_images[0]
-            logger.info(f"Using {len(context_images)} context image(s), primary input from first")
+            logger.info(f"Using {len(context_images)} context image(s) with interleaved notes")
 
     # === Step 1: Generate varied prompts via text model ===
     variation_prompt = metadata.get("settings", {}).get(
@@ -469,9 +748,12 @@ async def generate_images(req: GenerateRequest):
         _generate_single_image(
             var["description"],
             i,
-            input_image_bytes,
-            input_mime_type,
+            context_images=context_images,
             add_variation=False,  # Variations already applied by text model
+            image_size=req.image_size,
+            aspect_ratio=req.aspect_ratio,
+            seed=req.seed,
+            safety_level=req.safety_level,
         )
         for i, var in enumerate(variations[:count])
     ]
@@ -483,10 +765,14 @@ async def generate_images(req: GenerateRequest):
     for i, result in enumerate(results):
         if result.get("success"):
             del result["success"]
-            # Add variation metadata (mood, type) if available
+            # Add variation metadata (mood, type, design) if available
             if i < len(variations):
                 result["mood"] = variations[i].get("mood", "")
                 result["variation_type"] = variations[i].get("type", "")
+                # Add design tags from variation
+                if "design" in variations[i]:
+                    result["design_tags"] = _flatten_design(variations[i]["design"])
+                    result["annotations"] = variations[i]["design"]
             images.append(result)
         else:
             errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
@@ -1044,6 +1330,62 @@ async def export_gallery_html():
 
 
 # ============================================================
+# TASTE EXPORT: Portable Visual Taste Profiles
+# ============================================================
+
+from taste_exporter import compile_taste_export
+from dataclasses import asdict
+
+
+@app.get("/api/export/taste")
+async def export_taste_profile(include_images: bool = False, top_n: int = 20):
+    """Export portable visual taste profile as JSON.
+
+    Computes axis weights on-the-fly from liked_axes data if not pre-compiled.
+    """
+    metadata = load_metadata()
+
+    export = compile_taste_export(
+        metadata,
+        include_images=include_images,
+        top_n_exemplars=top_n,
+    )
+
+    return asdict(export)
+
+
+@app.get("/api/export/taste/zip")
+async def export_taste_with_images(top_n: int = 20):
+    """Export taste profile + exemplar images as ZIP."""
+    metadata = load_metadata()
+
+    export = compile_taste_export(metadata, top_n_exemplars=top_n)
+
+    # Create ZIP with JSON + images
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Add manifest
+        zf.writestr("taste-profile.json", json.dumps(asdict(export), indent=2))
+
+        # Add exemplar images
+        for exemplar in export.exemplars["images"]:
+            img_path = IMAGES_DIR / exemplar["filename"]
+            if img_path.exists():
+                zf.write(img_path, f"exemplars/{exemplar['filename']}")
+
+    zip_buffer.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="taste-profile-{timestamp}.zip"'
+        }
+    )
+
+
+# ============================================================
 # FEATURE 3: Iteration Workflow (Generate More Like This)
 # ============================================================
 
@@ -1067,13 +1409,20 @@ async def generate_more_like_this(image_id: str, count: int = 4):
     if not source_img:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    # Load the source image
+    # Load the source image with its notes for interleaved context
     img_path = IMAGES_DIR / source_img["image_path"]
     if not img_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 
-    input_image_bytes = img_path.read_bytes()
-    input_mime_type = source_img.get("mime_type", "image/png")
+    # Only send caption to API (notes are user workspace only)
+    caption = source_img.get("caption", "") or ""
+    context_desc = caption.strip() if caption else None
+
+    context_images = [(
+        img_path.read_bytes(),
+        source_img.get("mime_type", "image/png"),
+        context_desc,
+    )]
 
     # === Step 1: Generate varied prompts via text model ===
     base_variation_prompt = f"Create a variation of this image while maintaining its core essence. {source_prompt['prompt']}"
@@ -1116,14 +1465,20 @@ async def generate_more_like_this(image_id: str, count: int = 4):
             for i in range(count)
         ]
 
+    # Load default image generation params from settings
+    settings = metadata.get("settings", {})
+
     # === Step 2: Generate images from varied prompts in parallel ===
     tasks = [
         _generate_single_image(
             var["description"],
             i,
-            input_image_bytes,
-            input_mime_type,
+            context_images=context_images,
             add_variation=False,  # Variations already applied by text model
+            image_size=settings.get("image_size"),
+            aspect_ratio=settings.get("aspect_ratio"),
+            seed=settings.get("seed"),
+            safety_level=settings.get("safety_level"),
         )
         for i, var in enumerate(variations[:count])
     ]
@@ -1135,10 +1490,14 @@ async def generate_more_like_this(image_id: str, count: int = 4):
     for i, result in enumerate(results):
         if result.get("success"):
             del result["success"]
-            # Add variation metadata (mood, type) if available
+            # Add variation metadata (mood, type, design) if available
             if i < len(variations):
                 result["mood"] = variations[i].get("mood", "")
                 result["variation_type"] = variations[i].get("type", "")
+                # Add design tags from variation
+                if "design" in variations[i]:
+                    result["design_tags"] = _flatten_design(variations[i]["design"])
+                    result["annotations"] = variations[i]["design"]
             images.append(result)
         else:
             errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
@@ -1251,24 +1610,29 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
     if not target_prompt:
         raise HTTPException(status_code=404, detail="Prompt not found")
 
-    # Load input image if this was an image-to-image generation
-    input_image_bytes = None
-    input_mime_type = "image/png"
-    if target_prompt.get("input_image_id"):
-        for p in metadata.get("prompts", []):
-            for img in p.get("images", []):
-                if img["id"] == target_prompt["input_image_id"]:
-                    img_path = IMAGES_DIR / img["image_path"]
-                    if img_path.exists():
-                        input_image_bytes = img_path.read_bytes()
-                        input_mime_type = img.get("mime_type", "image/png")
-                    break
+    # Load context images (check both new context_image_ids and legacy input_image_id)
+    context_image_ids = target_prompt.get("context_image_ids", [])
+    if not context_image_ids and target_prompt.get("input_image_id"):
+        context_image_ids = [target_prompt["input_image_id"]]
+
+    context_images = _load_context_images(metadata, context_image_ids) if context_image_ids else None
 
     logger.info(f"Regenerating {count} images for prompt {prompt_id}")
 
+    # Load default image generation params from settings
+    settings = metadata.get("settings", {})
+
     # Generate new images
     tasks = [
-        _generate_single_image(target_prompt["prompt"], i, input_image_bytes, input_mime_type)
+        _generate_single_image(
+            target_prompt["prompt"],
+            i,
+            context_images=context_images,
+            image_size=settings.get("image_size"),
+            aspect_ratio=settings.get("aspect_ratio"),
+            seed=settings.get("seed"),
+            safety_level=settings.get("safety_level"),
+        )
         for i in range(count)
     ]
     results = await asyncio.gather(*tasks)
@@ -1969,7 +2333,7 @@ Generate a new scene description that explores this direction while keeping the 
 
 @app.get("/api/settings")
 async def get_settings():
-    """Get app settings including variation and iteration prompts."""
+    """Get app settings including variation/iteration prompts and image generation defaults."""
     metadata = load_metadata()
     settings = metadata.get("settings", {})
     return {
@@ -1983,25 +2347,43 @@ async def get_settings():
         ),
         "text_model": GeminiService.DEFAULT_TEXT_MODEL,
         "image_model": GeminiService.DEFAULT_IMAGE_MODEL,
+        # Image generation defaults
+        "image_size": settings.get("image_size"),  # None = use model default (1K)
+        "aspect_ratio": settings.get("aspect_ratio"),  # None = use model default (1:1)
+        "seed": settings.get("seed"),  # None = random each time
+        "safety_level": settings.get("safety_level"),  # None = use model default
     }
 
 
 @app.put("/api/settings")
 async def update_settings(req: SettingsRequest):
-    """Update app settings."""
+    """Update app settings including image generation defaults."""
     metadata = load_metadata()
     if "settings" not in metadata:
         metadata["settings"] = {}
     metadata["settings"]["variation_prompt"] = req.variation_prompt
     if req.iteration_prompt is not None:
         metadata["settings"]["iteration_prompt"] = req.iteration_prompt
+    # Image generation defaults
+    if req.image_size is not None:
+        metadata["settings"]["image_size"] = req.image_size
+    if req.aspect_ratio is not None:
+        metadata["settings"]["aspect_ratio"] = req.aspect_ratio
+    if req.seed is not None:
+        metadata["settings"]["seed"] = req.seed
+    if req.safety_level is not None:
+        metadata["settings"]["safety_level"] = req.safety_level
     save_metadata(metadata)
-    logger.info("Updated settings (variation/iteration prompts)")
+    logger.info("Updated settings")
     return {"success": True}
 
 
 # Serve static files
 app.mount("/images", StaticFiles(directory=str(IMAGES_DIR)), name="images")
+
+# Ensure preferences directory exists for preference images
+PREF_DIR = IMAGES_DIR / "preferences"
+PREF_DIR.mkdir(exist_ok=True)
 
 
 if __name__ == "__main__":

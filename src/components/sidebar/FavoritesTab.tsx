@@ -62,10 +62,10 @@ export function FavoritesTab() {
         </Button>
       </div>
 
-      {/* Grid */}
+      {/* Grid with names */}
       <div className="flex-1 overflow-y-auto p-2">
-        <div className="grid grid-cols-3 gap-1.5">
-          {favoriteImages.map(({ image, promptId }, index) => (
+        <div className="grid grid-cols-2 gap-2">
+          {favoriteImages.map(({ image, promptId, promptTitle }, index) => (
             <motion.button
               key={image.id}
               initial={{ opacity: 0, scale: 0.9 }}
@@ -73,16 +73,25 @@ export function FavoritesTab() {
               transition={{ delay: index * 0.02 }}
               onClick={() => handleImageClick(promptId, image.id)}
               className={clsx(
-                'aspect-square rounded-md overflow-hidden',
-                'bg-canvas-muted',
-                'hover:ring-2 hover:ring-brass transition-all'
+                'flex flex-col rounded-lg overflow-hidden',
+                'bg-canvas-subtle',
+                'hover:ring-2 hover:ring-brass transition-all',
+                'group'
               )}
             >
-              <img
-                src={getImageUrl(image.image_path)}
-                alt=""
-                className="w-full h-full object-cover"
-              />
+              <div className="aspect-square overflow-hidden bg-canvas-muted">
+                <img
+                  src={getImageUrl(image.image_path)}
+                  alt={promptTitle}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                />
+              </div>
+              <div className="px-2 py-1.5 flex items-center gap-1.5">
+                <Star size={10} className="text-favorite shrink-0" fill="currentColor" />
+                <span className="text-[0.65rem] text-ink-secondary truncate">
+                  {promptTitle}
+                </span>
+              </div>
             </motion.button>
           ))}
         </div>

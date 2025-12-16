@@ -111,3 +111,114 @@ class TestMetadataManagerLoadSave:
         assert len(data["prompts"]) == 1
         assert data["prompts"][0]["prompt"] == "A cat"
         assert data["prompts"][0]["images"][0]["id"] == "img-1"
+
+
+class TestMetadataManagerFindImage:
+    """Test find_image_by_id functionality."""
+
+    def test_find_image_returns_image_and_prompt(self, tmp_path):
+        """find_image_by_id returns (image_data, prompt_data) tuple when found."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        # Create test image file
+        (images_dir / "test-image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+
+        metadata = {
+            "prompts": [{
+                "id": "prompt-1",
+                "prompt": "A cat",
+                "images": [{
+                    "id": "img-123",
+                    "image_path": "test-image.png",
+                    "mime_type": "image/png",
+                }]
+            }],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        data = manager.load()
+        img_data, prompt_data = manager.find_image_by_id(data, "img-123")
+
+        assert img_data is not None
+        assert img_data["id"] == "img-123"
+        assert prompt_data is not None
+        assert prompt_data["id"] == "prompt-1"
+
+    def test_find_image_returns_none_when_not_found(self, tmp_path):
+        """find_image_by_id returns (None, None) when image not found."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        data = manager.load()
+        img_data, prompt_data = manager.find_image_by_id(data, "nonexistent")
+
+        assert img_data is None
+        assert prompt_data is None
+
+    def test_find_image_searches_all_prompts(self, tmp_path):
+        """find_image_by_id searches through all prompts."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        # Create test image files
+        (images_dir / "img1.png").write_bytes(b"\x89PNG")
+        (images_dir / "img2.png").write_bytes(b"\x89PNG")
+
+        metadata = {
+            "prompts": [
+                {
+                    "id": "prompt-1",
+                    "prompt": "First",
+                    "images": [{"id": "img-1", "image_path": "img1.png"}]
+                },
+                {
+                    "id": "prompt-2",
+                    "prompt": "Second",
+                    "images": [{"id": "img-2", "image_path": "img2.png"}]
+                },
+            ],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        data = manager.load()
+
+        # Should find image in second prompt
+        img_data, prompt_data = manager.find_image_by_id(data, "img-2")
+        assert img_data["id"] == "img-2"
+        assert prompt_data["id"] == "prompt-2"

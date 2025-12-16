@@ -13,6 +13,9 @@ import type {
   DesignAxis,
   LibraryItem,
   LibraryItemType,
+  GeneratePromptsRequest,
+  GeneratePromptsResponse,
+  GenerateFromPromptsRequest,
 } from '../types';
 
 const API_BASE = '/api';
@@ -62,6 +65,25 @@ export async function generateImages(data: GenerateRequest): Promise<GenerateRes
 export async function iterateImage(imageId: string): Promise<GenerateResponse> {
   return request<GenerateResponse>(`/iterate/${imageId}`, {
     method: 'POST',
+  });
+}
+
+// Two-Phase Generation
+export async function generatePromptVariations(
+  data: GeneratePromptsRequest
+): Promise<GeneratePromptsResponse> {
+  return request<GeneratePromptsResponse>('/generate-prompts', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function generateFromPrompts(
+  data: GenerateFromPromptsRequest
+): Promise<GenerateResponse> {
+  return request<GenerateResponse>('/generate-images', {
+    method: 'POST',
+    body: JSON.stringify(data),
   });
 }
 
@@ -272,16 +294,17 @@ export async function fetchSettings(): Promise<Settings> {
   return request<Settings>('/settings');
 }
 
-export async function updateSettings(
-  variationPrompt: string,
-  iterationPrompt?: string
-): Promise<{ success: boolean }> {
+export async function updateSettings(settings: {
+  variation_prompt: string;
+  iteration_prompt?: string;
+  image_size?: string;
+  aspect_ratio?: string;
+  seed?: number;
+  safety_level?: string;
+}): Promise<{ success: boolean }> {
   return request<{ success: boolean }>('/settings', {
     method: 'PUT',
-    body: JSON.stringify({
-      variation_prompt: variationPrompt,
-      iteration_prompt: iterationPrompt,
-    }),
+    body: JSON.stringify(settings),
   });
 }
 
@@ -422,3 +445,4 @@ export async function removePromptsFromSession(
     body: JSON.stringify(promptIds),
   });
 }
+

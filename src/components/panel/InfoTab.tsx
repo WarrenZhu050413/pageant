@@ -1,9 +1,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Bookmark, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Bookmark, Trash2, Image as ImageIcon, Type, Palette, FileText } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Badge, Button, Input, Textarea, Dialog } from '../ui';
+import type { LibraryItemType } from '../../types';
+
+const TYPE_CONFIG: Record<LibraryItemType, { label: string; icon: React.ReactNode; description: string }> = {
+  fragment: { label: 'Fragment', icon: <Type size={14} />, description: 'A reusable text snippet' },
+  preset: { label: 'Preset', icon: <Palette size={14} />, description: 'Style tags for quick application' },
+  template: { label: 'Template', icon: <FileText size={14} />, description: 'Full prompt template' },
+};
 
 export function InfoTab() {
   const currentPrompt = useStore((s) => s.getCurrentPrompt());
@@ -54,11 +61,13 @@ export function InfoTab() {
   const [notes, setNotes] = useState('');
   const [caption, setCaption] = useState('');
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
-  const [isSaveTemplateDialogOpen, setIsSaveTemplateDialogOpen] = useState(false);
-  const [templateName, setTemplateName] = useState('');
-  const [templateTags, setTemplateTags] = useState('');
+  const [isSaveToLibraryDialogOpen, setIsSaveToLibraryDialogOpen] = useState(false);
+  const [libraryItemType, setLibraryItemType] = useState<LibraryItemType>('template');
+  const [libraryItemName, setLibraryItemName] = useState('');
+  const [libraryItemContent, setLibraryItemContent] = useState('');
+  const [libraryItemTags, setLibraryItemTags] = useState('');
 
-  const createTemplate = useStore((s) => s.createTemplate);
+  const createLibraryItem = useStore((s) => s.createLibraryItem);
 
   // Sync local state with current image
   useEffect(() => {
@@ -75,26 +84,42 @@ export function InfoTab() {
     }
   };
 
-  const handleSaveTemplate = () => {
-    if (currentPrompt && templateName.trim()) {
-      createTemplate({
-        name: templateName.trim(),
-        prompt: currentPrompt.prompt,
-        category: currentPrompt.category,
-        tags: templateTags.split(',').map((t) => t.trim()).filter(Boolean),
-      });
-      setTemplateName('');
-      setTemplateTags('');
-      setIsSaveTemplateDialogOpen(false);
+  const handleSaveToLibrary = async () => {
+    if (!libraryItemName.trim()) return;
+
+    const data: Parameters<typeof createLibraryItem>[0] = {
+      type: libraryItemType,
+      name: libraryItemName.trim(),
+    };
+
+    if (libraryItemType === 'fragment') {
+      data.text = libraryItemContent || currentPrompt?.prompt || '';
+    } else if (libraryItemType === 'preset') {
+      data.style_tags = libraryItemTags.split(',').map((t) => t.trim()).filter(Boolean);
+    } else if (libraryItemType === 'template') {
+      data.prompt = libraryItemContent || currentPrompt?.prompt || '';
     }
+
+    await createLibraryItem(data);
+    setLibraryItemName('');
+    setLibraryItemContent('');
+    setLibraryItemTags('');
+    setIsSaveToLibraryDialogOpen(false);
   };
 
   // Listen for save-template event from keyboard shortcut
   useEffect(() => {
-    const handler = () => setIsSaveTemplateDialogOpen(true);
+    const handler = () => {
+      // Pre-fill with current prompt content
+      if (currentPrompt) {
+        setLibraryItemContent(currentPrompt.prompt);
+        setLibraryItemName(currentPrompt.title);
+      }
+      setIsSaveToLibraryDialogOpen(true);
+    };
     document.addEventListener('save-template', handler);
     return () => document.removeEventListener('save-template', handler);
-  }, []);
+  }, [currentPrompt]);
 
   if (!currentPrompt) {
     return (
@@ -220,10 +245,17 @@ export function InfoTab() {
           variant="secondary"
           size="sm"
           leftIcon={<Bookmark size={14} />}
-          onClick={() => setIsSaveTemplateDialogOpen(true)}
+          onClick={() => {
+            // Pre-fill with current prompt content
+            if (currentPrompt) {
+              setLibraryItemContent(currentPrompt.prompt);
+              setLibraryItemName(currentPrompt.title);
+            }
+            setIsSaveToLibraryDialogOpen(true);
+          }}
           className="w-full justify-center"
         >
-          Save as Template
+          Save to Library
         </Button>
 
         <Button
@@ -296,36 +328,93 @@ export function InfoTab() {
         </div>
       </Dialog>
 
-      {/* Save template dialog */}
+      {/* Save to Library dialog */}
       <Dialog
-        isOpen={isSaveTemplateDialogOpen}
-        onClose={() => setIsSaveTemplateDialogOpen(false)}
-        title="Save as Template"
+        isOpen={isSaveToLibraryDialogOpen}
+        onClose={() => setIsSaveToLibraryDialogOpen(false)}
+        title="Save to Library"
       >
         <div className="space-y-4">
+          {/* Type selector */}
+          <div>
+            <label className="text-xs font-medium text-ink-secondary block mb-2">Type</label>
+            <div className="flex gap-2">
+              {(['fragment', 'preset', 'template'] as const).map((type) => (
+                <button
+                  key={type}
+                  onClick={() => setLibraryItemType(type)}
+                  className={clsx(
+                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                    libraryItemType === type
+                      ? 'bg-brass text-surface'
+                      : 'bg-canvas-subtle text-ink-secondary hover:bg-canvas-muted'
+                  )}
+                >
+                  {TYPE_CONFIG[type].icon}
+                  {TYPE_CONFIG[type].label}
+                </button>
+              ))}
+            </div>
+            <p className="text-[0.65rem] text-ink-muted mt-1.5">
+              {TYPE_CONFIG[libraryItemType].description}
+            </p>
+          </div>
+
+          {/* Name */}
           <Input
-            label="Template Name"
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            placeholder={currentPrompt.title}
+            label="Name"
+            value={libraryItemName}
+            onChange={(e) => setLibraryItemName(e.target.value)}
+            placeholder={
+              libraryItemType === 'fragment'
+                ? 'e.g., Warm lighting'
+                : libraryItemType === 'preset'
+                  ? 'e.g., Elegant minimal'
+                  : 'e.g., Product shot base'
+            }
             autoFocus
           />
-          <Input
-            label="Tags (comma-separated)"
-            value={templateTags}
-            onChange={(e) => setTemplateTags(e.target.value)}
-            placeholder="portrait, creative, moody"
-          />
+
+          {/* Content based on type */}
+          {libraryItemType === 'fragment' && (
+            <Textarea
+              label="Text"
+              value={libraryItemContent}
+              onChange={(e) => setLibraryItemContent(e.target.value)}
+              placeholder="e.g., warm wood tones, soft lighting, natural shadows"
+              className="min-h-[80px]"
+            />
+          )}
+
+          {libraryItemType === 'preset' && (
+            <Input
+              label="Style Tags (comma-separated)"
+              value={libraryItemTags}
+              onChange={(e) => setLibraryItemTags(e.target.value)}
+              placeholder="e.g., sans-serif, elegant, minimal, cool"
+            />
+          )}
+
+          {libraryItemType === 'template' && (
+            <Textarea
+              label="Full Prompt"
+              value={libraryItemContent}
+              onChange={(e) => setLibraryItemContent(e.target.value)}
+              placeholder="Enter the complete prompt template..."
+              className="min-h-[100px]"
+            />
+          )}
+
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setIsSaveTemplateDialogOpen(false)}>
+            <Button variant="ghost" onClick={() => setIsSaveToLibraryDialogOpen(false)}>
               Cancel
             </Button>
             <Button
               variant="brass"
-              onClick={handleSaveTemplate}
-              disabled={!templateName.trim()}
+              onClick={handleSaveToLibrary}
+              disabled={!libraryItemName.trim()}
             >
-              Save Template
+              Save to Library
             </Button>
           </div>
         </div>

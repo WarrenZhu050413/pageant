@@ -14,7 +14,7 @@ import { Tabs } from '../ui/Tabs';
 import type { LeftTab } from '../../types';
 import { PromptsTab } from './PromptsTab';
 import { CollectionsTab } from './CollectionsTab';
-import { TemplatesTab } from './TemplatesTab';
+import { LibraryTab } from './LibraryTab';
 import { FavoritesTab } from './FavoritesTab';
 import { PreferencesTab } from './PreferencesTab';
 import { SessionsPanel } from './SessionsPanel';
@@ -66,7 +66,7 @@ export function LeftSidebar() {
           >
             {leftTab === 'prompts' && <PromptsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
-            {leftTab === 'library' && <TemplatesTab />}
+            {leftTab === 'library' && <LibraryTab />}
             {leftTab === 'favorites' && <FavoritesTab />}
             {leftTab === 'preferences' && <PreferencesTab />}
           </motion.div>

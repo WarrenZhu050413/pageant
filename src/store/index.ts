@@ -16,6 +16,7 @@ import type {
   DesignAxis,
   LibraryItem,
   LibraryItemType,
+  PromptVariation,
 } from '../types';
 import * as api from '../api';
 
@@ -58,6 +59,13 @@ interface AppStore {
   currentSessionId: string | null;
   notes: string;
 
+  // Two-Phase Generation (Prompt Variations)
+  promptVariations: PromptVariation[];
+  isGeneratingVariations: boolean;
+  variationsBasePrompt: string;
+  variationsTitle: string;
+  showPromptPreview: boolean;
+
   // Actions
   initialize: () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -92,8 +100,33 @@ interface AppStore {
     title: string;
     category?: string;
     count?: number;
+    // Image generation params (override settings defaults)
+    image_size?: string;
+    aspect_ratio?: string;
+    seed?: number;
+    safety_level?: string;
   }) => Promise<void>;
   iterate: (imageId: string) => Promise<void>;
+
+  // Two-Phase Generation Actions
+  generateVariations: (params: {
+    prompt: string;
+    title: string;
+    count?: number;
+    // Image generation params (override settings defaults)
+    image_size?: string;
+    aspect_ratio?: string;
+    seed?: number;
+    safety_level?: string;
+  }) => Promise<void>;
+  updateVariation: (id: string, newText: string) => void;
+  removeVariation: (id: string) => void;
+  duplicateVariation: (id: string) => void;
+  regenerateSingleVariation: (id: string) => Promise<void>;
+  generateFromVariations: () => Promise<void>;
+  addMoreVariations: (count?: number) => Promise<void>;
+  clearVariations: () => void;
+  setShowPromptPreview: (show: boolean) => void;
 
   // Favorites
   toggleFavorite: (imageId: string) => Promise<void>;
@@ -140,7 +173,14 @@ interface AppStore {
   viewCollection: (id: string) => void;
 
   // Settings
-  updateSettings: (variationPrompt: string, iterationPrompt?: string) => Promise<void>;
+  updateSettings: (settings: {
+    variation_prompt: string;
+    iteration_prompt?: string;
+    image_size?: string;
+    aspect_ratio?: string;
+    seed?: number;
+    safety_level?: string;
+  }) => Promise<void>;
 
   // Upload
   uploadImages: (files: File[]) => Promise<void>;
@@ -187,7 +227,7 @@ export const useStore = create<AppStore>()(
       currentImageIndex: 0,
       viewMode: 'single',
       leftTab: 'prompts',
-      rightTab: 'info',
+      rightTab: 'generate',
 
       selectionMode: 'none',
       selectedIds: new Set(),
@@ -202,6 +242,13 @@ export const useStore = create<AppStore>()(
       sessions: [],
       currentSessionId: null,
       notes: '',
+
+      // Two-Phase Generation (Prompt Variations)
+      promptVariations: [],
+      isGeneratingVariations: false,
+      variationsBasePrompt: '',
+      variationsTitle: '',
+      showPromptPreview: false,
 
       // Prompt selection for bulk operations
       selectedPromptIds: new Set(),
@@ -361,7 +408,7 @@ export const useStore = create<AppStore>()(
       clearContextImages: () => set({ contextImageIds: [] }),
 
       // Generation
-      generate: async ({ prompt, title, category, count }) => {
+      generate: async ({ prompt, title, category, count, image_size, aspect_ratio, seed, safety_level }) => {
         const { contextImageIds, pendingPrompts, currentSessionId } = get();
 
         // Create pending prompt
@@ -379,6 +426,10 @@ export const useStore = create<AppStore>()(
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
+            image_size,
+            aspect_ratio,
+            seed,
+            safety_level,
           });
 
           // Remove pending and refresh
@@ -419,6 +470,184 @@ export const useStore = create<AppStore>()(
         } catch (error) {
           set({ isGenerating: false, error: (error as Error).message });
         }
+      },
+
+      // Two-Phase Generation Actions
+      generateVariations: async ({ prompt, title, count = 4 }) => {
+        const { contextImageIds } = get();
+
+        set({
+          isGeneratingVariations: true,
+          error: null,
+          variationsBasePrompt: prompt,
+          variationsTitle: title,
+          showPromptPreview: true,
+        });
+
+        try {
+          const response = await api.generatePromptVariations({
+            prompt,
+            count,
+            context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+          });
+
+          if (response.success) {
+            set({
+              promptVariations: response.variations,
+              isGeneratingVariations: false,
+            });
+          } else {
+            set({
+              isGeneratingVariations: false,
+              error: response.error || 'Failed to generate variations',
+            });
+          }
+        } catch (error) {
+          set({
+            isGeneratingVariations: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      updateVariation: (id, newText) => {
+        const { promptVariations } = get();
+        set({
+          promptVariations: promptVariations.map((v) =>
+            v.id === id ? { ...v, text: newText } : v
+          ),
+        });
+      },
+
+      removeVariation: (id) => {
+        const { promptVariations } = get();
+        set({
+          promptVariations: promptVariations.filter((v) => v.id !== id),
+        });
+      },
+
+      duplicateVariation: (id) => {
+        const { promptVariations } = get();
+        const original = promptVariations.find((v) => v.id === id);
+        if (!original) return;
+
+        const newVariation: PromptVariation = {
+          ...original,
+          id: `var-${Date.now().toString(36)}`,
+        };
+
+        // Insert after the original
+        const index = promptVariations.findIndex((v) => v.id === id);
+        const newVariations = [...promptVariations];
+        newVariations.splice(index + 1, 0, newVariation);
+
+        set({ promptVariations: newVariations });
+      },
+
+      regenerateSingleVariation: async (id) => {
+        const { variationsBasePrompt, contextImageIds } = get();
+
+        try {
+          // Generate a single new variation
+          const response = await api.generatePromptVariations({
+            prompt: variationsBasePrompt,
+            count: 1,
+            context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+          });
+
+          if (response.success && response.variations.length > 0) {
+            const { promptVariations } = get();
+            set({
+              promptVariations: promptVariations.map((v) =>
+                v.id === id ? { ...response.variations[0], id } : v
+              ),
+            });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      addMoreVariations: async (count = 2) => {
+        const { variationsBasePrompt, contextImageIds, promptVariations } = get();
+
+        set({ isGeneratingVariations: true });
+
+        try {
+          const response = await api.generatePromptVariations({
+            prompt: variationsBasePrompt,
+            count,
+            context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+          });
+
+          if (response.success) {
+            set({
+              promptVariations: [...promptVariations, ...response.variations],
+              isGeneratingVariations: false,
+            });
+          } else {
+            set({ isGeneratingVariations: false });
+          }
+        } catch (error) {
+          set({
+            isGeneratingVariations: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      generateFromVariations: async () => {
+        const { promptVariations, variationsTitle, contextImageIds, currentSessionId } = get();
+
+        if (promptVariations.length === 0) return;
+
+        set({ isGenerating: true, showPromptPreview: false, error: null });
+
+        try {
+          const response = await api.generateFromPrompts({
+            title: variationsTitle,
+            prompts: promptVariations.map((v) => ({
+              text: v.text,
+              mood: v.mood,
+            })),
+            context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+            session_id: currentSessionId || undefined,
+          });
+
+          // Clear variations and refresh
+          set({
+            promptVariations: [],
+            variationsBasePrompt: '',
+            variationsTitle: '',
+          });
+
+          await get().refreshData();
+
+          set({
+            currentPromptId: response.prompt_id,
+            currentImageIndex: 0,
+            isGenerating: false,
+            contextImageIds: [],
+          });
+        } catch (error) {
+          set({
+            isGenerating: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      clearVariations: () => {
+        set({
+          promptVariations: [],
+          variationsBasePrompt: '',
+          variationsTitle: '',
+          showPromptPreview: false,
+        });
+      },
+
+      setShowPromptPreview: (show) => {
+        set({ showPromptPreview: show });
       },
 
       // Favorites
@@ -684,9 +913,9 @@ export const useStore = create<AppStore>()(
       },
 
       // Settings
-      updateSettings: async (variationPrompt, iterationPrompt) => {
+      updateSettings: async (settingsUpdate) => {
         try {
-          await api.updateSettings(variationPrompt, iterationPrompt);
+          await api.updateSettings(settingsUpdate);
           // Refresh settings to get the updated values
           const settings = await api.fetchSettings();
           set({ settings });

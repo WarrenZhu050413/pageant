@@ -1,30 +1,8 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { RotateCcw, Save, Check, Info } from 'lucide-react';
+import { Save, Check, Info, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Button, Textarea, Badge } from '../ui';
-
-const DEFAULT_VARIATION_PROMPT = `You are a creative prompt variation generator. Given a base prompt and a count, generate that many unique scene descriptions that maintain the core subject but vary the environment, lighting, mood, composition, and artistic style.
-
-Each variation should be a complete, detailed scene description. Make each one distinctly different while staying true to the original subject.
-
-For a base prompt of "{base_prompt}" generate {count} variations.
-
-Return your response in this XML format:
-<variations>
-  <variation>
-    <description>Complete scene description here</description>
-    <mood>one-word mood descriptor</mood>
-    <type>variation type (e.g., lighting, environment, style)</type>
-  </variation>
-  ...repeat for each variation...
-</variations>`;
-
-const DEFAULT_ITERATION_PROMPT = `Create a variation of this image while maintaining its core essence.
-Focus on: {focus}
-Original concept: {original_prompt}
-
-Generate a new scene description that explores this direction while keeping the fundamental visual identity.`;
 
 export function SettingsTab() {
   const settings = useStore((s) => s.settings);
@@ -35,15 +13,17 @@ export function SettingsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Sync with settings
+  // Sync with settings from backend (backend always returns defaults if not set)
+  const serverVariation = settings?.variation_prompt;
+  const serverIteration = settings?.iteration_prompt;
+
   useEffect(() => {
-    if (settings?.variation_prompt) {
-      setVariationPrompt(settings.variation_prompt);
-    }
-    if (settings?.iteration_prompt) {
-      setIterationPrompt(settings.iteration_prompt);
-    }
-  }, [settings?.variation_prompt, settings?.iteration_prompt]);
+    if (serverVariation) setVariationPrompt(serverVariation);
+  }, [serverVariation]);
+
+  useEffect(() => {
+    if (serverIteration) setIterationPrompt(serverIteration);
+  }, [serverIteration]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -56,16 +36,16 @@ export function SettingsTab() {
     }
   };
 
-  const handleResetVariation = () => {
-    setVariationPrompt(DEFAULT_VARIATION_PROMPT);
-  };
+  const hasChanges = variationPrompt !== serverVariation || iterationPrompt !== serverIteration;
+  const isLoading = !settings;
 
-  const handleResetIteration = () => {
-    setIterationPrompt(DEFAULT_ITERATION_PROMPT);
-  };
-
-  const hasChanges = variationPrompt !== settings?.variation_prompt ||
-    iterationPrompt !== settings?.iteration_prompt;
+  if (isLoading) {
+    return (
+      <div className="p-4 flex items-center justify-center h-64">
+        <Loader2 className="w-6 h-6 animate-spin text-ink-muted" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-6">
@@ -107,14 +87,6 @@ export function SettingsTab() {
               Controls how image variations are generated
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<RotateCcw size={12} />}
-            onClick={handleResetVariation}
-          >
-            Reset
-          </Button>
         </div>
 
         <Textarea
@@ -157,14 +129,6 @@ export function SettingsTab() {
               Controls how image-to-image variations are generated
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<RotateCcw size={12} />}
-            onClick={handleResetIteration}
-          >
-            Reset
-          </Button>
         </div>
 
         <Textarea

@@ -13,8 +13,7 @@ import {
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { IconButton } from '../ui';
-import { DesignTagBar, AxisPreferenceButtons } from '../design';
-import type { DesignAxis } from '../../types';
+import { InfoOverlay } from './InfoOverlay';
 
 export function SingleView() {
   const currentPrompt = useStore((s) => s.getCurrentPrompt());
@@ -30,9 +29,7 @@ export function SingleView() {
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const selectedIds = useStore((s) => s.selectedIds);
-  const updateDesignTags = useStore((s) => s.updateDesignTags);
-  const toggleAxisLike = useStore((s) => s.toggleAxisLike);
-  const addContextImage = useStore((s) => s.addContextImage);
+  const setContextImages = useStore((s) => s.setContextImages);
 
   if (!currentPrompt || !currentImage) {
     return (
@@ -53,7 +50,7 @@ export function SingleView() {
   return (
     <div className="h-full flex flex-col">
       {/* Image Container */}
-      <div className="flex-1 relative flex items-center justify-center p-6">
+      <div className="flex-1 relative flex items-center justify-center p-4 min-h-0">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
           <button
@@ -94,7 +91,7 @@ export function SingleView() {
             <img
               src={getImageUrl(currentImage.image_path)}
               alt={currentPrompt.title}
-              className="max-h-[calc(100vh-280px)] max-w-full object-contain"
+              className="max-h-full max-w-full object-contain"
             />
 
             {/* Overlay Actions */}
@@ -114,10 +111,10 @@ export function SingleView() {
                   </IconButton>
                   <IconButton
                     variant="default"
-                    tooltip="Use as context"
+                    tooltip="Use as context (replaces existing)"
                     onClick={(e) => {
                       e.stopPropagation();
-                      addContextImage(currentImage.id);
+                      setContextImages([currentImage.id]);
                     }}
                     className="bg-surface/90 backdrop-blur-sm"
                   >
@@ -227,7 +224,7 @@ export function SingleView() {
       </div>
 
       {/* Dot Navigation */}
-      <div className="flex justify-center gap-2 pb-4">
+      <div className="flex justify-center gap-2 py-2">
         {currentPrompt.images.map((img, index) => {
           const isActive = index === currentImageIndex;
           const imgIsFavorite = isImageFavorite(img.id);
@@ -248,26 +245,8 @@ export function SingleView() {
         })}
       </div>
 
-      {/* Design Axis System */}
-      <div className="px-6 pb-4 space-y-3">
-        <DesignTagBar
-          tags={currentImage.design_tags || []}
-          onTagsChange={(tags) => updateDesignTags(currentImage.id, tags)}
-        />
-        <AxisPreferenceButtons
-          tags={currentImage.design_tags || []}
-          likedAxes={currentImage.liked_axes || {}}
-          onTagToggle={(axis: DesignAxis, tag: string, liked: boolean) =>
-            toggleAxisLike(currentImage.id, axis, tag, liked)
-          }
-          onAddTag={(tag) => {
-            const currentTags = currentImage.design_tags || [];
-            if (!currentTags.includes(tag)) {
-              updateDesignTags(currentImage.id, [...currentTags, tag]);
-            }
-          }}
-        />
-      </div>
+      {/* Info Panel */}
+      <InfoOverlay />
     </div>
   );
 }

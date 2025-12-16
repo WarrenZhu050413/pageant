@@ -1,14 +1,12 @@
 import { motion, AnimatePresence } from 'framer-motion';
-import { Info, Wand2, Settings } from 'lucide-react';
+import { Wand2, Settings } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
 import type { RightTab } from '../../types';
-import { InfoTab } from './InfoTab';
 import { GenerateTab } from './GenerateTab';
 import { SettingsTab } from './SettingsTab';
 
 const tabs = [
-  { id: 'info', label: 'Info', icon: <Info size={14} /> },
   { id: 'generate', label: 'Generate', icon: <Wand2 size={14} /> },
   { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
 ];
@@ -37,7 +35,6 @@ export function RightPanel() {
             transition={{ duration: 0.15 }}
             className="h-full overflow-y-auto"
           >
-            {rightTab === 'info' && <InfoTab />}
             {rightTab === 'generate' && <GenerateTab />}
             {rightTab === 'settings' && <SettingsTab />}
           </motion.div>

@@ -78,3 +78,21 @@ class MetadataManager:
         """
         with open(self.metadata_path, "w") as f:
             json.dump(data, f, indent=2)
+
+    def find_image_by_id(
+        self, metadata: dict, image_id: str
+    ) -> tuple[dict | None, dict | None]:
+        """Find an image by ID and return its data along with parent prompt.
+
+        Args:
+            metadata: The metadata dictionary to search
+            image_id: The image ID to find
+
+        Returns:
+            tuple: (image_data, prompt_data) if found, (None, None) otherwise
+        """
+        for prompt_data in metadata.get("prompts", []):
+            for img in prompt_data.get("images", []):
+                if img.get("id") == image_id:
+                    return img, prompt_data
+        return None, None

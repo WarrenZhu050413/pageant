@@ -42,6 +42,17 @@ class TextResult:
     usage: dict[str, Any] | None = None
 
 
+@dataclass
+class DesignAnnotation:
+    """Design dimension annotations for an image.
+
+    Fully dynamic - axes is a dict mapping axis name to list of tags.
+    Example: {"colors": ["warm", "vibrant"], "mood": ["elegant"]}
+    """
+    axes: dict[str, list[str]]  # Dynamic axis → tags mapping
+    raw_response: str = ""  # Original model response for debugging
+
+
 class GeminiService:
     """Service for Gemini image and text generation."""
 
@@ -55,30 +66,77 @@ class GeminiService:
         self.client = genai.Client(api_key=self.api_key)
 
     async def generate_image(
-        self, prompt: str, input_image: bytes | None = None, input_mime_type: str = "image/png"
+        self,
+        prompt: str,
+        context_images: list[tuple[bytes, str, str | None]] | None = None,
+        image_size: str | None = None,
+        aspect_ratio: str | None = None,
+        seed: int | None = None,
+        safety_level: str | None = None,
     ) -> ImageResult:
-        """Generate images using Gemini Nano Banana Pro.
+        """Generate images using Gemini with interleaved context.
 
         Args:
             prompt: Text prompt for generation
-            input_image: Optional image bytes for image-to-image generation
-            input_mime_type: MIME type of input image
+            context_images: Optional list of (image_bytes, mime_type, caption) tuples.
+                           Each image is interleaved with its caption for better context.
+            image_size: Output size - "1K", "2K", or "4K"
+            aspect_ratio: Output aspect ratio - "1:1", "16:9", etc.
+            seed: Random seed for reproducibility
+            safety_level: Safety filter level - "BLOCK_NONE", "BLOCK_ONLY_HIGH", etc.
         """
         model_name = self.DEFAULT_IMAGE_MODEL
         start_time = time.time()
 
-        print(f"[{model_name}] Generating image{'  (with input image)' if input_image else ''}...")
+        num_images = len(context_images) if context_images else 0
+        params_info = []
+        if image_size:
+            params_info.append(f"size={image_size}")
+        if aspect_ratio:
+            params_info.append(f"ratio={aspect_ratio}")
+        if seed is not None:
+            params_info.append(f"seed={seed}")
+        params_str = f" ({', '.join(params_info)})" if params_info else ""
+        print(f"[{model_name}] Generating image with {num_images} context image(s){params_str}...")
+
+        # Build image config if any image-specific params are set
+        image_config = None
+        if image_size or aspect_ratio:
+            image_config = types.ImageGenerationConfig(
+                image_size=image_size,
+                aspect_ratio=aspect_ratio,
+            )
+
+        # Build safety settings if specified
+        safety_settings = None
+        if safety_level:
+            # Apply to all relevant harm categories
+            harm_categories = [
+                "HARM_CATEGORY_HARASSMENT",
+                "HARM_CATEGORY_HATE_SPEECH",
+                "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "HARM_CATEGORY_DANGEROUS_CONTENT",
+            ]
+            safety_settings = [
+                types.SafetySetting(category=cat, threshold=safety_level)
+                for cat in harm_categories
+            ]
 
         config = types.GenerateContentConfig(
             response_modalities=["IMAGE"],
+            image_generation_config=image_config,
+            safety_settings=safety_settings,
+            seed=seed,
         )
 
-        # Build contents - text + optional image
-        if input_image:
-            contents = [
-                types.Part.from_bytes(data=input_image, mime_type=input_mime_type),
-                prompt,
-            ]
+        # Build interleaved contents: [img1, caption1, img2, caption2, ..., prompt]
+        if context_images:
+            contents = []
+            for i, (img_bytes, mime_type, caption) in enumerate(context_images):
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                if caption:
+                    contents.append(f"Reference {i+1}: {caption}")
+            contents.append(prompt)
         else:
             contents = prompt
 
@@ -90,7 +148,16 @@ class GeminiService:
             )
         except Exception as e:
             elapsed = time.time() - start_time
-            print(f"[ERROR] Generation failed after {elapsed:.1f}s: {e}")
+            # Log detailed error information
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"[ERROR] Generation failed after {elapsed:.1f}s")
+            print(f"  Error Type: {error_type}")
+            print(f"  Error Message: {error_msg}")
+            if hasattr(e, 'status_code'):
+                print(f"  Status Code: {e.status_code}")
+            if hasattr(e, 'reason'):
+                print(f"  Reason: {e.reason}")
             raise
 
         elapsed = time.time() - start_time
@@ -169,7 +236,16 @@ class GeminiService:
             )
         except Exception as e:
             elapsed = time.time() - start_time
-            print(f"[ERROR] Generation failed after {elapsed:.1f}s: {e}")
+            # Log detailed error information
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"[ERROR] Text generation failed after {elapsed:.1f}s")
+            print(f"  Error Type: {error_type}")
+            print(f"  Error Message: {error_msg}")
+            if hasattr(e, 'status_code'):
+                print(f"  Status Code: {e.status_code}")
+            if hasattr(e, 'reason'):
+                print(f"  Reason: {e.reason}")
             raise
 
         elapsed = time.time() - start_time
@@ -244,3 +320,140 @@ class GeminiService:
         )
         result = await self.generate_text(formatted_prompt)
         return result.text
+
+    async def annotate_design_dimensions(
+        self,
+        image_bytes: bytes,
+        image_mime_type: str = "image/jpeg",
+    ) -> DesignAnnotation:
+        """Analyze an image along design dimensions for preference learning.
+
+        Args:
+            image_bytes: Raw image bytes
+            image_mime_type: MIME type of the image
+
+        Returns:
+            DesignAnnotation with detected values for each axis
+        """
+        import json
+        import re
+
+        prompt = """Analyze this image along these design dimensions. For each dimension, list ALL applicable tags (you can select multiple per dimension).
+
+DIMENSIONS AND SUGGESTED TAGS:
+NOTE: These are suggested tags. You may use novel, specific tags when they better describe the image.
+For example: "film-noir", "golden-hour", "dutch-angle", "neon-glow", "hand-lettered" are all valid.
+Be precise and descriptive - the system learns from your annotations.
+
+colors (pick from any subcategory):
+  Palette type: monochromatic, complementary, analogous, triadic, split-complementary, tetradic
+  Temperature: warm, cool, neutral
+  Saturation: vibrant, muted, pastel, saturated, desaturated, earthy
+  Contrast: high-contrast, low-contrast, subtle-gradients
+  Mood-based: moody-dark, light-airy, rich-jewel-tones, soft-naturals
+
+composition (pick from any subcategory):
+  Framing: close-up, medium-shot, wide-angle, extreme-close-up, bird's-eye, worm's-eye
+  Balance: rule-of-thirds, symmetrical, asymmetrical, centered, golden-ratio
+  Lines: diagonal, horizontal, vertical, curved, leading-lines
+  Depth: layered, shallow-depth, deep-focus, foreground-focus, atmospheric-perspective
+  Space: negative-space, framed, contained, expansive, cropped-tight
+
+mood: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, contemplative, whimsical, bold, intimate, grand, nostalgic, futuristic
+
+layout (pick from any subcategory):
+  Structure: centered, asymmetric, grid, modular, freeform
+  Density: dense, spacious, balanced, clustered, scattered
+  Flow: dynamic, static, radial, linear, organic
+  Hierarchy: focal-point, distributed, progressive, nested
+
+aesthetic (pick from any subcategory):
+  Realism: photorealistic, hyperrealistic, stylized-realism
+  Illustration: illustrated, flat-design, line-art, hand-drawn, vector
+  Digital: 3D-rendered, CGI, digital-painting, pixel-art, low-poly
+  Movement: art-nouveau, art-deco, bauhaus, swiss-style, brutalist
+  Era: retro, vintage, mid-century, 80s-aesthetic, Y2K, modern, futuristic
+  Approach: minimalist, maximalist, abstract, surreal, collage, mixed-media
+
+typeface_feel (pick from any subcategory):
+  Category: sans-serif, serif, slab-serif, monospace, display, script
+  Weight: light, regular, medium, bold, black
+  Character: geometric, humanist, elegant, playful, technical, editorial
+
+Return ONLY a JSON object mapping each axis to its tags (no markdown, no explanation):
+{
+  "colors": ["warm", "vibrant"],
+  "composition": ["rule-of-thirds", "layered"],
+  "mood": ["dramatic", "bold"],
+  "layout": ["asymmetric", "dynamic"],
+  "aesthetic": ["minimalist", "modern"],
+  "typeface_feel": ["sans-serif", "geometric"]
+}"""
+
+        model_name = self.DEFAULT_TEXT_MODEL
+        start_time = time.time()
+
+        print(f"[{model_name}] Annotating design dimensions...")
+
+        config = types.GenerateContentConfig(
+            system_instruction="You are a design analyst. Return only valid JSON, no markdown formatting.",
+        )
+
+        contents = [
+            types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type),
+            prompt,
+        ]
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            elapsed = time.time() - start_time
+            # Log detailed error information
+            error_msg = str(e)
+            error_type = type(e).__name__
+            print(f"[ERROR] Annotation failed after {elapsed:.1f}s")
+            print(f"  Error Type: {error_type}")
+            print(f"  Error Message: {error_msg}")
+            if hasattr(e, 'status_code'):
+                print(f"  Status Code: {e.status_code}")
+            if hasattr(e, 'reason'):
+                print(f"  Reason: {e.reason}")
+            raise
+
+        elapsed = time.time() - start_time
+
+        # Extract text response
+        text = ""
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            text += part.text
+
+        print(f"[OK] Annotated in {elapsed:.1f}s")
+
+        # Parse JSON response
+        try:
+            # Clean up response (remove markdown code blocks if present)
+            clean_text = text.strip()
+            if clean_text.startswith("```"):
+                clean_text = re.sub(r"^```(?:json)?\n?", "", clean_text)
+                clean_text = re.sub(r"\n?```$", "", clean_text)
+
+            data = json.loads(clean_text)
+
+            # Parse all axes dynamically - any key with list value is an axis
+            axes = {}
+            for key, value in data.items():
+                if isinstance(value, list):
+                    axes[key] = value
+
+            return DesignAnnotation(axes=axes, raw_response=text)
+        except json.JSONDecodeError as e:
+            print(f"[WARN] Failed to parse annotation JSON: {e}")
+            return DesignAnnotation(axes={}, raw_response=text)
