@@ -23,6 +23,7 @@ export function PromptsTab() {
   };
 
   const allItems: PromptItem[] = [
+    // Pending prompts always at top
     ...Array.from(pendingPrompts.entries()).map(([id, data]) => ({
       id,
       title: data.title,
@@ -30,16 +31,20 @@ export function PromptsTab() {
       isPending: true as const,
       created_at: new Date().toISOString(),
     })),
-    ...prompts.map((p) => ({
-      id: p.id,
-      title: p.title,
-      prompt: p.prompt,
-      category: p.category,
-      count: p.images.length,
-      isPending: false as const,
-      created_at: p.created_at,
-      thumbnail: p.images[0]?.image_path,
-    })),
+    // Sort actual prompts by created_at descending (newest first)
+    ...prompts
+      .slice()
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        prompt: p.prompt,
+        category: p.category,
+        count: p.images.length,
+        isPending: false as const,
+        created_at: p.created_at,
+        thumbnail: p.images[0]?.image_path,
+      })),
   ];
 
   if (allItems.length === 0) {
