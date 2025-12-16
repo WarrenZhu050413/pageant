@@ -481,7 +481,7 @@ export const useStore = create<AppStore>()(
       },
 
       // Two-Phase Generation Actions
-      generateVariations: async ({ prompt, title, count = 4 }) => {
+      generateVariations: async ({ prompt, title, count = 4, image_size, aspect_ratio, seed, safety_level }) => {
         const { contextImageIds } = get();
 
         set({
@@ -490,6 +490,7 @@ export const useStore = create<AppStore>()(
           variationsBasePrompt: prompt,
           variationsTitle: title,
           showPromptPreview: true,
+          variationsImageParams: { image_size, aspect_ratio, seed, safety_level },
         });
 
         try {
@@ -497,6 +498,10 @@ export const useStore = create<AppStore>()(
             prompt,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+            image_size,
+            aspect_ratio,
+            seed,
+            safety_level,
           });
 
           if (response.success) {
@@ -605,7 +610,7 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromVariations: async () => {
-        const { promptVariations, variationsTitle, contextImageIds, currentSessionId } = get();
+        const { promptVariations, variationsTitle, contextImageIds, currentSessionId, variationsImageParams } = get();
 
         if (promptVariations.length === 0) return;
 
@@ -620,6 +625,7 @@ export const useStore = create<AppStore>()(
             })),
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
+            ...variationsImageParams,
           });
 
           // Clear variations and refresh
@@ -627,6 +633,7 @@ export const useStore = create<AppStore>()(
             promptVariations: [],
             variationsBasePrompt: '',
             variationsTitle: '',
+            variationsImageParams: {},
           });
 
           await get().refreshData();
@@ -651,6 +658,7 @@ export const useStore = create<AppStore>()(
           variationsBasePrompt: '',
           variationsTitle: '',
           showPromptPreview: false,
+          variationsImageParams: {},
         });
       },
 

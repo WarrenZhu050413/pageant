@@ -10,6 +10,11 @@ class MetadataManager:
     """Manages metadata loading, saving, and common operations.
 
     Centralizes the repeated load/save pattern used throughout server.py.
+
+    Can be used as a context manager for atomic operations:
+        with MetadataManager(path, dir) as data:
+            data["prompts"].append(...)
+        # Auto-saves on exit
     """
 
     def __init__(self, metadata_path: Path, images_dir: Path):
@@ -21,6 +26,29 @@ class MetadataManager:
         """
         self.metadata_path = metadata_path
         self.images_dir = images_dir
+        self._context_data: dict | None = None
+
+    def __enter__(self) -> dict:
+        """Enter context manager, loading metadata.
+
+        Returns:
+            dict: The loaded metadata dictionary
+        """
+        self._context_data = self.load()
+        return self._context_data
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        """Exit context manager, saving metadata.
+
+        Saves data even if an exception occurred.
+
+        Returns:
+            bool: False to propagate any exception
+        """
+        if self._context_data is not None:
+            self.save(self._context_data)
+            self._context_data = None
+        return False  # Don't suppress exceptions
 
     def load(self) -> dict:
         """Load existing metadata or create new with default structure.

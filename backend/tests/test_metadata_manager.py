@@ -281,3 +281,70 @@ class TestMetadataManagerFindPrompt:
         prompt = manager.find_prompt_by_id(data, "nonexistent")
 
         assert prompt is None
+
+
+class TestMetadataManagerContextManager:
+    """Test context manager functionality."""
+
+    def test_context_manager_loads_metadata(self, tmp_path):
+        """Context manager loads metadata on entry."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [{"id": "p1", "prompt": "Test"}],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        with manager as data:
+            assert data["prompts"][0]["id"] == "p1"
+
+    def test_context_manager_saves_on_exit(self, tmp_path):
+        """Context manager saves metadata on exit."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        manager = MetadataManager(metadata_path, images_dir)
+        with manager as data:
+            data["prompts"].append({"id": "new-prompt", "prompt": "Added"})
+
+        # Verify file was saved
+        with open(metadata_path) as f:
+            saved = json.load(f)
+        assert len(saved["prompts"]) == 1
+        assert saved["prompts"][0]["id"] == "new-prompt"
+
+    def test_context_manager_saves_on_exception(self, tmp_path):
+        """Context manager saves even when exception occurs."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        manager = MetadataManager(metadata_path, images_dir)
+        try:
+            with manager as data:
+                data["prompts"].append({"id": "before-error", "prompt": "Test"})
+                raise ValueError("Test error")
+        except ValueError:
+            pass
+
+        # Verify file was still saved
+        with open(metadata_path) as f:
+            saved = json.load(f)
+        assert len(saved["prompts"]) == 1
+        assert saved["prompts"][0]["id"] == "before-error"
