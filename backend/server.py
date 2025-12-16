@@ -260,6 +260,31 @@ class SettingsRequest(BaseModel):
     safety_level: str | None = None  # "BLOCK_NONE", etc.
 
 
+# === Standardized Response Models ===
+from typing import Any, Generic, TypeVar
+
+T = TypeVar("T")
+
+
+class ListResponse(BaseModel):
+    """Standardized response for list endpoints."""
+    items: list[Any]
+    count: int | None = None
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        if self.count is None:
+            self.count = len(self.items)
+
+
+class MutationResponse(BaseModel):
+    """Standardized response for mutation endpoints."""
+    success: bool
+    id: str | None = None
+    item: dict | None = None
+    message: str | None = None
+
+
 def load_metadata() -> dict:
     """Load existing metadata or create new.
 

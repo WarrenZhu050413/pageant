@@ -454,6 +454,33 @@ class TestMetadataManagerDeleteImage:
         assert metadata["favorites"] == []
 
 
+class TestResponseModels:
+    """Test standardized API response models."""
+
+    def test_list_response_structure(self):
+        """ListResponse has items and count fields."""
+        from server import ListResponse
+
+        response = ListResponse(items=[{"id": "1"}, {"id": "2"}], count=2)
+        assert response.items == [{"id": "1"}, {"id": "2"}]
+        assert response.count == 2
+
+    def test_list_response_auto_count(self):
+        """ListResponse auto-calculates count if not provided."""
+        from server import ListResponse
+
+        response = ListResponse(items=[{"id": "1"}, {"id": "2"}, {"id": "3"}])
+        assert response.count == 3
+
+    def test_mutation_response_success(self):
+        """MutationResponse indicates success."""
+        from server import MutationResponse
+
+        response = MutationResponse(success=True, id="item-123")
+        assert response.success is True
+        assert response.id == "item-123"
+
+
 class TestGenerateFallbackVariations:
     """Test generate_fallback_variations helper function."""
 
