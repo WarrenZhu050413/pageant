@@ -103,12 +103,7 @@ interface AppStore {
     title: string;
     category?: string;
     count?: number;
-    // Image generation params (override settings defaults)
-    image_size?: string;
-    aspect_ratio?: string;
-    seed?: number;
-    safety_level?: string;
-  }) => Promise<void>;
+  } & ImageGenerationParams) => Promise<void>;
   iterate: (imageId: string) => Promise<void>;
 
   // Two-Phase Generation Actions
@@ -116,12 +111,7 @@ interface AppStore {
     prompt: string;
     title: string;
     count?: number;
-    // Image generation params (override settings defaults)
-    image_size?: string;
-    aspect_ratio?: string;
-    seed?: number;
-    safety_level?: string;
-  }) => Promise<void>;
+  } & ImageGenerationParams) => Promise<void>;
   updateVariation: (id: string, newText: string) => void;
   removeVariation: (id: string) => void;
   duplicateVariation: (id: string) => void;

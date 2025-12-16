@@ -20,7 +20,7 @@ import { getImageUrl } from '../../api';
 import { Button, Input, Textarea } from '../ui';
 import { PromptPreviewModal } from '../modals/PromptPreviewModal';
 import { ImagePickerModal } from '../modals/ImagePickerModal';
-import type { Template } from '../../types';
+import type { Template, ImageSize, AspectRatio, SafetyLevel } from '../../types';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from '../../types';
 
 type ImagePickerSource = 'favorites' | 'collection';
@@ -168,10 +168,10 @@ export function GenerateTab() {
 
   // Build image generation params from advanced options
   const buildImageParams = () => ({
-    image_size: imageSize || undefined,
-    aspect_ratio: aspectRatio || undefined,
+    image_size: (imageSize || undefined) as ImageSize | undefined,
+    aspect_ratio: (aspectRatio || undefined) as AspectRatio | undefined,
     seed: seed ? parseInt(seed, 10) : undefined,
-    safety_level: safetyLevel || undefined,
+    safety_level: (safetyLevel || undefined) as SafetyLevel | undefined,
   });
 
   // Generate variations (two-phase workflow - default)
