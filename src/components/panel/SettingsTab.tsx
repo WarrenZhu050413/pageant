@@ -2,7 +2,15 @@ import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { Save, Check, Info, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
-import { Button, Textarea, Badge } from '../ui';
+import { Button, Textarea, Badge, Input } from '../ui';
+import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS } from '../../types';
+
+// Price per image for display
+const SIZE_PRICES: Record<string, string> = {
+  '1K': '$0.039',
+  '2K': '$0.134',
+  '4K': '$0.24',
+};
 
 export function SettingsTab() {
   const settings = useStore((s) => s.settings);
@@ -10,12 +18,22 @@ export function SettingsTab() {
 
   const [variationPrompt, setVariationPrompt] = useState('');
   const [iterationPrompt, setIterationPrompt] = useState('');
+  // Image generation defaults
+  const [imageSize, setImageSize] = useState<string>('');
+  const [aspectRatio, setAspectRatio] = useState<string>('');
+  const [seed, setSeed] = useState<string>('');
+  const [safetyLevel, setSafetyLevel] = useState<string>('');
+
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
   // Sync with settings from backend (backend always returns defaults if not set)
   const serverVariation = settings?.variation_prompt;
   const serverIteration = settings?.iteration_prompt;
+  const serverImageSize = settings?.image_size ?? '';
+  const serverAspectRatio = settings?.aspect_ratio ?? '';
+  const serverSeed = settings?.seed?.toString() ?? '';
+  const serverSafetyLevel = settings?.safety_level ?? '';
 
   useEffect(() => {
     if (serverVariation) setVariationPrompt(serverVariation);
@@ -25,10 +43,33 @@ export function SettingsTab() {
     if (serverIteration) setIterationPrompt(serverIteration);
   }, [serverIteration]);
 
+  useEffect(() => {
+    setImageSize(serverImageSize);
+  }, [serverImageSize]);
+
+  useEffect(() => {
+    setAspectRatio(serverAspectRatio);
+  }, [serverAspectRatio]);
+
+  useEffect(() => {
+    setSeed(serverSeed);
+  }, [serverSeed]);
+
+  useEffect(() => {
+    setSafetyLevel(serverSafetyLevel);
+  }, [serverSafetyLevel]);
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateSettings(variationPrompt, iterationPrompt);
+      await updateSettings({
+        variation_prompt: variationPrompt,
+        iteration_prompt: iterationPrompt,
+        image_size: imageSize || undefined,
+        aspect_ratio: aspectRatio || undefined,
+        seed: seed ? parseInt(seed, 10) : undefined,
+        safety_level: safetyLevel || undefined,
+      });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -36,7 +77,13 @@ export function SettingsTab() {
     }
   };
 
-  const hasChanges = variationPrompt !== serverVariation || iterationPrompt !== serverIteration;
+  const hasChanges =
+    variationPrompt !== serverVariation ||
+    iterationPrompt !== serverIteration ||
+    imageSize !== serverImageSize ||
+    aspectRatio !== serverAspectRatio ||
+    seed !== serverSeed ||
+    safetyLevel !== serverSafetyLevel;
   const isLoading = !settings;
 
   if (isLoading) {
@@ -72,6 +119,107 @@ export function SettingsTab() {
               </p>
             </div>
             <Badge variant="brass">Active</Badge>
+          </div>
+        </div>
+      </section>
+
+      {/* Image Generation Defaults */}
+      <section>
+        <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-3">
+          Image Generation Defaults
+        </h4>
+        <div className="space-y-4">
+          {/* Image Size */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Image Size
+            </label>
+            <div className="flex gap-2">
+              {IMAGE_SIZE_OPTIONS.map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => setImageSize(imageSize === size ? '' : size)}
+                  className={clsx(
+                    'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                    'border',
+                    imageSize === size
+                      ? 'bg-brass-muted border-brass text-brass-dark'
+                      : 'bg-canvas-subtle border-border text-ink-secondary hover:bg-canvas-muted'
+                  )}
+                >
+                  <div>{size}</div>
+                  <div className="text-[0.625rem] text-ink-muted mt-0.5">
+                    {SIZE_PRICES[size]}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              {imageSize ? `Selected: ${imageSize}` : 'Default: 1K (1024px)'}
+            </p>
+          </div>
+
+          {/* Aspect Ratio */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Aspect Ratio
+            </label>
+            <select
+              value={aspectRatio}
+              onChange={(e) => setAspectRatio(e.target.value)}
+              className={clsx(
+                'w-full px-3 py-2 rounded-lg text-sm',
+                'bg-canvas-subtle border border-border',
+                'text-ink-primary focus:outline-none focus:ring-2 focus:ring-brass/20'
+              )}
+            >
+              <option value="">Default (1:1)</option>
+              {ASPECT_RATIO_OPTIONS.map((ratio) => (
+                <option key={ratio} value={ratio}>
+                  {ratio}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Seed */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Default Seed
+            </label>
+            <Input
+              type="number"
+              value={seed}
+              onChange={(e) => setSeed(e.target.value)}
+              placeholder="Leave empty for random"
+              className="text-sm"
+            />
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              Set a seed for reproducible generations
+            </p>
+          </div>
+
+          {/* Safety Level */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Safety Level
+            </label>
+            <select
+              value={safetyLevel}
+              onChange={(e) => setSafetyLevel(e.target.value)}
+              className={clsx(
+                'w-full px-3 py-2 rounded-lg text-sm',
+                'bg-canvas-subtle border border-border',
+                'text-ink-primary focus:outline-none focus:ring-2 focus:ring-brass/20'
+              )}
+            >
+              <option value="">Default (Block Medium)</option>
+              <option value="BLOCK_NONE">Block None</option>
+              <option value="BLOCK_ONLY_HIGH">Block Only High</option>
+              <option value="BLOCK_MEDIUM_AND_ABOVE">Block Medium & Above</option>
+              <option value="BLOCK_LOW_AND_ABOVE">Block Low & Above</option>
+            </select>
           </div>
         </div>
       </section>

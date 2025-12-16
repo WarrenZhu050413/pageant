@@ -61,17 +61,25 @@ def client(test_data_dir, monkeypatch):
     # Remove cached server module to allow re-patching
     if "server" in sys.modules:
         del sys.modules["server"]
+    if "metadata_manager" in sys.modules:
+        del sys.modules["metadata_manager"]
 
     # Patch paths
     images_dir = test_data_dir / "generated_images"
     metadata_path = images_dir / "metadata.json"
 
-    # Import and patch server module
+    # Import modules
+    from metadata_manager import MetadataManager
     import server as server_module
 
+    # Patch paths
     monkeypatch.setattr(server_module, "BASE_DIR", test_data_dir)
     monkeypatch.setattr(server_module, "IMAGES_DIR", images_dir)
     monkeypatch.setattr(server_module, "METADATA_PATH", metadata_path)
+
+    # Create and patch new MetadataManager with test paths
+    test_manager = MetadataManager(metadata_path, images_dir)
+    monkeypatch.setattr(server_module, "_metadata_manager", test_manager)
 
     # Return test client
     return TestClient(server_module.app)

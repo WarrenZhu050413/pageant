@@ -28,6 +28,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import sys
+
+from metadata_manager import MetadataManager
 sys.path.insert(0, str(Path(__file__).parent))
 from gemini_service import GeminiService
 
@@ -61,6 +63,9 @@ app.add_middleware(
 BASE_DIR = Path(__file__).parent.parent
 IMAGES_DIR = BASE_DIR / "generated_images"
 METADATA_PATH = IMAGES_DIR / "metadata.json"
+
+# Global metadata manager instance
+_metadata_manager = MetadataManager(METADATA_PATH, IMAGES_DIR)
 
 # Initialize Gemini service
 # API key can be configured via:
@@ -256,51 +261,28 @@ class SettingsRequest(BaseModel):
 
 
 def load_metadata() -> dict:
-    """Load existing metadata or create new."""
-    if METADATA_PATH.exists():
-        with open(METADATA_PATH) as f:
-            data = json.load(f)
-            # Migration: ensure prompts structure exists
-            if "prompts" not in data:
-                data["prompts"] = []
-                # Migrate old images to prompts if needed
-                if data.get("images"):
-                    # Group by prompt text
-                    prompt_groups = {}
-                    for img in data["images"]:
-                        prompt_text = img.get("prompt", "Unknown")
-                        if prompt_text not in prompt_groups:
-                            prompt_groups[prompt_text] = []
-                        prompt_groups[prompt_text].append(img)
+    """Load existing metadata or create new.
 
-                    for prompt_text, imgs in prompt_groups.items():
-                        prompt_id = f"prompt-{uuid.uuid4().hex[:8]}"
-                        data["prompts"].append({
-                            "id": prompt_id,
-                            "prompt": prompt_text,
-                            "title": imgs[0].get("title", "Untitled"),
-                            "category": imgs[0].get("category", "Custom"),
-                            "created_at": imgs[0].get("generated_at", datetime.now().isoformat()),
-                            "images": imgs,
-                        })
-                    data["images"] = []  # Clear old structure
-            return data
-    return {
-        "generated_at": datetime.now().isoformat(),
-        "model": "gemini-2.5-flash-image",
-        "prompts": [],
-        "favorites": [],  # List of favorite image IDs
-        "templates": [],  # Prompt templates library
-        "stories": [],  # Story sequences with chapters
-        "collections": [],  # Image collections for multi-image context
-        "sessions": [],  # Named sessions for organizing work
-    }
+    Wrapper around MetadataManager.load() for backwards compatibility.
+    """
+    return _metadata_manager.load()
 
 
 def save_metadata(data: dict):
-    """Save metadata to disk."""
-    with open(METADATA_PATH, "w") as f:
-        json.dump(data, f, indent=2)
+    """Save metadata to disk.
+
+    Wrapper around MetadataManager.save() for backwards compatibility.
+    """
+    _metadata_manager.save(data)
+
+
+def get_metadata_manager() -> MetadataManager:
+    """Get the global MetadataManager instance.
+
+    Use this for new code that wants to use MetadataManager directly,
+    including context manager and find_* methods.
+    """
+    return _metadata_manager
 
 
 # === Prompt Variation System ===
