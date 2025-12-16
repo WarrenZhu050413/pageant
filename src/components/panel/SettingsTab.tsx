@@ -20,11 +20,18 @@ Return your response in this XML format:
   ...repeat for each variation...
 </variations>`;
 
+const DEFAULT_ITERATION_PROMPT = `Create a variation of this image while maintaining its core essence.
+Focus on: {focus}
+Original concept: {original_prompt}
+
+Generate a new scene description that explores this direction while keeping the fundamental visual identity.`;
+
 export function SettingsTab() {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
 
   const [variationPrompt, setVariationPrompt] = useState('');
+  const [iterationPrompt, setIterationPrompt] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -33,12 +40,15 @@ export function SettingsTab() {
     if (settings?.variation_prompt) {
       setVariationPrompt(settings.variation_prompt);
     }
-  }, [settings?.variation_prompt]);
+    if (settings?.iteration_prompt) {
+      setIterationPrompt(settings.iteration_prompt);
+    }
+  }, [settings?.variation_prompt, settings?.iteration_prompt]);
 
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await updateSettings(variationPrompt);
+      await updateSettings(variationPrompt, iterationPrompt);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -46,11 +56,16 @@ export function SettingsTab() {
     }
   };
 
-  const handleReset = () => {
+  const handleResetVariation = () => {
     setVariationPrompt(DEFAULT_VARIATION_PROMPT);
   };
 
-  const hasChanges = variationPrompt !== settings?.variation_prompt;
+  const handleResetIteration = () => {
+    setIterationPrompt(DEFAULT_ITERATION_PROMPT);
+  };
+
+  const hasChanges = variationPrompt !== settings?.variation_prompt ||
+    iterationPrompt !== settings?.iteration_prompt;
 
   return (
     <div className="p-4 space-y-6">
@@ -96,7 +111,7 @@ export function SettingsTab() {
             size="sm"
             variant="ghost"
             leftIcon={<RotateCcw size={12} />}
-            onClick={handleReset}
+            onClick={handleResetVariation}
           >
             Reset
           </Button>
@@ -125,6 +140,56 @@ export function SettingsTab() {
               <li>
                 <code className="px-1 py-0.5 rounded bg-brass-muted">{'{count}'}</code>{' '}
                 - Number of variations to generate
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Iteration System Prompt (More Like This) */}
+      <section>
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide">
+              Iteration Prompt ("More Like This")
+            </h4>
+            <p className="text-[0.625rem] text-ink-muted mt-0.5">
+              Controls how image-to-image variations are generated
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<RotateCcw size={12} />}
+            onClick={handleResetIteration}
+          >
+            Reset
+          </Button>
+        </div>
+
+        <Textarea
+          value={iterationPrompt}
+          onChange={(e) => setIterationPrompt(e.target.value)}
+          placeholder="Enter iteration prompt..."
+          className={clsx(
+            'min-h-[150px] text-xs font-[family-name:var(--font-mono)]',
+            'leading-relaxed'
+          )}
+        />
+
+        {/* Info box */}
+        <div className="mt-3 p-3 rounded-lg bg-brass-muted/50 flex gap-2">
+          <Info size={14} className="flex-shrink-0 text-brass-dark mt-0.5" />
+          <div className="text-xs text-brass-dark">
+            <p className="font-medium mb-1">Available placeholders:</p>
+            <ul className="space-y-0.5">
+              <li>
+                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{original_prompt}'}</code>{' '}
+                - The original image's prompt
+              </li>
+              <li>
+                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{focus}'}</code>{' '}
+                - What to focus on in the variation
               </li>
             </ul>
           </div>

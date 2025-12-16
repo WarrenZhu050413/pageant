@@ -239,11 +239,15 @@ export async function fetchSettings(): Promise<Settings> {
 }
 
 export async function updateSettings(
-  variationPrompt: string
-): Promise<Settings> {
-  return request<Settings>('/settings', {
+  variationPrompt: string,
+  iterationPrompt?: string
+): Promise<{ success: boolean }> {
+  return request<{ success: boolean }>('/settings', {
     method: 'PUT',
-    body: JSON.stringify({ variation_prompt: variationPrompt }),
+    body: JSON.stringify({
+      variation_prompt: variationPrompt,
+      iteration_prompt: iterationPrompt,
+    }),
   });
 }
 

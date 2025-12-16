@@ -196,6 +196,7 @@ class ReorderChaptersRequest(BaseModel):
 # === Settings ===
 class SettingsRequest(BaseModel):
     variation_prompt: str
+    iteration_prompt: str | None = None  # Prompt for "More Like This"
 
 
 def load_metadata() -> dict:
@@ -558,9 +559,11 @@ async def delete_prompt(prompt_id: str):
         if prompt["id"] == prompt_id:
             # Delete all image files
             for img in prompt.get("images", []):
-                img_path = IMAGES_DIR / img["image_path"]
-                if img_path.exists():
-                    img_path.unlink()
+                # Skip if no image_path (e.g., failed generation)
+                if img.get("image_path"):
+                    img_path = IMAGES_DIR / img["image_path"]
+                    if img_path.exists():
+                        img_path.unlink()
                 # Remove from favorites
                 if img["id"] in metadata.get("favorites", []):
                     metadata["favorites"].remove(img["id"])
@@ -592,9 +595,11 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
                 found = True
                 # Delete all image files
                 for img in prompt.get("images", []):
-                    img_path = IMAGES_DIR / img["image_path"]
-                    if img_path.exists():
-                        img_path.unlink()
+                    # Skip if no image_path (e.g., failed generation)
+                    if img.get("image_path"):
+                        img_path = IMAGES_DIR / img["image_path"]
+                        if img_path.exists():
+                            img_path.unlink()
                     # Remove from favorites
                     if img["id"] in metadata.get("favorites", []):
                         metadata["favorites"].remove(img["id"])
@@ -620,10 +625,11 @@ async def delete_image(image_id: str):
     for prompt in metadata.get("prompts", []):
         for i, img in enumerate(prompt.get("images", [])):
             if img["id"] == image_id:
-                # Delete file
-                img_path = IMAGES_DIR / img["image_path"]
-                if img_path.exists():
-                    img_path.unlink()
+                # Delete file (skip if no image_path)
+                if img.get("image_path"):
+                    img_path = IMAGES_DIR / img["image_path"]
+                    if img_path.exists():
+                        img_path.unlink()
 
                 # Remove from favorites
                 if image_id in metadata.get("favorites", []):
@@ -1869,14 +1875,26 @@ async def remove_prompts_from_session(session_id: str, prompt_ids: list[str]):
 
 # === Settings Endpoints ===
 
+DEFAULT_ITERATION_PROMPT = """Create a variation of this image while maintaining its core essence.
+Focus on: {focus}
+Original concept: {original_prompt}
+
+Generate a new scene description that explores this direction while keeping the fundamental visual identity."""
+
+
 @app.get("/api/settings")
 async def get_settings():
-    """Get app settings including variation prompt."""
+    """Get app settings including variation and iteration prompts."""
     metadata = load_metadata()
+    settings = metadata.get("settings", {})
     return {
-        "variation_prompt": metadata.get("settings", {}).get(
+        "variation_prompt": settings.get(
             "variation_prompt",
             load_default_variation_prompt()
+        ),
+        "iteration_prompt": settings.get(
+            "iteration_prompt",
+            DEFAULT_ITERATION_PROMPT
         ),
         "text_model": GeminiService.DEFAULT_TEXT_MODEL,
         "image_model": GeminiService.DEFAULT_IMAGE_MODEL,
@@ -1890,8 +1908,10 @@ async def update_settings(req: SettingsRequest):
     if "settings" not in metadata:
         metadata["settings"] = {}
     metadata["settings"]["variation_prompt"] = req.variation_prompt
+    if req.iteration_prompt is not None:
+        metadata["settings"]["iteration_prompt"] = req.iteration_prompt
     save_metadata(metadata)
-    logger.info("Updated variation prompt settings")
+    logger.info("Updated settings (variation/iteration prompts)")
     return {"success": True}
 
 

@@ -123,7 +123,7 @@ interface AppStore {
   viewCollection: (id: string) => void;
 
   // Settings
-  updateSettings: (variationPrompt: string) => Promise<void>;
+  updateSettings: (variationPrompt: string, iterationPrompt?: string) => Promise<void>;
 
   // Upload
   uploadImages: (files: File[]) => Promise<void>;
@@ -630,9 +630,11 @@ export const useStore = create<AppStore>()(
       },
 
       // Settings
-      updateSettings: async (variationPrompt) => {
+      updateSettings: async (variationPrompt, iterationPrompt) => {
         try {
-          const settings = await api.updateSettings(variationPrompt);
+          await api.updateSettings(variationPrompt, iterationPrompt);
+          // Refresh settings to get the updated values
+          const settings = await api.fetchSettings();
           set({ settings });
         } catch (error) {
           set({ error: (error as Error).message });

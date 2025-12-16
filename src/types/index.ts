@@ -101,6 +101,7 @@ export interface Story {
 
 export interface Settings {
   variation_prompt: string;
+  iteration_prompt?: string;  // Prompt for "More Like This"
   text_model?: string;
   image_model?: string;
 }
