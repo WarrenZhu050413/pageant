@@ -1,0 +1,54 @@
+import { clsx } from 'clsx';
+import { motion } from 'framer-motion';
+
+interface Tab {
+  id: string;
+  label: string;
+  icon?: React.ReactNode;
+}
+
+interface TabsProps {
+  tabs: Tab[];
+  activeTab: string;
+  onChange: (tabId: string) => void;
+  className?: string;
+}
+
+export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
+  return (
+    <div
+      className={clsx(
+        'flex border-b border-border overflow-x-auto',
+        'scrollbar-none', // Hide scrollbar
+        className
+      )}
+    >
+      {tabs.map((tab) => {
+        const isActive = tab.id === activeTab;
+        return (
+          <button
+            key={tab.id}
+            onClick={() => onChange(tab.id)}
+            className={clsx(
+              'relative flex items-center gap-1.5 px-2.5 py-2.5 flex-shrink-0',
+              'text-[0.75rem] font-medium whitespace-nowrap',
+              'transition-colors duration-150',
+              isActive ? 'text-ink' : 'text-ink-tertiary hover:text-ink-secondary'
+            )}
+          >
+            {tab.icon}
+            {tab.label}
+            {isActive && (
+              <motion.div
+                layoutId="activeTab"
+                className="absolute bottom-0 left-0 right-0 h-0.5 bg-brass"
+                initial={false}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+              />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
