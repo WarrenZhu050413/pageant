@@ -65,6 +65,13 @@ interface AppStore {
   variationsBasePrompt: string;
   variationsTitle: string;
   showPromptPreview: boolean;
+  // Image generation params for variations (stored for use in generateFromVariations)
+  variationsImageParams: {
+    image_size?: string;
+    aspect_ratio?: string;
+    seed?: number;
+    safety_level?: string;
+  };
 
   // Actions
   initialize: () => Promise<void>;
@@ -249,6 +256,7 @@ export const useStore = create<AppStore>()(
       variationsBasePrompt: '',
       variationsTitle: '',
       showPromptPreview: false,
+      variationsImageParams: {},
 
       // Prompt selection for bulk operations
       selectedPromptIds: new Set(),

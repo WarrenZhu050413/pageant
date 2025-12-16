@@ -222,3 +222,62 @@ class TestMetadataManagerFindImage:
         img_data, prompt_data = manager.find_image_by_id(data, "img-2")
         assert img_data["id"] == "img-2"
         assert prompt_data["id"] == "prompt-2"
+
+
+class TestMetadataManagerFindPrompt:
+    """Test find_prompt_by_id functionality."""
+
+    def test_find_prompt_returns_prompt_when_found(self, tmp_path):
+        """find_prompt_by_id returns prompt dict when found."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [
+                {"id": "prompt-1", "prompt": "First prompt"},
+                {"id": "prompt-2", "prompt": "Second prompt"},
+            ],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        data = manager.load()
+        prompt = manager.find_prompt_by_id(data, "prompt-2")
+
+        assert prompt is not None
+        assert prompt["id"] == "prompt-2"
+        assert prompt["prompt"] == "Second prompt"
+
+    def test_find_prompt_returns_none_when_not_found(self, tmp_path):
+        """find_prompt_by_id returns None when prompt not found."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [{"id": "prompt-1", "prompt": "First prompt"}],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        data = manager.load()
+        prompt = manager.find_prompt_by_id(data, "nonexistent")
+
+        assert prompt is None

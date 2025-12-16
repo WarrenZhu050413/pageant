@@ -96,3 +96,18 @@ class MetadataManager:
                 if img.get("id") == image_id:
                     return img, prompt_data
         return None, None
+
+    def find_prompt_by_id(self, metadata: dict, prompt_id: str) -> dict | None:
+        """Find a prompt by ID.
+
+        Args:
+            metadata: The metadata dictionary to search
+            prompt_id: The prompt ID to find
+
+        Returns:
+            dict: The prompt data if found, None otherwise
+        """
+        return next(
+            (p for p in metadata.get("prompts", []) if p.get("id") == prompt_id),
+            None
+        )
