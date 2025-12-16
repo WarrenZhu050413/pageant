@@ -25,7 +25,13 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+from typing import Literal
+
+# Valid values for image generation parameters
+ImageSizeType = Literal["1K", "2K", "4K"]
+AspectRatioType = Literal["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
+SafetyLevelType = Literal["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
 
 import sys
 
@@ -118,11 +124,18 @@ class GenerateRequest(BaseModel):
     context_image_ids: list[str] = []  # Multiple context images
     collection_id: str | None = None  # Use a collection as context
     session_id: str | None = None  # Session to associate with
-    # Image generation parameters
-    image_size: str | None = None  # "1K", "2K", "4K"
-    aspect_ratio: str | None = None  # "1:1", "16:9", etc.
+    # Image generation parameters (validated)
+    image_size: ImageSizeType | None = None
+    aspect_ratio: AspectRatioType | None = None
     seed: int | None = None  # For reproducibility
-    safety_level: str | None = None  # "BLOCK_NONE", etc.
+    safety_level: SafetyLevelType | None = None
+
+    @field_validator("seed")
+    @classmethod
+    def validate_seed(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("seed must be a non-negative integer")
+        return v
 
 
 # === NEW: Two-Phase Generation Models ===
@@ -131,11 +144,18 @@ class GeneratePromptsRequest(BaseModel):
     prompt: str
     count: int = 4
     context_image_ids: list[str] = []
-    # Image generation parameters (for phase 2)
-    image_size: str | None = None
-    aspect_ratio: str | None = None
+    # Image generation parameters (validated, for phase 2)
+    image_size: ImageSizeType | None = None
+    aspect_ratio: AspectRatioType | None = None
     seed: int | None = None
-    safety_level: str | None = None
+    safety_level: SafetyLevelType | None = None
+
+    @field_validator("seed")
+    @classmethod
+    def validate_seed(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("seed must be a non-negative integer")
+        return v
 
 
 class PromptVariation(BaseModel):
