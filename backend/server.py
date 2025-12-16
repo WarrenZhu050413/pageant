@@ -399,6 +399,47 @@ VARIATION_SUFFIXES = [
 ]
 
 
+def generate_fallback_variations(
+    base_prompt: str,
+    count: int,
+    existing_variations: list[dict] | None = None
+) -> list[dict]:
+    """Generate fallback variations using legacy suffixes.
+
+    Used when text model variation generation fails or produces insufficient results.
+
+    Args:
+        base_prompt: The base prompt text
+        count: Target number of variations
+        existing_variations: Optional list of already-parsed variations to fill
+
+    Returns:
+        list[dict]: List of variation dicts with id, type, description, mood
+    """
+    if existing_variations is None:
+        existing_variations = []
+
+    variations = list(existing_variations)  # Copy to avoid modifying original
+
+    while len(variations) < count:
+        idx = len(variations)
+        # First variation uses original prompt, subsequent add suffixes
+        if idx == 0 and not variations:
+            description = base_prompt
+        else:
+            suffix_idx = idx % len(VARIATION_SUFFIXES)
+            description = base_prompt + VARIATION_SUFFIXES[suffix_idx]
+
+        variations.append({
+            "id": str(idx + 1),
+            "type": "fallback",
+            "description": description,
+            "mood": "neutral",
+        })
+
+    return variations
+
+
 async def _generate_single_image(
     prompt: str,
     index: int,
