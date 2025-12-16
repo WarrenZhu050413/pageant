@@ -19,7 +19,8 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
     <div
       className={clsx(
         'flex border-b border-border overflow-x-auto',
-        'scrollbar-none', // Hide scrollbar
+        // Show thin scrollbar when needed (removed scrollbar-none)
+        'scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border',
         className
       )}
     >
