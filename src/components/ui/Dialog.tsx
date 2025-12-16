@@ -54,10 +54,11 @@ export function Dialog({ isOpen, onClose, title, children, className }: DialogPr
             className={clsx(
               'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
               'bg-surface rounded-xl shadow-xl',
-              'max-w-lg w-[90vw] max-h-[85vh] overflow-auto',
+              'max-h-[85vh] overflow-auto',
               'z-50',
               className
             )}
+            style={{ width: 'min(90vw, 32rem)' }}
           >
             {/* Header */}
             {title && (
