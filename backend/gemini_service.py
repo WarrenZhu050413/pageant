@@ -73,6 +73,9 @@ class GeminiService:
         aspect_ratio: str | None = None,
         seed: int | None = None,
         safety_level: str | None = None,
+        thinking_level: str | None = None,
+        temperature: float | None = None,
+        google_search_grounding: bool | None = None,
     ) -> ImageResult:
         """Generate images using Gemini with interleaved context.
 
@@ -84,6 +87,9 @@ class GeminiService:
             aspect_ratio: Output aspect ratio - "1:1", "16:9", etc.
             seed: Random seed for reproducibility
             safety_level: Safety filter level - "BLOCK_NONE", "BLOCK_ONLY_HIGH", etc.
+            thinking_level: Reasoning depth - "low" or "high" (Nano Banana specific)
+            temperature: Randomness control 0.0-2.0 (default 1.0)
+            google_search_grounding: Enable real-time web grounding for image gen
         """
         model_name = self.DEFAULT_IMAGE_MODEL
         start_time = time.time()
@@ -96,6 +102,12 @@ class GeminiService:
             params_info.append(f"ratio={aspect_ratio}")
         if seed is not None:
             params_info.append(f"seed={seed}")
+        if thinking_level:
+            params_info.append(f"thinking={thinking_level}")
+        if temperature is not None:
+            params_info.append(f"temp={temperature}")
+        if google_search_grounding:
+            params_info.append("search=on")
         params_str = f" ({', '.join(params_info)})" if params_info else ""
         print(f"[{model_name}] Generating image with {num_images} context image(s){params_str}...")
 
@@ -122,12 +134,26 @@ class GeminiService:
                 for cat in harm_categories
             ]
 
-        config = types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_generation_config=image_config,
-            safety_settings=safety_settings,
-            seed=seed,
-        )
+        # Build tools for google search grounding
+        tools = None
+        if google_search_grounding:
+            tools = [types.Tool(google_search=types.GoogleSearch())]
+
+        # Build config with all parameters
+        config_kwargs: dict[str, Any] = {
+            "response_modalities": ["IMAGE"],
+            "image_config": image_config,
+            "safety_settings": safety_settings,
+            "seed": seed,
+        }
+        if thinking_level:
+            config_kwargs["thinking_level"] = thinking_level
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+        if tools:
+            config_kwargs["tools"] = tools
+
+        config = types.GenerateContentConfig(**config_kwargs)
 
         # Build interleaved contents: [img1, caption1, img2, caption2, ..., prompt]
         if context_images:

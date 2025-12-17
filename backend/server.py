@@ -32,6 +32,7 @@ from typing import Any, Generic, Literal, TypeVar
 ImageSizeType = Literal["1K", "2K", "4K"]
 AspectRatioType = Literal["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
 SafetyLevelType = Literal["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
+ThinkingLevelType = Literal["low", "high"]
 
 # Support both import contexts:
 # - 'uvicorn backend.server:app' from project root (uses backend.* imports)
@@ -133,12 +134,23 @@ class GenerateRequest(BaseModel):
     aspect_ratio: AspectRatioType | None = None
     seed: int | None = None  # For reproducibility
     safety_level: SafetyLevelType | None = None
+    # Nano Banana specific
+    thinking_level: ThinkingLevelType | None = None
+    temperature: float | None = None
+    google_search_grounding: bool | None = None
 
     @field_validator("seed")
     @classmethod
     def validate_seed(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("seed must be a non-negative integer")
+        return v
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v: float | None) -> float | None:
+        if v is not None and (v < 0.0 or v > 2.0):
+            raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 
@@ -153,12 +165,23 @@ class GeneratePromptsRequest(BaseModel):
     aspect_ratio: AspectRatioType | None = None
     seed: int | None = None
     safety_level: SafetyLevelType | None = None
+    # Nano Banana specific
+    thinking_level: ThinkingLevelType | None = None
+    temperature: float | None = None
+    google_search_grounding: bool | None = None
 
     @field_validator("seed")
     @classmethod
     def validate_seed(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("seed must be a non-negative integer")
+        return v
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v: float | None) -> float | None:
+        if v is not None and (v < 0.0 or v > 2.0):
+            raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 
@@ -190,12 +213,23 @@ class GenerateFromPromptsRequest(BaseModel):
     aspect_ratio: AspectRatioType | None = None
     seed: int | None = None
     safety_level: SafetyLevelType | None = None
+    # Nano Banana specific
+    thinking_level: ThinkingLevelType | None = None
+    temperature: float | None = None
+    google_search_grounding: bool | None = None
 
     @field_validator("seed")
     @classmethod
     def validate_seed(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("seed must be a non-negative integer")
+        return v
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v: float | None) -> float | None:
+        if v is not None and (v < 0.0 or v > 2.0):
+            raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 
@@ -289,12 +323,23 @@ class SettingsRequest(BaseModel):
     aspect_ratio: AspectRatioType | None = None
     seed: int | None = None  # Default seed (None = random)
     safety_level: SafetyLevelType | None = None
+    # Nano Banana specific
+    thinking_level: ThinkingLevelType | None = None
+    temperature: float | None = None
+    google_search_grounding: bool | None = None
 
     @field_validator("seed")
     @classmethod
     def validate_seed(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("seed must be a non-negative integer")
+        return v
+
+    @field_validator("temperature")
+    @classmethod
+    def validate_temperature(cls, v: float | None) -> float | None:
+        if v is not None and (v < 0.0 or v > 2.0):
+            raise ValueError("temperature must be between 0.0 and 2.0")
         return v
 
 
@@ -388,10 +433,13 @@ def parse_scene_variations(xml_response: str) -> list[dict]:
 
     scenes = []
 
+    # Log the raw response for debugging
+    logger.debug(f"Raw LLM response (first 500 chars): {xml_response[:500]}")
+
     # Extract the <scenes>...</scenes> block from the response
     scenes_match = re.search(r'<scenes>(.*?)</scenes>', xml_response, re.DOTALL)
     if not scenes_match:
-        logger.warning("No <scenes> block found in response")
+        logger.warning(f"No <scenes> block found in response. Response preview: {xml_response[:200]}")
         return scenes
 
     try:
@@ -510,6 +558,9 @@ async def _generate_single_image(
     aspect_ratio: str | None = None,
     seed: int | None = None,
     safety_level: str | None = None,
+    thinking_level: str | None = None,
+    temperature: float | None = None,
+    google_search_grounding: bool | None = None,
 ) -> dict:
     """Generate a single image and save it."""
     try:
@@ -526,6 +577,9 @@ async def _generate_single_image(
             aspect_ratio=aspect_ratio,
             seed=seed,
             safety_level=safety_level,
+            thinking_level=thinking_level,
+            temperature=temperature,
+            google_search_grounding=google_search_grounding,
         )
 
         if not result.images:
@@ -688,6 +742,9 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
             aspect_ratio=req.aspect_ratio,
             seed=req.seed,
             safety_level=req.safety_level,
+            thinking_level=req.thinking_level,
+            temperature=req.temperature,
+            google_search_grounding=req.google_search_grounding,
         )
         for i, prompt_data in enumerate(req.prompts)
     ]
@@ -820,6 +877,9 @@ async def generate_images(req: GenerateRequest):
             aspect_ratio=req.aspect_ratio,
             seed=req.seed,
             safety_level=req.safety_level,
+            thinking_level=req.thinking_level,
+            temperature=req.temperature,
+            google_search_grounding=req.google_search_grounding,
         )
         for i, var in enumerate(variations[:count])
     ]
@@ -1517,6 +1577,9 @@ async def generate_more_like_this(image_id: str, count: int = 4):
             aspect_ratio=settings.get("aspect_ratio"),
             seed=settings.get("seed"),
             safety_level=settings.get("safety_level"),
+            thinking_level=settings.get("thinking_level"),
+            temperature=settings.get("temperature"),
+            google_search_grounding=settings.get("google_search_grounding"),
         )
         for i, var in enumerate(variations[:count])
     ]
@@ -1666,6 +1729,9 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
             aspect_ratio=settings.get("aspect_ratio"),
             seed=settings.get("seed"),
             safety_level=settings.get("safety_level"),
+            thinking_level=settings.get("thinking_level"),
+            temperature=settings.get("temperature"),
+            google_search_grounding=settings.get("google_search_grounding"),
         )
         for i in range(count)
     ]
@@ -2383,6 +2449,10 @@ async def get_settings():
         "aspect_ratio": settings.get("aspect_ratio"),  # None = use model default (1:1)
         "seed": settings.get("seed"),  # None = random each time
         "safety_level": settings.get("safety_level"),  # None = use model default
+        # Nano Banana specific
+        "thinking_level": settings.get("thinking_level"),  # None = high (default)
+        "temperature": settings.get("temperature"),  # None = 1.0 (default)
+        "google_search_grounding": settings.get("google_search_grounding"),  # None = disabled
     }
 
 
@@ -2404,6 +2474,13 @@ async def update_settings(req: SettingsRequest):
         metadata["settings"]["seed"] = req.seed
     if req.safety_level is not None:
         metadata["settings"]["safety_level"] = req.safety_level
+    # Nano Banana specific
+    if req.thinking_level is not None:
+        metadata["settings"]["thinking_level"] = req.thinking_level
+    if req.temperature is not None:
+        metadata["settings"]["temperature"] = req.temperature
+    if req.google_search_grounding is not None:
+        metadata["settings"]["google_search_grounding"] = req.google_search_grounding
     save_metadata(metadata)
     logger.info("Updated settings")
     return {"success": True}
