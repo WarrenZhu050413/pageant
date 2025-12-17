@@ -5,15 +5,12 @@ export interface SelectionSlice {
   // State
   selectionMode: SelectionMode
   selectedIds: Set<string>
-  compareLeftId: string | null
-  compareRightId: string | null
   selectedPromptIds: Set<string>
 
   // Actions
   setSelectionMode: (mode: SelectionMode) => void
   toggleSelection: (id: string) => void
   clearSelection: () => void
-  setCompareImages: (leftId: string | null, rightId: string | null) => void
   togglePromptSelection: (id: string) => void
   clearPromptSelection: () => void
 }
@@ -22,8 +19,6 @@ export const createSelectionSlice: StateCreator<SelectionSlice> = (set, get) => 
   // Initial state
   selectionMode: 'none',
   selectedIds: new Set(),
-  compareLeftId: null,
-  compareRightId: null,
   selectedPromptIds: new Set(),
 
   // Actions
@@ -47,13 +42,6 @@ export const createSelectionSlice: StateCreator<SelectionSlice> = (set, get) => 
 
   clearSelection: () => set({
     selectedIds: new Set(),
-    compareLeftId: null,
-    compareRightId: null,
-  }),
-
-  setCompareImages: (leftId, rightId) => set({
-    compareLeftId: leftId,
-    compareRightId: rightId,
   }),
 
   togglePromptSelection: (id) => {

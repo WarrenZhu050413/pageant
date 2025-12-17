@@ -47,8 +47,6 @@ interface AppStore {
   // Selection
   selectionMode: SelectionMode;
   selectedIds: Set<string>;
-  compareLeftId: string | null;
-  compareRightId: string | null;
   contextImageIds: string[];
 
   // UI State
@@ -97,7 +95,6 @@ interface AppStore {
   toggleSelection: (id: string) => void;
   selectAll: () => void;
   clearSelection: () => void;
-  setCompareImages: (leftId: string | null, rightId: string | null) => void;
 
   // Context images
   setContextImages: (ids: string[]) => void;
@@ -255,8 +252,6 @@ export const useStore = create<AppStore>()(
 
       selectionMode: 'none',
       selectedIds: new Set(),
-      compareLeftId: null,
-      compareRightId: null,
       contextImageIds: [],
 
       isGenerating: false,
@@ -401,17 +396,7 @@ export const useStore = create<AppStore>()(
           newSelectedIds.add(id);
         }
 
-        // For compare mode, update compare images
-        if (get().viewMode === 'compare') {
-          const ids = Array.from(newSelectedIds);
-          set({
-            selectedIds: newSelectedIds,
-            compareLeftId: ids[0] || null,
-            compareRightId: ids[1] || null,
-          });
-        } else {
-          set({ selectedIds: newSelectedIds });
-        }
+        set({ selectedIds: newSelectedIds });
       },
 
       selectAll: () => {
@@ -424,11 +409,7 @@ export const useStore = create<AppStore>()(
       },
 
       clearSelection: () => {
-        set({ selectedIds: new Set(), compareLeftId: null, compareRightId: null });
-      },
-
-      setCompareImages: (leftId, rightId) => {
-        set({ compareLeftId: leftId, compareRightId: rightId });
+        set({ selectedIds: new Set() });
       },
 
       // Context images

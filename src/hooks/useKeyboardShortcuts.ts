@@ -53,12 +53,6 @@ export function useKeyboardShortcuts() {
             setViewMode('grid');
           }
           break;
-        case '3':
-          if (!isMeta) {
-            event.preventDefault();
-            setViewMode('compare');
-          }
-          break;
 
         // Favorite
         case 'f':

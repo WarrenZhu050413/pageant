@@ -483,7 +483,6 @@ export function SettingsTab() {
             { keys: ['←', '→'], action: 'Navigate images' },
             { keys: ['1'], action: 'Single view' },
             { keys: ['2'], action: 'Grid view' },
-            { keys: ['3'], action: 'Compare view' },
             { keys: ['F'], action: 'Toggle favorite' },
             { keys: ['G'], action: 'Go to Generate' },
             { keys: ['S'], action: 'Select mode' },

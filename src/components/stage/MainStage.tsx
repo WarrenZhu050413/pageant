@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Grid,
   Maximize2,
-  Columns,
   Square,
   Loader2,
   FileEdit,
@@ -14,7 +13,6 @@ import { useStore } from '../../store';
 import { IconButton, Button } from '../ui';
 import { SingleView } from './SingleView';
 import { GridView } from './GridView';
-import { CompareView } from './CompareView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 
@@ -147,15 +145,6 @@ export function MainStage() {
             >
               <Grid size={16} />
             </IconButton>
-            <IconButton
-              size="sm"
-              variant={viewMode === 'compare' ? 'default' : 'ghost'}
-              tooltip="Compare view (3)"
-              onClick={() => setViewMode('compare')}
-              className={clsx(viewMode === 'compare' && 'bg-surface shadow-sm')}
-            >
-              <Columns size={16} />
-            </IconButton>
           </div>
 
           {/* Divider */}
@@ -188,7 +177,6 @@ export function MainStage() {
           >
             {viewMode === 'single' && <SingleView />}
             {viewMode === 'grid' && <GridView />}
-            {viewMode === 'compare' && <CompareView />}
           </motion.div>
         </AnimatePresence>
 

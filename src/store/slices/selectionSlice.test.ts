@@ -22,11 +22,6 @@ describe('selectionSlice', () => {
       expect(slice.selectedIds.size).toBe(0)
     })
 
-    it('has null compareLeftId and compareRightId', () => {
-      expect(slice.compareLeftId).toBeNull()
-      expect(slice.compareRightId).toBeNull()
-    })
-
     it('has empty selectedPromptIds', () => {
       expect(slice.selectedPromptIds.size).toBe(0)
     })
@@ -67,22 +62,10 @@ describe('selectionSlice', () => {
   })
 
   describe('clearSelection', () => {
-    it('clears selectedIds and compare images', () => {
+    it('clears selectedIds', () => {
       slice.selectedIds = new Set(['id-1', 'id-2'])
-      slice.compareLeftId = 'id-1'
-      slice.compareRightId = 'id-2'
       slice.clearSelection()
       expect(slice.selectedIds.size).toBe(0)
-      expect(slice.compareLeftId).toBeNull()
-      expect(slice.compareRightId).toBeNull()
-    })
-  })
-
-  describe('setCompareImages', () => {
-    it('sets compare images', () => {
-      slice.setCompareImages('left-id', 'right-id')
-      expect(slice.compareLeftId).toBe('left-id')
-      expect(slice.compareRightId).toBe('right-id')
     })
   })
 

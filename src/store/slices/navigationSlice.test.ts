@@ -37,9 +37,24 @@ describe('navigationSlice', () => {
   })
 
   describe('setViewMode', () => {
-    it('updates viewMode', () => {
+    it('updates viewMode to single', () => {
+      slice.setViewMode('single')
+      expect(slice.viewMode).toBe('single')
+    })
+
+    it('updates viewMode to grid', () => {
       slice.setViewMode('grid')
       expect(slice.viewMode).toBe('grid')
+    })
+
+    it('should only support single and grid view modes', () => {
+      // ViewMode should only be 'single' | 'grid'
+      // 'compare' view mode has been removed as it was unused
+      const validViewModes = ['single', 'grid']
+      expect(validViewModes).toHaveLength(2)
+      expect(validViewModes).toContain('single')
+      expect(validViewModes).toContain('grid')
+      expect(validViewModes).not.toContain('compare')
     })
   })
 

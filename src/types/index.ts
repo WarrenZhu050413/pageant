@@ -298,7 +298,7 @@ export interface UploadResponse {
 }
 
 // UI State types
-export type ViewMode = 'single' | 'grid' | 'compare';
+export type ViewMode = 'single' | 'grid';
 export type LeftTab = 'prompts' | 'collections' | 'library' | 'favorites' | 'preferences';
 export type RightTab = 'info' | 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select';
@@ -308,10 +308,6 @@ export interface SelectionState {
   selectedIds: Set<string>;
 }
 
-export interface CompareState {
-  leftImageId: string | null;
-  rightImageId: string | null;
-}
 
 // Store state
 export interface AppState {
@@ -332,7 +328,6 @@ export interface AppState {
 
   // Selection
   selection: SelectionState;
-  compareState: CompareState;
   contextImageIds: string[];
 
   // UI State
