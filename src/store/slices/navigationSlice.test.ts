@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createNavigationSlice, NavigationSlice } from './navigationSlice'
+import { createNavigationSlice, type NavigationSlice } from './navigationSlice'
 
 describe('navigationSlice', () => {
   let slice: NavigationSlice

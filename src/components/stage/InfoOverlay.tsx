@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronUp, ChevronDown, Copy, Check, Info, Save } from 'lucide-react';
+import { ChevronUp, ChevronDown, Copy, Check, Save } from 'lucide-react';
 import { useStore } from '../../store';
 import { Badge } from '../ui';
 import { SUGGESTED_TAGS, type DesignAxis } from '../../types';

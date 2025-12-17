@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createGenerationSlice, GenerationSlice } from './generationSlice'
+import { createGenerationSlice, type GenerationSlice } from './generationSlice'
 
 describe('generationSlice', () => {
   let slice: GenerationSlice
@@ -72,7 +72,7 @@ describe('generationSlice', () => {
   describe('variations', () => {
     it('updateVariation updates text', () => {
       slice.promptVariations = [
-        { id: 'v1', text: 'original', mood: 'happy' },
+        { id: 'v1', text: 'original', mood: 'happy', type: 'variation' },
       ]
       slice.updateVariation('v1', 'updated')
       expect(slice.promptVariations[0].text).toBe('updated')
@@ -80,8 +80,8 @@ describe('generationSlice', () => {
 
     it('removeVariation removes variation', () => {
       slice.promptVariations = [
-        { id: 'v1', text: 'first', mood: 'happy' },
-        { id: 'v2', text: 'second', mood: 'sad' },
+        { id: 'v1', text: 'first', mood: 'happy', type: 'variation' },
+        { id: 'v2', text: 'second', mood: 'sad', type: 'variation' },
       ]
       slice.removeVariation('v1')
       expect(slice.promptVariations).toHaveLength(1)
@@ -90,7 +90,7 @@ describe('generationSlice', () => {
 
     it('duplicateVariation creates copy after original', () => {
       slice.promptVariations = [
-        { id: 'v1', text: 'first', mood: 'happy' },
+        { id: 'v1', text: 'first', mood: 'happy', type: 'variation' },
       ]
       slice.duplicateVariation('v1')
       expect(slice.promptVariations).toHaveLength(2)
@@ -99,7 +99,7 @@ describe('generationSlice', () => {
     })
 
     it('clearVariations resets all variation state', () => {
-      slice.promptVariations = [{ id: 'v1', text: 'test', mood: 'happy' }]
+      slice.promptVariations = [{ id: 'v1', text: 'test', mood: 'happy', type: 'variation' }]
       slice.variationsBasePrompt = 'base'
       slice.variationsTitle = 'title'
       slice.showPromptPreview = true

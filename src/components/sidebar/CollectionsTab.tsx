@@ -11,7 +11,7 @@ export function CollectionsTab() {
   const collections = useStore((s) => s.collections);
   const prompts = useStore((s) => s.prompts);
   const deleteCollection = useStore((s) => s.deleteCollection);
-  const setContextImages = useStore((s) => s.setContextImages);
+  const addContextImages = useStore((s) => s.addContextImages);
   const setRightTab = useStore((s) => s.setRightTab);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -109,11 +109,11 @@ export function CollectionsTab() {
                     size="sm"
                     variant="secondary"
                     onClick={() => {
-                      setContextImages(collection.image_ids);
+                      addContextImages(collection.image_ids);
                       setRightTab('generate');
                     }}
                   >
-                    Use as Context
+                    Add to Context
                   </Button>
                   <IconButton
                     size="sm"

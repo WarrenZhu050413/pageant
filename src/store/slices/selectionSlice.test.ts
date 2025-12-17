@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createSelectionSlice, SelectionSlice } from './selectionSlice'
+import { createSelectionSlice, type SelectionSlice } from './selectionSlice'
 
 describe('selectionSlice', () => {
   let slice: SelectionSlice
@@ -40,7 +40,7 @@ describe('selectionSlice', () => {
 
     it('clears selectedIds when changing mode', () => {
       slice.selectedIds = new Set(['id-1', 'id-2'])
-      slice.setSelectionMode('compare')
+      slice.setSelectionMode('select')
       expect(slice.selectedIds.size).toBe(0)
     })
   })

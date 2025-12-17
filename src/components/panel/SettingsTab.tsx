@@ -215,10 +215,11 @@ export function SettingsTab() {
               )}
             >
               <option value="">Default (Block Medium)</option>
-              <option value="BLOCK_NONE">Block None</option>
-              <option value="BLOCK_ONLY_HIGH">Block Only High</option>
-              <option value="BLOCK_MEDIUM_AND_ABOVE">Block Medium & Above</option>
-              <option value="BLOCK_LOW_AND_ABOVE">Block Low & Above</option>
+              {SAFETY_LEVEL_OPTIONS.map((level) => (
+                <option key={level} value={level}>
+                  {level.replace(/_/g, ' ').replace(/BLOCK /i, 'Block ')}
+                </option>
+              ))}
             </select>
           </div>
         </div>

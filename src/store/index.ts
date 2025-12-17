@@ -94,6 +94,7 @@ interface AppStore {
   // Context images
   setContextImages: (ids: string[]) => void;
   addContextImage: (id: string) => void;
+  addContextImages: (ids: string[]) => void;
   removeContextImage: (id: string) => void;
   clearContextImages: () => void;
 
@@ -394,6 +395,13 @@ export const useStore = create<AppStore>()(
         const { contextImageIds } = get();
         if (!contextImageIds.includes(id)) {
           set({ contextImageIds: [...contextImageIds, id] });
+        }
+      },
+      addContextImages: (ids) => {
+        const { contextImageIds } = get();
+        const newIds = ids.filter((id) => !contextImageIds.includes(id));
+        if (newIds.length > 0) {
+          set({ contextImageIds: [...contextImageIds, ...newIds] });
         }
       },
       removeContextImage: (id) => {

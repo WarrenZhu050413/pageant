@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Bookmark, Trash2, Image as ImageIcon, Type, Palette, FileText } from 'lucide-react';
+import { Bookmark, Trash2, Image as ImageIcon, Type, Palette, FileText, GitBranch } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Badge, Button, Input, Textarea, Dialog } from '../ui';
@@ -45,6 +45,31 @@ export function InfoTab() {
         return null;
       })
       .filter(Boolean) as { image: { id: string; image_path: string }; promptId: string; promptTitle: string }[];
+  }, [currentPrompt, prompts]);
+
+  // Build the prompt evolution chain by tracing parent_prompt_id
+  const promptEvolutionChain = useMemo(() => {
+    if (!currentPrompt) return [];
+
+    const chain: { id: string; title: string; prompt: string }[] = [];
+    let current = currentPrompt;
+
+    // First, add current prompt
+    chain.unshift({ id: current.id, title: current.title, prompt: current.prompt });
+
+    // Then trace back through parents
+    while (current.parent_prompt_id) {
+      const parent = prompts.find((p) => p.id === current.parent_prompt_id);
+      if (parent) {
+        chain.unshift({ id: parent.id, title: parent.title, prompt: parent.prompt });
+        current = parent;
+      } else {
+        break;
+      }
+    }
+
+    // Only return if there's more than just the current prompt (meaning there's evolution)
+    return chain.length > 1 ? chain : [];
   }, [currentPrompt, prompts]);
 
   const handleReferenceImageClick = (promptId: string, imageId: string) => {
@@ -183,6 +208,60 @@ export function InfoTab() {
           </div>
           <p className="text-[0.65rem] text-ink-muted mt-2">
             These images were used as context for generation. Click to view.
+          </p>
+        </section>
+      )}
+
+      {/* Prompt Evolution Chain */}
+      {promptEvolutionChain.length > 0 && (
+        <section>
+          <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
+            <GitBranch size={12} className="inline mr-1" />
+            Prompt Evolution
+          </h4>
+          <div className="space-y-2">
+            {promptEvolutionChain.map((step, index) => {
+              const isCurrent = step.id === currentPrompt?.id;
+              return (
+                <div key={step.id} className="flex items-start gap-2">
+                  {/* Step indicator */}
+                  <div className="flex flex-col items-center pt-1">
+                    <div
+                      className={clsx(
+                        'w-2.5 h-2.5 rounded-full border-2',
+                        isCurrent
+                          ? 'bg-brass border-brass'
+                          : 'bg-canvas-muted border-ink-muted'
+                      )}
+                    />
+                    {index < promptEvolutionChain.length - 1 && (
+                      <div className="w-px h-full min-h-[24px] bg-ink-muted/30 my-1" />
+                    )}
+                  </div>
+                  {/* Step content */}
+                  <button
+                    onClick={() => !isCurrent && setCurrentPrompt(step.id)}
+                    className={clsx(
+                      'flex-1 text-left p-2 rounded-md transition-colors',
+                      isCurrent
+                        ? 'bg-brass-muted/50 cursor-default'
+                        : 'bg-canvas-subtle hover:bg-canvas-muted cursor-pointer'
+                    )}
+                  >
+                    <p className="text-[0.65rem] text-ink-muted font-medium">
+                      {index === 0 ? 'Original' : `Iteration ${index}`}
+                      {isCurrent && ' (Current)'}
+                    </p>
+                    <p className="text-xs text-ink-secondary font-[family-name:var(--font-mono)] line-clamp-2">
+                      {step.prompt.slice(0, 80)}...
+                    </p>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <p className="text-[0.65rem] text-ink-muted mt-2">
+            Click to navigate to a previous iteration.
           </p>
         </section>
       )}

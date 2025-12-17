@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest'
-import { createSessionSlice, SessionSlice } from './sessionSlice'
+import { createSessionSlice, type SessionSlice } from './sessionSlice'
 
 describe('sessionSlice', () => {
   let slice: SessionSlice

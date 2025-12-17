@@ -205,8 +205,16 @@ export function PromptsTab() {
                     )}
                   >
                     {item.isPending ? (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Loader2 size={16} className="text-ink-muted animate-spin" />
+                      // Show grid of placeholder slots for each image being generated
+                      <div className="w-full h-full grid grid-cols-2 gap-px">
+                        {Array.from({ length: Math.min(item.count, 4) }).map((_, i) => (
+                          <div
+                            key={i}
+                            className="bg-generating/10 flex items-center justify-center"
+                          >
+                            <Loader2 size={8} className="text-generating animate-spin" />
+                          </div>
+                        ))}
                       </div>
                     ) : item.thumbnail ? (
                       <img
