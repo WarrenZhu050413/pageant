@@ -33,11 +33,15 @@ ImageSizeType = Literal["1K", "2K", "4K"]
 AspectRatioType = Literal["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9"]
 SafetyLevelType = Literal["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
 
-import sys
-
-from metadata_manager import MetadataManager
-sys.path.insert(0, str(Path(__file__).parent))
-from gemini_service import GeminiService
+# Support both import contexts:
+# - 'uvicorn backend.server:app' from project root (uses backend.* imports)
+# - 'import server' from backend directory (uses bare imports in tests)
+try:
+    from backend.metadata_manager import MetadataManager
+    from backend.gemini_service import GeminiService
+except ImportError:
+    from metadata_manager import MetadataManager
+    from gemini_service import GeminiService
 
 # Configure logging
 LOG_DIR = Path(__file__).parent.parent / "logs"
@@ -1380,7 +1384,10 @@ async def export_gallery_html():
 # TASTE EXPORT: Portable Visual Taste Profiles
 # ============================================================
 
-from taste_exporter import compile_taste_export
+try:
+    from backend.taste_exporter import compile_taste_export
+except ImportError:
+    from taste_exporter import compile_taste_export
 from dataclasses import asdict
 
 
