@@ -396,92 +396,9 @@ PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
 def load_default_variation_prompt() -> str:
-    """Load the default variation system prompt from file."""
-    prompt_path = PROMPTS_DIR / "variation_system.txt"
-    if prompt_path.exists():
-        return prompt_path.read_text()
-    # Fallback if file doesn't exist
-    return """<system>
-You are a creative director for visual imagery exploration.
-Generate {count} scene descriptions for AI image generation.
-</system>
-
-<base_prompt>
-{base_prompt}
-</base_prompt>
-
-<output_format>
-<scenes>
-  <scene id="1" type="faithful">
-    <description>Scene description...</description>
-    <mood>warm</mood>
-  </scene>
-</scenes>
-</output_format>"""
-
-
-def parse_scene_variations(xml_response: str) -> list[dict]:
-    """Parse XML scene variations from text model response using ElementTree.
-
-    Args:
-        xml_response: Raw XML string from text model (may have surrounding text)
-
-    Returns:
-        List of dicts with id, type, description, mood, and optional design tags
-    """
-    import xml.etree.ElementTree as ET
-
-    scenes = []
-
-    # Log the raw response for debugging
-    logger.debug(f"Raw LLM response (first 500 chars): {xml_response[:500]}")
-
-    # Extract the <scenes>...</scenes> block from the response
-    scenes_match = re.search(r'<scenes>(.*?)</scenes>', xml_response, re.DOTALL)
-    if not scenes_match:
-        logger.warning(f"No <scenes> block found in response. Response preview: {xml_response[:200]}")
-        return scenes
-
-    try:
-        # Wrap in root element and parse
-        xml_content = f"<root>{scenes_match.group(1)}</root>"
-        root = ET.fromstring(xml_content)
-
-        for scene_elem in root.findall('scene'):
-            scene = {
-                "id": scene_elem.get('id', ''),
-                "type": scene_elem.get('type', ''),
-                "description": (scene_elem.findtext('description') or '').strip(),
-                "mood": (scene_elem.findtext('mood') or '').strip(),
-            }
-
-            # Parse design block - dynamically extract all child elements as axes
-            design_elem = scene_elem.find('design')
-            if design_elem is not None:
-                design_tags = {}
-                for axis_elem in design_elem:
-                    axis = axis_elem.tag
-                    if axis_elem.text:
-                        tags = [t.strip() for t in axis_elem.text.split(',') if t.strip()]
-                        if tags:
-                            design_tags[axis] = tags
-                scene["design"] = design_tags
-
-            scenes.append(scene)
-
-    except ET.ParseError as e:
-        logger.warning(f"XML parse error, falling back to regex: {e}")
-        # Fallback to regex for malformed XML
-        pattern = r'<scene id="(\d+)" type="(\w+)">\s*<description>(.*?)</description>\s*<mood>(.*?)</mood>'
-        for match in re.finditer(pattern, xml_response, re.DOTALL):
-            scenes.append({
-                "id": match.group(1),
-                "type": match.group(2),
-                "description": match.group(3).strip(),
-                "mood": match.group(4).strip(),
-            })
-
-    return scenes
+    """Load the default variation prompt template from file."""
+    prompt_path = PROMPTS_DIR / "variation_structured.txt"
+    return prompt_path.read_text()
 
 
 def _flatten_design(design: dict) -> list[str]:
@@ -493,67 +410,10 @@ def _flatten_design(design: dict) -> list[str]:
     return tags
 
 
-# Legacy: Variation suffixes (kept for fallback/testing)
-VARIATION_SUFFIXES = [
-    "\n\n[Style variation: emphasize bold contrasts and dramatic lighting]",
-    "\n\n[Style variation: softer, more organic feel with subtle gradients]",
-    "\n\n[Style variation: clean minimalist interpretation with ample whitespace]",
-    "\n\n[Style variation: rich detailed version with intricate elements]",
-    "\n\n[Style variation: experimental artistic take with unique composition]",
-    "\n\n[Style variation: cinematic wide-angle perspective]",
-    "\n\n[Style variation: intimate close-up focused composition]",
-    "\n\n[Style variation: vibrant color palette with warm tones]",
-    "\n\n[Style variation: cool-toned, atmospheric mood]",
-    "\n\n[Style variation: high-contrast graphic style]",
-]
-
-
-def generate_fallback_variations(
-    base_prompt: str,
-    count: int,
-    existing_variations: list[dict] | None = None
-) -> list[dict]:
-    """Generate fallback variations using legacy suffixes.
-
-    Used when text model variation generation fails or produces insufficient results.
-
-    Args:
-        base_prompt: The base prompt text
-        count: Target number of variations
-        existing_variations: Optional list of already-parsed variations to fill
-
-    Returns:
-        list[dict]: List of variation dicts with id, type, description, mood
-    """
-    if existing_variations is None:
-        existing_variations = []
-
-    variations = list(existing_variations)  # Copy to avoid modifying original
-
-    while len(variations) < count:
-        idx = len(variations)
-        # First variation uses original prompt, subsequent add suffixes
-        if idx == 0 and not variations:
-            description = base_prompt
-        else:
-            suffix_idx = idx % len(VARIATION_SUFFIXES)
-            description = base_prompt + VARIATION_SUFFIXES[suffix_idx]
-
-        variations.append({
-            "id": str(idx + 1),
-            "type": "fallback",
-            "description": description,
-            "mood": "neutral",
-        })
-
-    return variations
-
-
 async def _generate_single_image(
     prompt: str,
     index: int,
     context_images: list[tuple[bytes, str, str | None]] | None = None,
-    add_variation: bool = True,
     image_size: str | None = None,
     aspect_ratio: str | None = None,
     seed: int | None = None,
@@ -564,14 +424,8 @@ async def _generate_single_image(
 ) -> dict:
     """Generate a single image and save it."""
     try:
-        # Add variation suffix to ensure different outputs
-        varied_prompt = prompt
-        if add_variation and index > 0:
-            variation_idx = (index - 1) % len(VARIATION_SUFFIXES)
-            varied_prompt = prompt + VARIATION_SUFFIXES[variation_idx]
-
         result = await gemini.generate_image(
-            varied_prompt,
+            prompt,
             context_images=context_images,
             image_size=image_size,
             aspect_ratio=aspect_ratio,
@@ -603,7 +457,7 @@ async def _generate_single_image(
             "image_path": img_filename,
             "mime_type": img_data["mime_type"],
             "generated_at": datetime.now().isoformat(),
-            "varied_prompt": varied_prompt,  # Store the actual prompt used
+            "prompt_used": prompt,  # Store the actual prompt used
         }
     except Exception as e:
         error_type = type(e).__name__
@@ -659,7 +513,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     try:
         # Use structured output for guaranteed JSON response
         logger.info(f"Generating {count} prompt variations (structured output)...")
-        scene_variations = await gemini.generate_prompt_variations_structured(
+        scene_variations = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
         )
@@ -675,16 +529,12 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
                 type=scene.type,
             ))
 
-        # Fill with fallbacks if not enough variations
-        while len(variations) < count:
-            idx = len(variations)
-            suffix_idx = idx % len(VARIATION_SUFFIXES)
-            variations.append(PromptVariation(
-                id=f"var-{uuid.uuid4().hex[:8]}",
-                text=req.prompt + VARIATION_SUFFIXES[suffix_idx],
-                mood="neutral",
-                type="fallback",
-            ))
+        if not variations:
+            return GeneratePromptsResponse(
+                success=False,
+                error="No variations generated",
+                base_prompt=req.prompt,
+            )
 
         return GeneratePromptsResponse(
             success=True,
@@ -729,7 +579,6 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
             prompt_data.get("text", ""),
             i,
             context_images=context_images,
-            add_variation=False,  # Prompts already varied/edited by user
             image_size=req.image_size,
             aspect_ratio=req.aspect_ratio,
             seed=req.seed,
@@ -834,29 +683,32 @@ async def generate_images(req: GenerateRequest):
         if context_images:
             logger.info(f"Using {len(context_images)} context image(s) with interleaved notes")
 
-    # === Step 1: Generate varied prompts via text model ===
-    variation_prompt = metadata.get("settings", {}).get(
-        "variation_prompt",
-        load_default_variation_prompt()
-    )
-
+    # === Step 1: Generate varied prompts via text model (structured output) ===
     try:
-        logger.info(f"Generating {count} prompt variations...")
-        xml_response = await gemini.generate_prompt_variations(
+        logger.info(f"Generating {count} prompt variations (structured output)...")
+        scene_variations = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
-            system_prompt=variation_prompt,
         )
-        variations = parse_scene_variations(xml_response)
-        logger.info(f"Parsed {len(variations)} scene variations")
+        # Convert SceneVariation objects to dict format for image generation
+        variations = [
+            {
+                "id": str(i + 1),
+                "type": scene.type,
+                "description": scene.description,
+                "mood": scene.mood,
+                "design": scene.design.model_dump() if scene.design else {},
+            }
+            for i, scene in enumerate(scene_variations)
+        ]
+        logger.info(f"Received {len(variations)} scene variations")
 
-        # Fallback if parsing failed or not enough variations
-        if len(variations) < count:
-            logger.warning(f"Only parsed {len(variations)} variations, needed {count}. Using fallback.")
-            variations = generate_fallback_variations(req.prompt, count, variations)
+        if not variations:
+            logger.error("No variations generated by structured output")
+            return PromptResponse(success=False, errors=["Failed to generate prompt variations"])
     except Exception as e:
-        logger.error(f"Variation generation failed: {e}, using fallback")
-        variations = generate_fallback_variations(req.prompt, count)
+        logger.error(f"Variation generation failed: {e}")
+        return PromptResponse(success=False, errors=[f"Failed to generate variations: {str(e)}"])
 
     # === Step 2: Generate images from varied prompts in parallel ===
     tasks = [
@@ -864,7 +716,6 @@ async def generate_images(req: GenerateRequest):
             var["description"],
             i,
             context_images=context_images,
-            add_variation=False,  # Variations already applied by text model
             image_size=req.image_size,
             aspect_ratio=req.aspect_ratio,
             seed=req.seed,
@@ -1530,30 +1381,33 @@ async def generate_more_like_this(image_id: str, count: int = 4):
         context_desc,
     )]
 
-    # === Step 1: Generate varied prompts via text model ===
+    # === Step 1: Generate varied prompts via text model (structured output) ===
     base_variation_prompt = f"Create a variation of this image while maintaining its core essence. {source_prompt['prompt']}"
     logger.info(f"Generating {count} variations of {image_id}")
 
-    variation_system_prompt = metadata.get("settings", {}).get(
-        "variation_prompt",
-        load_default_variation_prompt()
-    )
-
     try:
-        xml_response = await gemini.generate_prompt_variations(
+        scene_variations = await gemini.generate_prompt_variations(
             base_prompt=base_variation_prompt,
             count=count,
-            system_prompt=variation_system_prompt,
         )
-        variations = parse_scene_variations(xml_response)
-        logger.info(f"Parsed {len(variations)} variation prompts for iteration")
+        # Convert SceneVariation objects to dict format for image generation
+        variations = [
+            {
+                "id": str(i + 1),
+                "type": scene.type,
+                "description": scene.description,
+                "mood": scene.mood,
+                "design": scene.design.model_dump() if scene.design else {},
+            }
+            for i, scene in enumerate(scene_variations)
+        ]
+        logger.info(f"Received {len(variations)} variation prompts for iteration")
 
-        # Fallback if parsing failed
-        if len(variations) < count:
-            variations = generate_fallback_variations(base_variation_prompt, count, variations)
+        if not variations:
+            return {"success": False, "errors": ["Failed to generate variation prompts"]}
     except Exception as e:
-        logger.error(f"Variation generation failed for iteration: {e}, using fallback")
-        variations = generate_fallback_variations(base_variation_prompt, count)
+        logger.error(f"Variation generation failed for iteration: {e}")
+        return {"success": False, "errors": [f"Failed to generate variations: {str(e)}"]}
 
     # Load default image generation params from settings
     settings = metadata.get("settings", {})
@@ -1564,7 +1418,6 @@ async def generate_more_like_this(image_id: str, count: int = 4):
             var["description"],
             i,
             context_images=context_images,
-            add_variation=False,  # Variations already applied by text model
             image_size=settings.get("image_size"),
             aspect_ratio=settings.get("aspect_ratio"),
             seed=settings.get("seed"),

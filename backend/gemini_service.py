@@ -373,19 +373,21 @@ class GeminiService:
             usage=usage,
         )
 
-    async def generate_prompt_variations_structured(
+    async def generate_prompt_variations(
         self,
         base_prompt: str,
         count: int,
+        prompt_template: str | None = None,
     ) -> list[SceneVariation]:
         """Generate varied prompt descriptions using structured JSON output.
 
-        Uses Gemini's structured output feature to guarantee valid JSON responses,
-        eliminating XML parsing failures.
+        Uses Gemini's structured output feature to guarantee valid JSON responses.
 
         Args:
             base_prompt: User's original prompt
             count: Number of variations to generate
+            prompt_template: Optional custom prompt template with {base_prompt} and {count} placeholders.
+                           If not provided, loads from prompts/variation_structured.txt
 
         Returns:
             List of SceneVariation objects with guaranteed structure
@@ -395,26 +397,15 @@ class GeminiService:
 
         logger.info(f"Generating {count} structured prompt variations for: {base_prompt[:100]}...")
 
-        # Simplified prompt - the schema defines the structure
-        prompt = f"""Generate {count} diverse scene descriptions for AI image generation based on this prompt:
+        # Load prompt template from file if not provided
+        if prompt_template is None:
+            prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
+            prompt_file = os.path.join(prompts_dir, "variation_structured.txt")
+            with open(prompt_file, "r") as f:
+                prompt_template = f.read()
 
-"{base_prompt}"
-
-Requirements:
-1. Each scene must be vivid and detailed for AI image generation
-2. Vary lighting, mood, composition, and style across scenes
-3. About half should be "faithful" (closely matching the user's intent)
-4. About half should be "exploration" (creative interpretations)
-5. All scenes should be visually striking
-
-For design tags, select 1-3 relevant tags per category from options like:
-- colors: warm, cool, vibrant, muted, high-contrast, monochromatic, pastel
-- composition: centered, rule-of-thirds, wide-angle, close-up, symmetrical
-- layout: spacious, dense, balanced, dynamic, minimal
-- aesthetic: photorealistic, illustrated, minimalist, vintage, modern, surreal
-- typeface_feel: sans-serif, serif, bold, elegant, playful
-
-For mood, use options like: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, grand, nostalgic, futuristic"""
+        # Format the prompt with the base_prompt and count
+        prompt = prompt_template.format(base_prompt=base_prompt, count=count)
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -443,41 +434,6 @@ For mood, use options like: warm, cool, dramatic, serene, energetic, mysterious,
             elapsed = time.time() - start_time
             logger.error(f"Structured variation generation failed after {elapsed:.1f}s: {e}")
             raise
-
-    async def generate_prompt_variations(
-        self,
-        base_prompt: str,
-        count: int,
-        system_prompt: str,
-    ) -> str:
-        """Generate varied prompt descriptions using text model (legacy XML mode).
-
-        DEPRECATED: Use generate_prompt_variations_structured() instead for
-        guaranteed JSON output.
-
-        Args:
-            base_prompt: User's original prompt
-            count: Number of variations to generate
-            system_prompt: System prompt template with {base_prompt} and {count} placeholders
-
-        Returns:
-            Raw XML response from the model (to be parsed by caller)
-        """
-        logger.info(f"Generating {count} prompt variations (legacy XML mode) for: {base_prompt[:100]}...")
-        logger.debug(f"System prompt template length: {len(system_prompt)} chars")
-
-        formatted_prompt = system_prompt.format(
-            base_prompt=base_prompt,
-            count=count,
-        )
-
-        logger.debug(f"Formatted prompt length: {len(formatted_prompt)} chars")
-        result = await self.generate_text(formatted_prompt)
-
-        logger.info(f"Prompt variations response: {len(result.text)} chars")
-        logger.debug(f"Raw variations response: {result.text[:300]}...")
-
-        return result.text
 
     async def annotate_design_dimensions(
         self,
