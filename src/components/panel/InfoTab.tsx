@@ -15,7 +15,9 @@ const TYPE_CONFIG: Record<LibraryItemType, { label: string; icon: React.ReactNod
 export function InfoTab() {
   // Select primitive values to avoid infinite re-renders
   const prompts = useStore((s) => s.prompts);
+  const collections = useStore((s) => s.collections);
   const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const deletePrompt = useStore((s) => s.deletePrompt);
@@ -28,17 +30,48 @@ export function InfoTab() {
     [prompts, currentPromptId]
   );
 
-  const currentImage = useMemo(() => {
-    if (!currentPrompt) return null;
-    return currentPrompt.images[currentImageIndex] || null;
-  }, [currentPrompt, currentImageIndex]);
+  const currentCollection = useMemo(
+    () => collections.find((c) => c.id === currentCollectionId) || null,
+    [collections, currentCollectionId]
+  );
 
-  // Find reference images for this prompt
+  // Build image map for looking up images by ID
+  const imageMap = useMemo(() => {
+    const map = new Map<string, { image: typeof prompts[0]['images'][0]; prompt: typeof prompts[0] }>();
+    for (const prompt of prompts) {
+      for (const image of prompt.images) {
+        map.set(image.id, { image, prompt });
+      }
+    }
+    return map;
+  }, [prompts]);
+
+  // Get current image - works for both prompt and collection viewing
+  const { currentImage, imagePrompt } = useMemo(() => {
+    if (currentPrompt) {
+      // Viewing a prompt - get image by index
+      const image = currentPrompt.images[currentImageIndex] || null;
+      return { currentImage: image, imagePrompt: currentPrompt };
+    } else if (currentCollection) {
+      // Viewing a collection - get image from collection's image_ids
+      const imageId = currentCollection.image_ids[currentImageIndex];
+      if (imageId) {
+        const found = imageMap.get(imageId);
+        if (found) {
+          return { currentImage: found.image, imagePrompt: found.prompt };
+        }
+      }
+    }
+    return { currentImage: null, imagePrompt: null };
+  }, [currentPrompt, currentCollection, currentImageIndex, imageMap]);
+
+  // Find reference images for this prompt (use imagePrompt for collection viewing)
   const referenceImages = useMemo(() => {
-    if (!currentPrompt) return [];
+    const prompt = imagePrompt;
+    if (!prompt) return [];
 
-    const contextIds = currentPrompt.context_image_ids || [];
-    const inputId = currentPrompt.input_image_id;
+    const contextIds = prompt.context_image_ids || [];
+    const inputId = prompt.input_image_id;
 
     // Combine input_image_id with context_image_ids (input first if it exists)
     const allIds = inputId && !contextIds.includes(inputId)
@@ -57,14 +90,15 @@ export function InfoTab() {
         return null;
       })
       .filter(Boolean) as { image: { id: string; image_path: string }; promptId: string; promptTitle: string }[];
-  }, [currentPrompt, prompts]);
+  }, [imagePrompt, prompts]);
 
   // Build the prompt evolution chain by tracing parent_prompt_id
   const promptEvolutionChain = useMemo(() => {
-    if (!currentPrompt) return [];
+    const prompt = imagePrompt;
+    if (!prompt) return [];
 
     const chain: { id: string; title: string; prompt: string }[] = [];
-    let current = currentPrompt;
+    let current = prompt;
 
     // First, add current prompt
     chain.unshift({ id: current.id, title: current.title, prompt: current.prompt });
@@ -82,7 +116,7 @@ export function InfoTab() {
 
     // Only return if there's more than just the current prompt (meaning there's evolution)
     return chain.length > 1 ? chain : [];
-  }, [currentPrompt, prompts]);
+  }, [imagePrompt, prompts]);
 
   const handleReferenceImageClick = (promptId: string, imageId: string) => {
     setCurrentPrompt(promptId);
@@ -130,11 +164,11 @@ export function InfoTab() {
     };
 
     if (libraryItemType === 'fragment') {
-      data.text = libraryItemContent || currentPrompt?.prompt || '';
+      data.text = libraryItemContent || imagePrompt?.prompt || '';
     } else if (libraryItemType === 'preset') {
       data.style_tags = libraryItemTags.split(',').map((t) => t.trim()).filter(Boolean);
     } else if (libraryItemType === 'template') {
-      data.prompt = libraryItemContent || currentPrompt?.prompt || '';
+      data.prompt = libraryItemContent || imagePrompt?.prompt || '';
     }
 
     await createLibraryItem(data);
@@ -148,28 +182,32 @@ export function InfoTab() {
   useEffect(() => {
     const handler = () => {
       // Pre-fill with current prompt content
-      if (currentPrompt) {
-        setLibraryItemContent(currentPrompt.prompt);
-        setLibraryItemName(currentPrompt.title);
+      if (imagePrompt) {
+        setLibraryItemContent(imagePrompt.prompt);
+        setLibraryItemName(imagePrompt.title);
       }
       setIsSaveToLibraryDialogOpen(true);
     };
     document.addEventListener('save-template', handler);
     return () => document.removeEventListener('save-template', handler);
-  }, [currentPrompt]);
+  }, [imagePrompt]);
 
-  if (!currentPrompt) {
+  // Show empty state only if there's no image to display
+  if (!currentImage || !imagePrompt) {
     return (
       <div className="h-full flex items-center justify-center p-6 text-center">
         <div>
-          <p className="text-sm text-ink-secondary">No prompt selected</p>
+          <p className="text-sm text-ink-secondary">No image selected</p>
           <p className="text-xs text-ink-muted mt-1">
-            Select a prompt from the sidebar to view details
+            Select a prompt or collection to view details
           </p>
         </div>
       </div>
     );
   }
+
+  // Viewing mode - either prompt or collection
+  const isViewingCollection = !currentPrompt && !!currentCollection;
 
   return (
     <div className="p-4 space-y-6">
@@ -177,15 +215,20 @@ export function InfoTab() {
       <section>
         <div className="mb-2">
           <h3 className="font-[family-name:var(--font-display)] text-lg font-semibold text-ink">
-            {currentPrompt.title}
+            {imagePrompt.title}
           </h3>
+          {isViewingCollection && (
+            <p className="text-xs text-ink-muted">
+              From collection: {currentCollection?.name}
+            </p>
+          )}
         </div>
 
         <div className="p-3 rounded-lg bg-canvas-subtle">
           <p className="text-xs font-[family-name:var(--font-mono)] text-ink-secondary leading-relaxed whitespace-pre-wrap">
-            {currentImage?.varied_prompt || currentPrompt.prompt}
+            {currentImage.varied_prompt || imagePrompt.prompt}
           </p>
-          {currentImage?.varied_prompt && currentImage.varied_prompt !== currentPrompt.prompt && (
+          {currentImage.varied_prompt && currentImage.varied_prompt !== imagePrompt.prompt && (
             <p className="text-[0.6rem] text-ink-muted mt-2 italic">
               Varied from base prompt
             </p>
@@ -238,7 +281,7 @@ export function InfoTab() {
           </h4>
           <div className="space-y-2">
             {promptEvolutionChain.map((step, index) => {
-              const isCurrent = step.id === currentPrompt?.id;
+              const isCurrent = step.id === imagePrompt?.id;
               return (
                 <div key={step.id} className="flex items-start gap-2">
                   {/* Step indicator */}
@@ -331,9 +374,9 @@ export function InfoTab() {
           leftIcon={<Bookmark size={14} />}
           onClick={() => {
             // Pre-fill with current prompt content
-            if (currentPrompt) {
-              setLibraryItemContent(currentPrompt.prompt);
-              setLibraryItemName(currentPrompt.title);
+            if (imagePrompt) {
+              setLibraryItemContent(imagePrompt.prompt);
+              setLibraryItemName(imagePrompt.title);
             }
             setIsSaveToLibraryDialogOpen(true);
           }}
@@ -342,15 +385,18 @@ export function InfoTab() {
           Save to Library
         </Button>
 
-        <Button
-          variant="danger"
-          size="sm"
-          leftIcon={<Trash2 size={14} />}
-          onClick={() => setIsDeleteDialogOpen(true)}
-          className="w-full justify-center"
-        >
-          Delete Prompt
-        </Button>
+        {/* Only show delete button when viewing a prompt (not a collection) */}
+        {!isViewingCollection && (
+          <Button
+            variant="danger"
+            size="sm"
+            leftIcon={<Trash2 size={14} />}
+            onClick={() => setIsDeleteDialogOpen(true)}
+            className="w-full justify-center"
+          >
+            Delete Prompt
+          </Button>
+        )}
       </section>
 
       {/* Metadata */}
@@ -362,7 +408,7 @@ export function InfoTab() {
           <div className="flex justify-between">
             <dt className="text-ink-muted">Created</dt>
             <dd className="text-ink-secondary">
-              {new Date(currentPrompt.created_at).toLocaleDateString('en-US', {
+              {new Date(imagePrompt.created_at).toLocaleDateString('en-US', {
                 month: 'short',
                 day: 'numeric',
                 year: 'numeric',
@@ -372,45 +418,45 @@ export function InfoTab() {
             </dd>
           </div>
           <div className="flex justify-between">
-            <dt className="text-ink-muted">Images</dt>
-            <dd className="text-ink-secondary">{currentPrompt.images.length}</dd>
+            <dt className="text-ink-muted">Images in prompt</dt>
+            <dd className="text-ink-secondary">{imagePrompt.images.length}</dd>
           </div>
-          {currentImage && (
-            <div className="flex justify-between">
-              <dt className="text-ink-muted">Image ID</dt>
-              <dd className="text-ink-secondary font-[family-name:var(--font-mono)]">
-                {currentImage.id.slice(0, 12)}...
-              </dd>
-            </div>
-          )}
+          <div className="flex justify-between">
+            <dt className="text-ink-muted">Image ID</dt>
+            <dd className="text-ink-secondary font-[family-name:var(--font-mono)]">
+              {currentImage.id.slice(0, 12)}...
+            </dd>
+          </div>
         </dl>
       </section>
 
-      {/* Delete prompt dialog */}
-      <Dialog
-        isOpen={isDeleteDialogOpen}
-        onClose={() => setIsDeleteDialogOpen(false)}
-        title="Delete Prompt"
-      >
-        <p className="text-sm text-ink-secondary mb-6">
-          Are you sure you want to delete "{currentPrompt.title}" and all its images?
-          This action cannot be undone.
-        </p>
-        <div className="flex justify-end gap-3">
-          <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)}>
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            onClick={async () => {
-              await deletePrompt(currentPrompt.id);
-              setIsDeleteDialogOpen(false);
-            }}
-          >
-            Delete
-          </Button>
-        </div>
-      </Dialog>
+      {/* Delete prompt dialog - only shown when viewing a prompt */}
+      {!isViewingCollection && (
+        <Dialog
+          isOpen={isDeleteDialogOpen}
+          onClose={() => setIsDeleteDialogOpen(false)}
+          title="Delete Prompt"
+        >
+          <p className="text-sm text-ink-secondary mb-6">
+            Are you sure you want to delete "{imagePrompt.title}" and all its images?
+            This action cannot be undone.
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={async () => {
+                await deletePrompt(imagePrompt.id);
+                setIsDeleteDialogOpen(false);
+              }}
+            >
+              Delete
+            </Button>
+          </div>
+        </Dialog>
+      )}
 
       {/* Save to Library dialog */}
       <Dialog
