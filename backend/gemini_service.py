@@ -1,6 +1,7 @@
 """Gemini API service for image generation - simplified from Reverie."""
 
 import base64
+import logging
 import os
 import time
 from dataclasses import dataclass, field
@@ -8,6 +9,9 @@ from typing import Any
 
 from google import genai
 from google.genai import types
+
+# Configure module logger
+logger = logging.getLogger(__name__)
 
 
 def _detect_image_mime_type(data: bytes) -> str:
@@ -110,6 +114,10 @@ class GeminiService:
             params_info.append("search=on")
         params_str = f" ({', '.join(params_info)})" if params_info else ""
         print(f"[{model_name}] Generating image with {num_images} context image(s){params_str}...")
+
+        # Log image generation request
+        logger.info(f"Image generation request: model={model_name}, context_images={num_images}, params={params_info}")
+        logger.debug(f"Image prompt: {prompt[:200]}{'...' if len(prompt) > 200 else ''}")
 
         # Build image config if any image-specific params are set
         image_config = None
@@ -216,6 +224,11 @@ class GeminiService:
 
         print(f"[OK] Generated {len(images)} image(s) in {elapsed:.1f}s")
 
+        # Log image generation response
+        logger.info(f"Image generation response: images={len(images)}, elapsed={elapsed:.1f}s, usage={usage}")
+        if text:
+            logger.debug(f"Image response text: {text[:200]}{'...' if len(text) > 200 else ''}")
+
         return ImageResult(
             text=text,
             images=images,
@@ -244,6 +257,10 @@ class GeminiService:
 
         search_label = " (with search)" if google_search else ""
         print(f"[{model_name}] Generating text{search_label}...")
+
+        # Log the request details
+        logger.info(f"Text generation request: model={model_name}, prompt_len={len(prompt)}, google_search={google_search}")
+        logger.debug(f"Text prompt preview: {prompt[:500]}{'...' if len(prompt) > 500 else ''}")
 
         # Build config
         config_kwargs: dict[str, Any] = {}
@@ -316,6 +333,10 @@ class GeminiService:
         src_info = f", {len(grounding_sources)} sources" if google_search else ""
         print(f"[OK] Generated in {elapsed:.1f}s ({len(text)} chars{src_info})")
 
+        # Log response details
+        logger.info(f"Text generation response: len={len(text)}, elapsed={elapsed:.1f}s, usage={usage}")
+        logger.debug(f"Text response preview: {text[:500]}{'...' if len(text) > 500 else ''}")
+
         return TextResult(
             text=text,
             grounding_sources=grounding_sources,
@@ -340,11 +361,20 @@ class GeminiService:
         Returns:
             Raw XML response from the model (to be parsed by caller)
         """
+        logger.info(f"Generating {count} prompt variations for: {base_prompt[:100]}...")
+        logger.debug(f"System prompt template length: {len(system_prompt)} chars")
+
         formatted_prompt = system_prompt.format(
             base_prompt=base_prompt,
             count=count,
         )
+
+        logger.debug(f"Formatted prompt length: {len(formatted_prompt)} chars")
         result = await self.generate_text(formatted_prompt)
+
+        logger.info(f"Prompt variations response: {len(result.text)} chars")
+        logger.debug(f"Raw variations response: {result.text[:300]}...")
+
         return result.text
 
     async def annotate_design_dimensions(
