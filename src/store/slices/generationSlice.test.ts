@@ -128,4 +128,71 @@ describe('generationSlice', () => {
       expect(slice.isGenerating).toBe(true)
     })
   })
+
+  describe('per-variation context', () => {
+    it('variations can have recommended_context_ids', () => {
+      slice.promptVariations = [
+        {
+          id: 'v1',
+          text: 'warm sunset scene',
+          mood: 'warm',
+          type: 'faithful',
+          recommended_context_ids: ['img-1', 'img-2'],
+          context_reasoning: 'Using warm-toned images for this variation',
+        },
+        {
+          id: 'v2',
+          text: 'cool moonlit scene',
+          mood: 'cool',
+          type: 'exploration',
+          recommended_context_ids: ['img-3'],
+          context_reasoning: 'Using cool-toned image for contrast',
+        },
+      ]
+      expect(slice.promptVariations[0].recommended_context_ids).toEqual(['img-1', 'img-2'])
+      expect(slice.promptVariations[1].recommended_context_ids).toEqual(['img-3'])
+    })
+
+    it('variations without context_ids default to empty array', () => {
+      slice.promptVariations = [
+        { id: 'v1', text: 'test', mood: 'happy', type: 'variation' },
+      ]
+      expect(slice.promptVariations[0].recommended_context_ids).toBeUndefined()
+    })
+
+    it('updateVariation preserves recommended_context_ids', () => {
+      slice.promptVariations = [
+        {
+          id: 'v1',
+          text: 'original',
+          mood: 'happy',
+          type: 'variation',
+          recommended_context_ids: ['img-1'],
+          context_reasoning: 'test reasoning',
+        },
+      ]
+      slice.updateVariation('v1', 'updated text')
+      expect(slice.promptVariations[0].text).toBe('updated text')
+      expect(slice.promptVariations[0].recommended_context_ids).toEqual(['img-1'])
+      expect(slice.promptVariations[0].context_reasoning).toBe('test reasoning')
+    })
+
+    it('duplicateVariation preserves recommended_context_ids', () => {
+      slice.promptVariations = [
+        {
+          id: 'v1',
+          text: 'first',
+          mood: 'happy',
+          type: 'variation',
+          recommended_context_ids: ['img-1', 'img-2'],
+          context_reasoning: 'test reasoning',
+        },
+      ]
+      slice.duplicateVariation('v1')
+      expect(slice.promptVariations).toHaveLength(2)
+      expect(slice.promptVariations[1].recommended_context_ids).toEqual(['img-1', 'img-2'])
+      expect(slice.promptVariations[1].context_reasoning).toBe('test reasoning')
+    })
+  })
+
 })

@@ -15,7 +15,7 @@ import {
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { IconButton } from '../ui';
-import { InfoOverlay } from './InfoOverlay';
+import { DesignAnnotation } from './DesignAnnotation';
 
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
@@ -301,8 +301,8 @@ export function SingleView() {
         })}
       </div>
 
-      {/* Info Panel */}
-      <InfoOverlay />
+      {/* Design Annotation Tags */}
+      <DesignAnnotation />
     </div>
   );
 }

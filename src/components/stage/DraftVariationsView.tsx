@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import {
@@ -12,10 +12,14 @@ import {
   ChevronUp,
   FileEdit,
   X,
+  Image,
+  Check,
+  AlertCircle,
 } from 'lucide-react';
 import { useStore } from '../../store';
+import { getImageUrl } from '../../api';
 import { Button, Badge } from '../ui';
-import type { DraftPrompt } from '../../types';
+import type { DraftPrompt, ImageData } from '../../types';
 
 interface DraftVariationsViewProps {
   draft: DraftPrompt;
@@ -31,9 +35,33 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const deleteDraft = useStore((s) => s.deleteDraft);
   const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
   const isGenerating = useStore((s) => s.isGenerating);
+  const prompts = useStore((s) => s.prompts);
+  const updateImageNotes = useStore((s) => s.updateImageNotes);
 
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [appliedCaptions, setAppliedCaptions] = useState<Set<string>>(new Set());
+
+  // Build a map of image ID to image data for quick lookup
+  const imageMap = useMemo(() => {
+    const map = new Map<string, ImageData>();
+    for (const prompt of prompts) {
+      for (const image of prompt.images) {
+        map.set(image.id, image);
+      }
+    }
+    return map;
+  }, [prompts]);
+
+  const findImageById = useCallback((id: string) => imageMap.get(id), [imageMap]);
+
+  // Apply a caption suggestion
+  const handleApplyCaption = async (imageId: string, suggestedCaption: string) => {
+    const img = findImageById(imageId);
+    // updateImageNotes takes (imageId, notes, caption) - keep existing notes, update caption
+    await updateImageNotes(imageId, img?.notes || '', suggestedCaption);
+    setAppliedCaptions((prev) => new Set(prev).add(imageId));
+  };
 
   const handleRegenerate = async (variationId: string) => {
     setRegeneratingIds((prev) => new Set(prev).add(variationId));
@@ -211,7 +239,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                   </div>
 
                   {/* Prompt text - editable when expanded */}
-                  <div className="px-3 pb-3">
+                  <div className="px-3 pb-2">
                     {isExpanded ? (
                       <textarea
                         value={variation.text}
@@ -234,12 +262,128 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                       </p>
                     )}
                   </div>
+
+                  {/* Per-variation context images */}
+                  {variation.recommended_context_ids && variation.recommended_context_ids.length > 0 && (
+                    <div className="px-3 pb-3 pt-1 border-t border-border/30">
+                      <div className="flex items-center gap-2">
+                        <Image size={12} className="text-ink-tertiary shrink-0" />
+                        <span className="text-[0.65rem] text-ink-muted shrink-0">Context:</span>
+                        <div className="flex gap-1.5 flex-wrap">
+                          {variation.recommended_context_ids.map((imgId) => {
+                            const img = findImageById(imgId);
+                            return img ? (
+                              <img
+                                key={imgId}
+                                src={getImageUrl(img.image_path)}
+                                alt={img.caption || 'Context image'}
+                                className="w-7 h-7 rounded object-cover border border-border/50"
+                                title={variation.context_reasoning || img.caption || imgId}
+                              />
+                            ) : (
+                              <div
+                                key={imgId}
+                                className="w-7 h-7 rounded bg-canvas-muted flex items-center justify-center"
+                                title={`Image not found: ${imgId}`}
+                              >
+                                <Image size={12} className="text-ink-muted" />
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {variation.context_reasoning && (
+                          <span
+                            className="text-[0.6rem] text-ink-muted italic truncate flex-1 ml-1"
+                            title={variation.context_reasoning}
+                          >
+                            {variation.context_reasoning}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </motion.div>
               );
             })}
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Caption Suggestions Section */}
+      {draft.captionSuggestions && draft.captionSuggestions.length > 0 && (
+        <div className="px-4 py-3 border-t border-border bg-amber-50/50 shrink-0">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={14} className="text-amber-600" />
+            <span className="text-xs font-medium text-amber-700">
+              Caption Improvements Suggested
+            </span>
+            <span className="text-[0.65rem] text-amber-600/70">
+              Better captions help AI generate more relevant images
+            </span>
+          </div>
+          <div className="space-y-2">
+            {draft.captionSuggestions.map((suggestion) => {
+              const img = findImageById(suggestion.image_id);
+              const isApplied = appliedCaptions.has(suggestion.image_id);
+              return (
+                <div
+                  key={suggestion.image_id}
+                  className={clsx(
+                    'flex gap-3 items-start p-2 rounded-md',
+                    isApplied ? 'bg-green-50/50' : 'bg-white/50'
+                  )}
+                >
+                  {img ? (
+                    <img
+                      src={getImageUrl(img.image_path)}
+                      alt={suggestion.original_caption || 'Image'}
+                      className="w-10 h-10 rounded object-cover border border-border/50 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-10 h-10 rounded bg-canvas-muted flex items-center justify-center shrink-0">
+                      <Image size={14} className="text-ink-muted" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    {suggestion.original_caption && (
+                      <p className="text-[0.65rem] text-ink-muted line-through mb-0.5">
+                        {suggestion.original_caption}
+                      </p>
+                    )}
+                    <p className="text-xs text-ink-secondary">
+                      "{suggestion.suggested_caption}"
+                    </p>
+                    {suggestion.reason && (
+                      <p className="text-[0.6rem] text-amber-600/80 mt-0.5 italic">
+                        {suggestion.reason}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => handleApplyCaption(suggestion.image_id, suggestion.suggested_caption)}
+                    disabled={isApplied}
+                    className={clsx(
+                      'shrink-0 px-2 py-1 rounded text-xs transition-colors',
+                      isApplied
+                        ? 'bg-green-100 text-green-700 cursor-default'
+                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
+                    )}
+                  >
+                    {isApplied ? (
+                      <span className="flex items-center gap-1">
+                        <Check size={12} />
+                        Applied
+                      </span>
+                    ) : (
+                      'Apply'
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-surface shrink-0">

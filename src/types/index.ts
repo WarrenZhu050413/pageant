@@ -138,6 +138,8 @@ export interface DraftPrompt {
   // Image params to use when generating
   imageParams?: ImageGenerationParams;
   contextImageIds?: string[];
+  // Caption suggestions from AI (global, not per-variation)
+  captionSuggestions?: CaptionSuggestion[];
 }
 
 export interface Template {
@@ -265,6 +267,16 @@ export interface PromptVariation {
   mood: string;
   type: string;
   design?: Record<string, string[]>;  // Design tags by axis (colors, composition, etc.)
+  // Per-variation context image assignment
+  recommended_context_ids?: string[];  // Image IDs to use for THIS variation
+  context_reasoning?: string;  // Why these images were chosen
+}
+
+export interface CaptionSuggestion {
+  image_id: string;
+  original_caption?: string;
+  suggested_caption: string;
+  reason: string;
 }
 
 export interface GeneratePromptsRequest extends ImageGenerationParams {
@@ -279,12 +291,18 @@ export interface GeneratePromptsResponse {
   variations: PromptVariation[];
   base_prompt: string;
   generated_title?: string; // Title from model (generated or refined from user's)
+  caption_suggestions?: CaptionSuggestion[];  // Suggested caption improvements
   error?: string;
 }
 
 export interface GenerateFromPromptsRequest extends ImageGenerationParams {
   title: string;
-  prompts: { text: string; mood?: string; design?: Record<string, string[]> }[];
+  prompts: {
+    text: string;
+    mood?: string;
+    design?: Record<string, string[]>;
+    recommended_context_ids?: string[];  // Per-variation context
+  }[];
   context_image_ids?: string[];
   session_id?: string;
   category?: string;

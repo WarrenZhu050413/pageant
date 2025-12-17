@@ -35,12 +35,33 @@ class SceneVariation(BaseModel):
     description: str = Field(description="Detailed scene description for AI image generation")
     mood: str = Field(description="Emotional tone like 'warm', 'dramatic', 'serene'")
     design: DesignTags = Field(default_factory=DesignTags, description="Design attributes for this scene")
+    # Per-variation context image assignment
+    recommended_context_ids: list[str] = Field(
+        default_factory=list,
+        description="Image IDs from the pool that best support THIS specific variation"
+    )
+    context_reasoning: str | None = Field(
+        default=None,
+        description="Why these specific images were chosen for this variation"
+    )
+
+
+class CaptionSuggestion(BaseModel):
+    """Suggested caption improvement for a context image."""
+    image_id: str = Field(description="The ID of the image needing a better caption")
+    original_caption: str | None = Field(default=None, description="The current caption")
+    suggested_caption: str = Field(description="A better caption for generation context")
+    reason: str = Field(description="Why this caption is more suitable")
 
 
 class SceneVariationsResponse(BaseModel):
-    """Response containing multiple scene variations."""
+    """Response containing multiple scene variations with context assignments."""
     title: str = Field(description="A short, creative title for this generation (2-5 words)")
     scenes: list[SceneVariation] = Field(description="List of scene variations")
+    caption_suggestions: list[CaptionSuggestion] | None = Field(
+        default=None,
+        description="Suggested caption improvements for context images with inadequate descriptions"
+    )
 
 
 def _detect_image_mime_type(data: bytes) -> str:
@@ -388,9 +409,10 @@ class GeminiService:
         base_prompt: str,
         count: int,
         context_images: list[tuple[bytes, str, str | None]] | None = None,
+        context_image_pool: list[tuple[str, bytes, str, str | None]] | None = None,
         title: str | None = None,
         prompt_template: str | None = None,
-    ) -> tuple[str, list[SceneVariation]]:
+    ) -> tuple[str, list[SceneVariation], list[CaptionSuggestion] | None]:
         """Generate varied prompt descriptions using structured JSON output.
 
         Uses Gemini's structured output feature to guarantee valid JSON responses.
@@ -398,21 +420,28 @@ class GeminiService:
         Args:
             base_prompt: User's original prompt
             count: Number of variations to generate
-            context_images: Optional list of (image_bytes, mime_type, caption) tuples.
-                           Images are shown to the model with their captions for context.
+            context_images: DEPRECATED - use context_image_pool instead.
+                           Optional list of (image_bytes, mime_type, caption) tuples.
+            context_image_pool: Optional list of (image_id, image_bytes, mime_type, caption) tuples.
+                               When provided, model assigns specific images to each variation
+                               via recommended_context_ids field.
             title: Optional user-provided title. If provided, used as context for variations.
                    Model always returns a title (generated or refined from user's).
             prompt_template: Optional custom prompt template with {base_prompt}, {count},
-                           and {title_context} placeholders.
+                           {title_context}, and {context_assignment_section} placeholders.
                            If not provided, loads from prompts/variation_structured.txt
 
         Returns:
-            Tuple of (title, list of SceneVariation objects)
+            Tuple of (title, list of SceneVariation objects, optional caption suggestions)
         """
         model_name = self.DEFAULT_TEXT_MODEL
         start_time = time.time()
 
-        num_images = len(context_images) if context_images else 0
+        # Support both old and new API
+        has_pool = context_image_pool is not None and len(context_image_pool) > 0
+        has_legacy = context_images is not None and len(context_images) > 0
+        num_images = len(context_image_pool) if has_pool else (len(context_images) if has_legacy else 0)
+
         title_info = f", title='{title}'" if title else ", no title"
         logger.info(f"Generating {count} structured prompt variations for: {base_prompt[:100]}... (with {num_images} context images{title_info})")
 
@@ -428,35 +457,59 @@ class GeminiService:
         if title:
             title_context = f'USER-PROVIDED TITLE: "{title}"\nUse this title as context for your variations. You may refine it or use it as-is for the output title.'
 
-        # Format the prompt with the base_prompt, count, and title_context
-        prompt = prompt_template.format(base_prompt=base_prompt, count=count, title_context=title_context)
+        # Build context assignment section if image pool is provided
+        context_assignment_section = ""
+        if has_pool:
+            context_assignment_section = f"""
+CONTEXT IMAGE POOL:
+You have access to {len(context_image_pool)} reference images (shown below with their IDs and captions).
 
-        # Build context section if images are provided
-        context_section = ""
-        if context_images:
-            context_section = "\n\nCONTEXT IMAGES:\n"
-            context_section += "The following reference images have been provided by the user. "
-            context_section += "Use them to understand the visual direction, style, mood, and subject matter the user is interested in.\n"
+For EACH variation you generate:
+1. Select which images from the pool would be most helpful as generation context
+2. Consider: Does the image's mood, style, composition, or color palette align with THIS variation?
+3. Assign 0-3 images per variation via the recommended_context_ids field
+4. Explain your reasoning in context_reasoning
+
+Different variations may use different images - match context to each variation's specific needs.
+
+If any image's caption is inadequate for generation context, suggest improvements in caption_suggestions.
+"""
+        elif has_legacy:
+            # Legacy mode: just show context images without per-variation assignment
+            context_assignment_section = "\n\nCONTEXT IMAGES:\nThe following reference images have been provided by the user. Use them to understand the visual direction, style, mood, and subject matter the user is interested in.\n"
+
+        # Format the prompt with all placeholders
+        prompt = prompt_template.format(
+            base_prompt=base_prompt,
+            count=count,
+            title_context=title_context,
+            context_assignment_section=context_assignment_section
+        )
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=SceneVariationsResponse,
         )
 
-        # Build interleaved contents: [img1, caption1, img2, caption2, ..., prompt]
-        if context_images:
+        # Build interleaved contents with images
+        if has_pool:
             contents = []
-            # Add context intro
-            contents.append(context_section)
-            # Interleave images with captions
+            contents.append(prompt)
+            # Add each image with its ID and caption
+            for img_id, img_bytes, mime_type, caption in context_image_pool:
+                contents.append(f"\n\nImage ID: {img_id}")
+                contents.append(f"Caption: {caption or '(none)'}")
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+        elif has_legacy:
+            # Legacy mode
+            contents = []
+            contents.append(prompt)
             for i, (img_bytes, mime_type, caption) in enumerate(context_images):
                 contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
                 if caption:
                     contents.append(f"Reference {i+1} caption: {caption}")
                 else:
                     contents.append(f"Reference {i+1}: (no caption provided)")
-            # Add the main prompt
-            contents.append("\n" + prompt)
         else:
             contents = prompt
 
@@ -474,9 +527,10 @@ class GeminiService:
 
             logger.info(f"Structured variations response: title='{result.title}', {len(result.scenes)} scenes in {elapsed:.1f}s")
             for i, scene in enumerate(result.scenes):
-                logger.debug(f"Scene {i+1}: type={scene.type}, mood={scene.mood}, desc={scene.description[:50]}...")
+                context_ids = scene.recommended_context_ids if scene.recommended_context_ids else []
+                logger.debug(f"Scene {i+1}: type={scene.type}, mood={scene.mood}, context_ids={context_ids}, desc={scene.description[:50]}...")
 
-            return result.title, result.scenes
+            return result.title, result.scenes, result.caption_suggestions
 
         except Exception as e:
             elapsed = time.time() - start_time

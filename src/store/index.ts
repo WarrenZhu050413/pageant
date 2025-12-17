@@ -546,10 +546,17 @@ export const useStore = create<AppStore>()(
             // Use generated title from model if user didn't provide one
             const finalTitle = response.generated_title || title || 'Untitled';
 
-            // Update the draft with variations and title
+            // Update the draft with variations, title, and caption suggestions
             set({
               draftPrompts: get().draftPrompts.map((d) =>
-                d.id === draftId ? { ...d, variations: response.variations, title: finalTitle } : d
+                d.id === draftId
+                  ? {
+                      ...d,
+                      variations: response.variations,
+                      title: finalTitle,
+                      captionSuggestions: response.caption_suggestions,
+                    }
+                  : d
               ),
               promptVariations: response.variations, // Keep legacy state for modal fallback
               variationsTitle: finalTitle, // Update legacy title state
@@ -855,6 +862,8 @@ export const useStore = create<AppStore>()(
               text: v.text,
               mood: v.mood,
               design: v.design,
+              // Include per-variation context for targeted image generation
+              recommended_context_ids: v.recommended_context_ids,
             })),
             context_image_ids: draft.contextImageIds,
             session_id: currentSessionId || undefined,

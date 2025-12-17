@@ -1,5 +1,3 @@
-import { useState } from 'react';
-import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
@@ -7,7 +5,6 @@ import {
   BookmarkIcon,
   Star,
   BarChart3,
-  ChevronDown,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
@@ -18,7 +15,7 @@ import { LibraryTab } from './LibraryTab';
 import { FavoritesTab } from './FavoritesTab';
 import { PreferencesTab } from './PreferencesTab';
 import { SessionsPanel } from './SessionsPanel';
-import { NotesPanel } from './NotesPanel';
+import { InfoSection } from './InfoSection';
 
 const tabs = [
   { id: 'prompts', label: 'Prompts', icon: <FileText size={14} /> },
@@ -31,7 +28,6 @@ const tabs = [
 export function LeftSidebar() {
   const leftTab = useStore((s) => s.leftTab);
   const setLeftTab = useStore((s) => s.setLeftTab);
-  const [isNotesExpanded, setIsNotesExpanded] = useState(true);
 
   return (
     <div className="flex flex-col h-full">
@@ -73,39 +69,8 @@ export function LeftSidebar() {
         </AnimatePresence>
       </div>
 
-      {/* Notes Section */}
-      <div className="border-t border-border">
-        <button
-          onClick={() => setIsNotesExpanded(!isNotesExpanded)}
-          className={clsx(
-            'w-full flex items-center justify-between px-4 py-2.5',
-            'text-xs font-medium text-ink-secondary uppercase tracking-wide',
-            'hover:bg-canvas-subtle transition-colors'
-          )}
-        >
-          <span>Notes</span>
-          <ChevronDown
-            size={14}
-            className={clsx(
-              'transition-transform duration-200',
-              isNotesExpanded && 'rotate-180'
-            )}
-          />
-        </button>
-        <AnimatePresence>
-          {isNotesExpanded && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="overflow-hidden"
-            >
-              <NotesPanel />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      {/* Info Section */}
+      <InfoSection />
     </div>
   );
 }

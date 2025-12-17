@@ -158,20 +158,32 @@ class GeneratePromptsRequest(BaseModel):
 
 
 class PromptVariation(BaseModel):
-    """A single prompt variation."""
+    """A single prompt variation with optional per-variation context assignment."""
     id: str
     text: str
     mood: str = ""
     type: str = ""
     design: dict[str, list[str]] = {}  # Design tags by axis (colors, composition, etc.)
+    # Per-variation context image assignment
+    recommended_context_ids: list[str] = []  # Image IDs to use for THIS variation
+    context_reasoning: str | None = None  # Why these images were chosen
+
+
+class CaptionSuggestionResponse(BaseModel):
+    """Suggested caption improvement for a context image."""
+    image_id: str
+    original_caption: str | None = None
+    suggested_caption: str
+    reason: str
 
 
 class GeneratePromptsResponse(BaseModel):
-    """Response with prompt variations."""
+    """Response with prompt variations and optional caption suggestions."""
     success: bool
     variations: list[PromptVariation] = []
     base_prompt: str = ""
     generated_title: str | None = None  # Title from model (generated or refined from user's)
+    caption_suggestions: list[CaptionSuggestionResponse] = []  # Suggested caption improvements
     error: str | None = None
 
 
@@ -451,7 +463,7 @@ def _find_image_by_id(metadata: dict, image_id: str) -> tuple[dict | None, Path 
 
 
 def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None]]:
-    """Load multiple context images. Returns list of (bytes, mime_type, notes) tuples."""
+    """Load multiple context images. Returns list of (bytes, mime_type, caption) tuples."""
     context_images = []
     for img_id in image_ids:
         img_data, img_path = _find_image_by_id(metadata, img_id)
@@ -468,6 +480,25 @@ def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[byt
     return context_images
 
 
+def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple[str, bytes, str, str | None]]:
+    """Load context images with IDs for per-variation assignment.
+
+    Returns list of (image_id, bytes, mime_type, caption) tuples.
+    """
+    pool = []
+    for img_id in image_ids:
+        img_data, img_path = _find_image_by_id(metadata, img_id)
+        if img_data and img_path:
+            caption = img_data.get("caption", "") or ""
+            pool.append((
+                img_id,
+                img_path.read_bytes(),
+                img_data.get("mime_type", "image/png"),
+                caption.strip() if caption else None,
+            ))
+    return pool
+
+
 # ============================================================
 # TWO-PHASE GENERATION: Prompt Variations → Image Generation
 # ============================================================
@@ -481,32 +512,46 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     before committing to image generation.
 
     If context_image_ids are provided, the images and their captions are
-    passed to the model to inform the variations.
+    passed to the model. The model assigns specific images to each variation
+    via recommended_context_ids for targeted image generation.
     """
     count = min(max(1, req.count), 10)  # Clamp between 1 and 10
     title_info = f", title='{req.title}'" if req.title else ""
     logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'{title_info}, context_images={len(req.context_image_ids)}")
 
-    # Load context images with captions if specified
+    # Load context images as a pool with IDs for per-variation assignment
     metadata = load_metadata()
-    context_images = None
+    context_image_pool = None
     if req.context_image_ids:
-        context_images = _load_context_images(metadata, req.context_image_ids)
-        if context_images:
-            logger.info(f"Using {len(context_images)} context image(s) with captions for prompt variation")
+        context_image_pool = _load_context_image_pool(metadata, req.context_image_ids)
+        if context_image_pool:
+            pool_summary = [(img_id, caption[:30] if caption else "(no caption)") for img_id, _, _, caption in context_image_pool]
+            logger.info(f"[CONTEXT TRACE] Phase 1 - Loaded {len(context_image_pool)} context image(s) as pool:")
+            for img_id, caption_preview in pool_summary:
+                logger.info(f"  - {img_id}: {caption_preview}...")
 
     try:
         # Use structured output for guaranteed JSON response
         logger.info(f"Generating {count} prompt variations (structured output)...")
-        generated_title, scene_variations = await gemini.generate_prompt_variations(
+        generated_title, scene_variations, caption_suggestions = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
-            context_images=context_images,
+            context_image_pool=context_image_pool,
             title=req.title,  # Pass user-provided title as context (or None)
         )
         logger.info(f"Received title='{generated_title}', {len(scene_variations)} structured scene variations")
 
-        # Convert SceneVariation objects to response model
+        # Log per-variation context assignments from the text model
+        if context_image_pool:
+            logger.info(f"[CONTEXT TRACE] Text model returned per-variation context assignments:")
+            for i, scene in enumerate(scene_variations[:count]):
+                ctx_ids = scene.recommended_context_ids or []
+                reasoning = scene.context_reasoning or "(no reasoning)"
+                logger.info(f"  - Variation {i+1} ({scene.mood}): {len(ctx_ids)} context(s) = {ctx_ids}")
+                if ctx_ids:
+                    logger.info(f"    Reasoning: {reasoning[:80]}...")
+
+        # Convert SceneVariation objects to response model with per-variation context
         variations = []
         for scene in scene_variations[:count]:
             variations.append(PromptVariation(
@@ -515,7 +560,22 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
                 mood=scene.mood,
                 type=scene.type,
                 design=scene.design.model_dump() if scene.design else {},
+                recommended_context_ids=scene.recommended_context_ids or [],
+                context_reasoning=scene.context_reasoning,
             ))
+
+        # Convert caption suggestions if present
+        caption_suggestion_responses = []
+        if caption_suggestions:
+            # Build a map of image_id -> original caption from the pool
+            caption_map = {img_id: caption for img_id, _, _, caption in (context_image_pool or [])}
+            for sug in caption_suggestions:
+                caption_suggestion_responses.append(CaptionSuggestionResponse(
+                    image_id=sug.image_id,
+                    original_caption=caption_map.get(sug.image_id) or sug.original_caption,
+                    suggested_caption=sug.suggested_caption,
+                    reason=sug.reason,
+                ))
 
         if not variations:
             return GeneratePromptsResponse(
@@ -529,6 +589,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
             variations=variations,
             base_prompt=req.prompt,
             generated_title=generated_title,
+            caption_suggestions=caption_suggestion_responses,
         )
 
     except Exception as e:
@@ -546,6 +607,9 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
 
     Takes an array of prompt texts (possibly edited by user) and generates
     images from each in parallel.
+
+    Each prompt can have recommended_context_ids for per-variation context.
+    If not specified, falls back to the global context_image_ids.
     """
     if not req.prompts:
         return PromptResponse(success=False, errors=["No prompts provided"])
@@ -555,29 +619,71 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
 
     metadata = load_metadata()
 
-    # Load context images if specified (with notes for interleaved input)
-    context_images = None
-    if req.context_image_ids:
-        context_images = _load_context_images(metadata, req.context_image_ids)
-        if context_images:
-            logger.info(f"Using {len(context_images)} context image(s) with interleaved notes")
+    # Build a map of image_id -> (bytes, mime_type, caption) for per-variation lookup
+    context_image_map: dict[str, tuple[bytes, str, str | None]] = {}
+    all_context_ids = set(req.context_image_ids)
+    # Also collect any per-prompt recommended_context_ids
+    for prompt_data in req.prompts:
+        all_context_ids.update(prompt_data.get("recommended_context_ids", []))
 
-    # Generate images in parallel from provided prompts
-    tasks = [
-        _generate_single_image(
-            prompt_data.get("text", ""),
-            i,
-            context_images=context_images,
-            image_size=req.image_size,
-            aspect_ratio=req.aspect_ratio,
-            seed=req.seed,
-            safety_level=req.safety_level,
-            thinking_level=req.thinking_level,
-            temperature=req.temperature,
-            google_search_grounding=req.google_search_grounding,
+    # Load all potentially needed context images
+    for img_id in all_context_ids:
+        if img_id not in context_image_map:
+            img_data, img_path = _find_image_by_id(metadata, img_id)
+            if img_data and img_path:
+                caption = img_data.get("caption", "") or ""
+                context_image_map[img_id] = (
+                    img_path.read_bytes(),
+                    img_data.get("mime_type", "image/png"),
+                    caption.strip() if caption else None,
+                )
+
+    # Global fallback context images
+    global_context_images = None
+    if req.context_image_ids:
+        global_context_images = [
+            context_image_map[img_id]
+            for img_id in req.context_image_ids
+            if img_id in context_image_map
+        ]
+        if global_context_images:
+            logger.info(f"Loaded {len(global_context_images)} global context image(s)")
+
+    # Log Phase 2 context setup
+    logger.info(f"[CONTEXT TRACE] Phase 2 - Generating {count} images with context:")
+    logger.info(f"  - Context map size: {len(context_image_map)} images loaded")
+
+    # Generate images in parallel with per-variation context
+    tasks = []
+    for i, prompt_data in enumerate(req.prompts):
+        # Use per-variation context if available, otherwise fall back to global
+        per_var_ids = prompt_data.get("recommended_context_ids", [])
+        if per_var_ids:
+            variation_context = [
+                context_image_map[img_id]
+                for img_id in per_var_ids
+                if img_id in context_image_map
+            ]
+            logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: using {len(variation_context)} per-variation context: {per_var_ids}")
+        else:
+            variation_context = global_context_images
+            if variation_context:
+                logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: using {len(variation_context)} GLOBAL context (no per-variation)")
+
+        tasks.append(
+            _generate_single_image(
+                prompt_data.get("text", ""),
+                i,
+                context_images=variation_context,
+                image_size=req.image_size,
+                aspect_ratio=req.aspect_ratio,
+                seed=req.seed,
+                safety_level=req.safety_level,
+                thinking_level=req.thinking_level,
+                temperature=req.temperature,
+                google_search_grounding=req.google_search_grounding,
+            )
         )
-        for i, prompt_data in enumerate(req.prompts)
-    ]
     results = await asyncio.gather(*tasks)
 
     # Process results and add metadata from prompts
