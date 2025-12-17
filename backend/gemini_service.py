@@ -90,8 +90,13 @@ class GeminiService:
     """Service for Gemini image and text generation."""
 
     def __init__(self, api_key: str | None = None):
-        # Import here to avoid circular imports
-        from .config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
+        # Import config with fallback for different import contexts
+        # - 'backend.config' when running as package (uvicorn backend.server:app)
+        # - 'config' when running directly or in tests
+        try:
+            from backend.config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
+        except ImportError:
+            from config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
 
         self.DEFAULT_TEXT_MODEL = DEFAULT_TEXT_MODEL
         self.DEFAULT_IMAGE_MODEL = DEFAULT_IMAGE_MODEL

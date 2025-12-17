@@ -58,11 +58,10 @@ def test_data_dir(tmp_path):
 @pytest.fixture(scope="function")
 def client(test_data_dir, monkeypatch):
     """Create a test client with isolated data directory."""
-    # Remove cached server module to allow re-patching
-    if "server" in sys.modules:
-        del sys.modules["server"]
-    if "metadata_manager" in sys.modules:
-        del sys.modules["metadata_manager"]
+    # Remove cached modules to allow re-patching
+    for mod in ["server", "metadata_manager", "config", "gemini_service"]:
+        if mod in sys.modules:
+            del sys.modules[mod]
 
     # Patch paths
     images_dir = test_data_dir / "generated_images"
