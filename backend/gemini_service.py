@@ -5,13 +5,41 @@ import logging
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from google import genai
 from google.genai import types
+from pydantic import BaseModel, Field
 
 # Configure module logger
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# Pydantic Models for Structured Output
+# ============================================================
+
+class DesignTags(BaseModel):
+    """Design attributes for a scene variation."""
+    colors: list[str] = Field(default_factory=list, description="Color palette tags like 'warm', 'vibrant', 'high-contrast'")
+    composition: list[str] = Field(default_factory=list, description="Composition tags like 'centered', 'rule-of-thirds', 'wide-angle'")
+    layout: list[str] = Field(default_factory=list, description="Layout tags like 'spacious', 'dense', 'balanced'")
+    aesthetic: list[str] = Field(default_factory=list, description="Style tags like 'minimalist', 'photorealistic', 'illustrated'")
+    typeface_feel: list[str] = Field(default_factory=list, description="Typography feel like 'sans-serif', 'elegant', 'bold'")
+
+
+class SceneVariation(BaseModel):
+    """A single scene variation for image generation."""
+    id: str = Field(description="Scene identifier like '1', '2', etc.")
+    type: Literal["faithful", "exploration"] = Field(description="Whether this closely matches the prompt or explores new directions")
+    description: str = Field(description="Detailed scene description for AI image generation")
+    mood: str = Field(description="Emotional tone like 'warm', 'dramatic', 'serene'")
+    design: DesignTags = Field(default_factory=DesignTags, description="Design attributes for this scene")
+
+
+class SceneVariationsResponse(BaseModel):
+    """Response containing multiple scene variations."""
+    scenes: list[SceneVariation] = Field(description="List of scene variations")
 
 
 def _detect_image_mime_type(data: bytes) -> str:
@@ -345,13 +373,87 @@ class GeminiService:
             usage=usage,
         )
 
+    async def generate_prompt_variations_structured(
+        self,
+        base_prompt: str,
+        count: int,
+    ) -> list[SceneVariation]:
+        """Generate varied prompt descriptions using structured JSON output.
+
+        Uses Gemini's structured output feature to guarantee valid JSON responses,
+        eliminating XML parsing failures.
+
+        Args:
+            base_prompt: User's original prompt
+            count: Number of variations to generate
+
+        Returns:
+            List of SceneVariation objects with guaranteed structure
+        """
+        model_name = self.DEFAULT_TEXT_MODEL
+        start_time = time.time()
+
+        logger.info(f"Generating {count} structured prompt variations for: {base_prompt[:100]}...")
+
+        # Simplified prompt - the schema defines the structure
+        prompt = f"""Generate {count} diverse scene descriptions for AI image generation based on this prompt:
+
+"{base_prompt}"
+
+Requirements:
+1. Each scene must be vivid and detailed for AI image generation
+2. Vary lighting, mood, composition, and style across scenes
+3. About half should be "faithful" (closely matching the user's intent)
+4. About half should be "exploration" (creative interpretations)
+5. All scenes should be visually striking
+
+For design tags, select 1-3 relevant tags per category from options like:
+- colors: warm, cool, vibrant, muted, high-contrast, monochromatic, pastel
+- composition: centered, rule-of-thirds, wide-angle, close-up, symmetrical
+- layout: spacious, dense, balanced, dynamic, minimal
+- aesthetic: photorealistic, illustrated, minimalist, vintage, modern, surreal
+- typeface_feel: sans-serif, serif, bold, elegant, playful
+
+For mood, use options like: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, grand, nostalgic, futuristic"""
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=SceneVariationsResponse,
+        )
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=prompt,
+                config=config,
+            )
+
+            elapsed = time.time() - start_time
+
+            # Parse the structured response
+            result = SceneVariationsResponse.model_validate_json(response.text)
+
+            logger.info(f"Structured variations response: {len(result.scenes)} scenes in {elapsed:.1f}s")
+            for i, scene in enumerate(result.scenes):
+                logger.debug(f"Scene {i+1}: type={scene.type}, mood={scene.mood}, desc={scene.description[:50]}...")
+
+            return result.scenes
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Structured variation generation failed after {elapsed:.1f}s: {e}")
+            raise
+
     async def generate_prompt_variations(
         self,
         base_prompt: str,
         count: int,
         system_prompt: str,
     ) -> str:
-        """Generate varied prompt descriptions using text model.
+        """Generate varied prompt descriptions using text model (legacy XML mode).
+
+        DEPRECATED: Use generate_prompt_variations_structured() instead for
+        guaranteed JSON output.
 
         Args:
             base_prompt: User's original prompt
@@ -361,7 +463,7 @@ class GeminiService:
         Returns:
             Raw XML response from the model (to be parsed by caller)
         """
-        logger.info(f"Generating {count} prompt variations for: {base_prompt[:100]}...")
+        logger.info(f"Generating {count} prompt variations (legacy XML mode) for: {base_prompt[:100]}...")
         logger.debug(f"System prompt template length: {len(system_prompt)} chars")
 
         formatted_prompt = system_prompt.format(

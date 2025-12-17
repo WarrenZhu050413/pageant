@@ -649,38 +649,30 @@ def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[byt
 async def generate_prompt_variations(req: GeneratePromptsRequest):
     """Generate prompt variations only (Phase 1 of two-phase generation).
 
+    Uses Gemini's structured JSON output for guaranteed valid responses.
     Returns text variations that the user can review, edit, and select
     before committing to image generation.
     """
     count = min(max(1, req.count), 10)  # Clamp between 1 and 10
     logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'")
 
-    metadata = load_metadata()
-
-    # Load variation system prompt
-    variation_prompt = metadata.get("settings", {}).get(
-        "variation_prompt",
-        load_default_variation_prompt()
-    )
-
     try:
-        logger.info(f"Generating {count} prompt variations...")
-        xml_response = await gemini.generate_prompt_variations(
+        # Use structured output for guaranteed JSON response
+        logger.info(f"Generating {count} prompt variations (structured output)...")
+        scene_variations = await gemini.generate_prompt_variations_structured(
             base_prompt=req.prompt,
             count=count,
-            system_prompt=variation_prompt,
         )
-        parsed_variations = parse_scene_variations(xml_response)
-        logger.info(f"Parsed {len(parsed_variations)} scene variations")
+        logger.info(f"Received {len(scene_variations)} structured scene variations")
 
-        # Convert to response model with unique IDs
+        # Convert SceneVariation objects to response model
         variations = []
-        for i, var in enumerate(parsed_variations[:count]):
+        for scene in scene_variations[:count]:
             variations.append(PromptVariation(
                 id=f"var-{uuid.uuid4().hex[:8]}",
-                text=var["description"],
-                mood=var.get("mood", ""),
-                type=var.get("type", ""),
+                text=scene.description,
+                mood=scene.mood,
+                type=scene.type,
             ))
 
         # Fill with fallbacks if not enough variations
