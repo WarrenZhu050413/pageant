@@ -18,11 +18,12 @@ import type {
   LibraryItemType,
   PromptVariation,
   ImageGenerationParams,
+  DraftPrompt,
 } from '../types';
 import * as api from '../api';
 
 interface PendingPrompt {
-  title: string;
+  title?: string;  // Optional - will be auto-generated if not provided
   count: number;
 }
 
@@ -69,6 +70,13 @@ interface AppStore {
   // Image generation params for variations (stored for use in generateFromVariations)
   variationsImageParams: ImageGenerationParams;
 
+  // Draft Prompts (decoupled variations workflow)
+  draftPrompts: DraftPrompt[];
+  currentDraftId: string | null;
+
+  // Collection Viewing
+  currentCollectionId: string | null;
+
   // Actions
   initialize: () => Promise<void>;
   refreshData: () => Promise<void>;
@@ -101,7 +109,7 @@ interface AppStore {
   // Generation
   generate: (params: {
     prompt: string;
-    title: string;
+    title?: string;  // Optional - will be auto-generated if not provided
     category?: string;
     count?: number;
   } & ImageGenerationParams) => Promise<void>;
@@ -110,7 +118,7 @@ interface AppStore {
   // Two-Phase Generation Actions
   generateVariations: (params: {
     prompt: string;
-    title: string;
+    title?: string; // Optional - will be auto-generated if not provided
     count?: number;
   } & ImageGenerationParams) => Promise<void>;
   updateVariation: (id: string, newText: string) => void;
@@ -122,9 +130,22 @@ interface AppStore {
   clearVariations: () => void;
   setShowPromptPreview: (show: boolean) => void;
 
-  // Favorites
+  // Draft Prompt Actions
+  setCurrentDraft: (id: string | null) => void;
+  updateDraftVariation: (draftId: string, variationId: string, newText: string) => void;
+  removeDraftVariation: (draftId: string, variationId: string) => void;
+  duplicateDraftVariation: (draftId: string, variationId: string) => void;
+  regenerateDraftVariation: (draftId: string, variationId: string) => Promise<void>;
+  addMoreDraftVariations: (draftId: string, count?: number) => Promise<void>;
+  generateFromDraft: (draftId: string) => Promise<void>;
+  deleteDraft: (draftId: string) => void;
+  getCurrentDraft: () => DraftPrompt | null;
+
+  // Favorites (Collection-based)
+  ensureFavoritesCollection: () => Promise<string>;  // Returns collection ID
   toggleFavorite: (imageId: string) => Promise<void>;
   batchFavorite: (favorite: boolean) => Promise<void>;
+  isInFavoritesCollection: (imageId: string) => boolean;
 
   // Delete
   deleteImage: (imageId: string) => Promise<void>;
@@ -165,6 +186,11 @@ interface AppStore {
   deleteCollection: (id: string) => Promise<void>;
   addToCollection: (collectionId: string) => Promise<void>;
   viewCollection: (id: string) => void;
+  setCurrentCollection: (id: string | null) => void;
+  getCurrentCollection: () => Collection | null;
+  getCurrentCollectionImages: () => ImageData[];
+  removeFromCollection: (collectionId: string, imageId: string) => Promise<void>;
+  removeFromCurrentCollection: (imageId: string) => Promise<void>;
 
   // Settings
   updateSettings: (settings: {
@@ -174,6 +200,10 @@ interface AppStore {
     aspect_ratio?: string;
     seed?: number;
     safety_level?: string;
+    // Nano Banana specific
+    thinking_level?: string;
+    temperature?: number;
+    google_search_grounding?: boolean;
   }) => Promise<void>;
 
   // Upload
@@ -245,6 +275,13 @@ export const useStore = create<AppStore>()(
       showPromptPreview: false,
       variationsImageParams: {},
 
+      // Draft Prompts
+      draftPrompts: [],
+      currentDraftId: null,
+
+      // Collection Viewing
+      currentCollectionId: null,
+
       // Prompt selection for bulk operations
       selectedPromptIds: new Set(),
 
@@ -310,12 +347,14 @@ export const useStore = create<AppStore>()(
 
       // Prompt navigation
       setCurrentPrompt: (id) => {
-        set({ currentPromptId: id, currentImageIndex: 0 });
+        set({ currentPromptId: id, currentImageIndex: 0, currentCollectionId: null });
       },
 
       setCurrentImageIndex: (index) => {
         const prompt = get().getCurrentPrompt();
-        if (prompt && index >= 0 && index < prompt.images.length) {
+        const collectionImages = get().getCurrentCollectionImages();
+        const images = prompt?.images || collectionImages;
+        if (images.length > 0 && index >= 0 && index < images.length) {
           set({ currentImageIndex: index });
         }
       },
@@ -323,7 +362,9 @@ export const useStore = create<AppStore>()(
       nextImage: () => {
         const { currentImageIndex } = get();
         const prompt = get().getCurrentPrompt();
-        if (prompt && currentImageIndex < prompt.images.length - 1) {
+        const collectionImages = get().getCurrentCollectionImages();
+        const images = prompt?.images || collectionImages;
+        if (images.length > 0 && currentImageIndex < images.length - 1) {
           set({ currentImageIndex: currentImageIndex + 1 });
         }
       },
@@ -345,7 +386,6 @@ export const useStore = create<AppStore>()(
         set({
           selectionMode: mode,
           selectedIds: new Set(),
-          viewMode: mode === 'batch' ? 'grid' : get().viewMode,
         });
       },
 
@@ -376,8 +416,10 @@ export const useStore = create<AppStore>()(
 
       selectAll: () => {
         const prompt = get().getCurrentPrompt();
-        if (prompt) {
-          set({ selectedIds: new Set(prompt.images.map((img) => img.id)) });
+        const collectionImages = get().getCurrentCollectionImages();
+        const images = prompt?.images || collectionImages;
+        if (images.length > 0) {
+          set({ selectedIds: new Set(images.map((img) => img.id)) });
         }
       },
 
@@ -409,7 +451,7 @@ export const useStore = create<AppStore>()(
       },
       clearContextImages: () => set({ contextImageIds: [] }),
 
-      // Generation
+      // Generation (supports concurrent generations)
       generate: async ({ prompt, title, category, count, image_size, aspect_ratio, seed, safety_level }) => {
         const { contextImageIds, pendingPrompts, currentSessionId } = get();
 
@@ -418,6 +460,7 @@ export const useStore = create<AppStore>()(
         const newPending = new Map(pendingPrompts);
         newPending.set(tempId, { title, count: count || 4 });
 
+        // isGenerating is true if any pending prompts exist
         set({ isGenerating: true, pendingPrompts: newPending, error: null });
 
         try {
@@ -434,24 +477,26 @@ export const useStore = create<AppStore>()(
             safety_level,
           });
 
-          // Remove pending and refresh
-          newPending.delete(tempId);
-          set({ pendingPrompts: newPending });
+          // Remove this pending prompt
+          const updatedPending = new Map(get().pendingPrompts);
+          updatedPending.delete(tempId);
 
           await get().refreshData();
 
-          // Navigate to new prompt
+          // Navigate to new prompt, derive isGenerating from pending count
           set({
             currentPromptId: response.prompt_id,
             currentImageIndex: 0,
-            isGenerating: false,
+            isGenerating: updatedPending.size > 0,
+            pendingPrompts: updatedPending,
             contextImageIds: [],
           });
         } catch (error) {
-          newPending.delete(tempId);
+          const updatedPending = new Map(get().pendingPrompts);
+          updatedPending.delete(tempId);
           set({
-            isGenerating: false,
-            pendingPrompts: newPending,
+            isGenerating: updatedPending.size > 0,
+            pendingPrompts: updatedPending,
             error: (error as Error).message,
           });
         }
@@ -476,20 +521,38 @@ export const useStore = create<AppStore>()(
 
       // Two-Phase Generation Actions
       generateVariations: async ({ prompt, title, count = 4, image_size, aspect_ratio, seed, safety_level }) => {
-        const { contextImageIds } = get();
+        const { contextImageIds, draftPrompts } = get();
+
+        // Create a draft prompt immediately with placeholder title if not provided
+        const draftId = `draft-${Date.now().toString(36)}`;
+        const initialTitle = title || 'Generating...'; // Will be replaced with generated title
+        const newDraft: DraftPrompt = {
+          id: draftId,
+          basePrompt: prompt,
+          title: initialTitle,
+          variations: [],
+          createdAt: new Date().toISOString(),
+          imageParams: { image_size, aspect_ratio, seed, safety_level },
+          contextImageIds: contextImageIds.length > 0 ? [...contextImageIds] : undefined,
+        };
 
         set({
           isGeneratingVariations: true,
           error: null,
+          draftPrompts: [newDraft, ...draftPrompts],
+          currentDraftId: draftId,
+          currentPromptId: null, // Clear current prompt to show draft view
+          // Legacy modal state (keep for backwards compat during transition)
           variationsBasePrompt: prompt,
-          variationsTitle: title,
-          showPromptPreview: true,
+          variationsTitle: initialTitle,
+          showPromptPreview: false, // Don't show modal anymore
           variationsImageParams: { image_size, aspect_ratio, seed, safety_level },
         });
 
         try {
           const response = await api.generatePromptVariations({
             prompt,
+            title: title || undefined, // Pass title if provided, model will generate if not
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             image_size,
@@ -499,8 +562,16 @@ export const useStore = create<AppStore>()(
           });
 
           if (response.success) {
+            // Use generated title from model if user didn't provide one
+            const finalTitle = response.generated_title || title || 'Untitled';
+
+            // Update the draft with variations and title
             set({
-              promptVariations: response.variations,
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId ? { ...d, variations: response.variations, title: finalTitle } : d
+              ),
+              promptVariations: response.variations, // Keep legacy state for modal fallback
+              variationsTitle: finalTitle, // Update legacy title state
               isGeneratingVariations: false,
             });
           } else {
@@ -604,7 +675,7 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromVariations: async () => {
-        const { promptVariations, variationsTitle, contextImageIds, currentSessionId, variationsImageParams } = get();
+        const { promptVariations, variationsTitle, variationsBasePrompt, contextImageIds, currentSessionId, variationsImageParams } = get();
 
         if (promptVariations.length === 0) return;
 
@@ -616,9 +687,11 @@ export const useStore = create<AppStore>()(
             prompts: promptVariations.map((v) => ({
               text: v.text,
               mood: v.mood,
+              design: v.design,
             })),
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
+            base_prompt: variationsBasePrompt, // Pass original base prompt
             ...variationsImageParams,
           });
 
@@ -660,16 +733,251 @@ export const useStore = create<AppStore>()(
         set({ showPromptPreview: show });
       },
 
-      // Favorites
-      toggleFavorite: async (imageId) => {
-        try {
-          const result = await api.toggleFavorite(imageId);
-          const { favorites } = get();
+      // Draft Prompt Actions
+      setCurrentDraft: (id) => {
+        if (id) {
+          set({ currentDraftId: id, currentPromptId: null });
+        } else {
+          set({ currentDraftId: null });
+        }
+      },
 
-          if (result.is_favorite) {
-            set({ favorites: [...favorites, imageId] });
+      updateDraftVariation: (draftId, variationId, newText) => {
+        const { draftPrompts } = get();
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId
+              ? {
+                  ...d,
+                  variations: d.variations.map((v) =>
+                    v.id === variationId ? { ...v, text: newText } : v
+                  ),
+                }
+              : d
+          ),
+        });
+      },
+
+      removeDraftVariation: (draftId, variationId) => {
+        const { draftPrompts } = get();
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId
+              ? { ...d, variations: d.variations.filter((v) => v.id !== variationId) }
+              : d
+          ),
+        });
+      },
+
+      duplicateDraftVariation: (draftId, variationId) => {
+        const { draftPrompts } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft) return;
+
+        const original = draft.variations.find((v) => v.id === variationId);
+        if (!original) return;
+
+        const newVariation: PromptVariation = {
+          ...original,
+          id: `var-${Date.now().toString(36)}`,
+        };
+
+        const index = draft.variations.findIndex((v) => v.id === variationId);
+        const newVariations = [...draft.variations];
+        newVariations.splice(index + 1, 0, newVariation);
+
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId ? { ...d, variations: newVariations } : d
+          ),
+        });
+      },
+
+      regenerateDraftVariation: async (draftId, variationId) => {
+        const { draftPrompts } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft) return;
+
+        try {
+          const response = await api.generatePromptVariations({
+            prompt: draft.basePrompt,
+            count: 1,
+            context_image_ids: draft.contextImageIds,
+          });
+
+          if (response.success && response.variations.length > 0) {
+            set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId
+                  ? {
+                      ...d,
+                      variations: d.variations.map((v) =>
+                        v.id === variationId
+                          ? { ...response.variations[0], id: variationId }
+                          : v
+                      ),
+                    }
+                  : d
+              ),
+            });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      addMoreDraftVariations: async (draftId, count = 2) => {
+        const { draftPrompts } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft) return;
+
+        set({ isGeneratingVariations: true });
+
+        try {
+          const response = await api.generatePromptVariations({
+            prompt: draft.basePrompt,
+            count,
+            context_image_ids: draft.contextImageIds,
+          });
+
+          if (response.success) {
+            set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId
+                  ? { ...d, variations: [...d.variations, ...response.variations] }
+                  : d
+              ),
+              isGeneratingVariations: false,
+            });
           } else {
-            set({ favorites: favorites.filter((id) => id !== imageId) });
+            set({ isGeneratingVariations: false });
+          }
+        } catch (error) {
+          set({
+            isGeneratingVariations: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      generateFromDraft: async (draftId) => {
+        const { draftPrompts, currentSessionId } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft || draft.variations.length === 0) return;
+
+        set({ isGenerating: true, error: null });
+
+        try {
+          const response = await api.generateFromPrompts({
+            title: draft.title,
+            prompts: draft.variations.map((v) => ({
+              text: v.text,
+              mood: v.mood,
+              design: v.design,
+            })),
+            context_image_ids: draft.contextImageIds,
+            session_id: currentSessionId || undefined,
+            base_prompt: draft.basePrompt, // Pass original base prompt
+            ...draft.imageParams,
+          });
+
+          // Remove the draft after successful generation
+          set({
+            draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
+            currentDraftId: null,
+          });
+
+          await get().refreshData();
+
+          // Navigate to newly created prompt
+          set({
+            currentPromptId: response.prompt_id,
+            currentImageIndex: 0,
+            isGenerating: false,
+            contextImageIds: [],
+          });
+        } catch (error) {
+          set({
+            isGenerating: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      deleteDraft: (draftId) => {
+        const { draftPrompts, currentDraftId, prompts } = get();
+        set({
+          draftPrompts: draftPrompts.filter((d) => d.id !== draftId),
+          currentDraftId: currentDraftId === draftId ? null : currentDraftId,
+          // Navigate to first prompt if we're viewing the deleted draft
+          currentPromptId:
+            currentDraftId === draftId ? prompts[0]?.id || null : get().currentPromptId,
+        });
+      },
+
+      getCurrentDraft: () => {
+        const { draftPrompts, currentDraftId } = get();
+        return draftPrompts.find((d) => d.id === currentDraftId) || null;
+      },
+
+      // Favorites (Collection-based)
+      ensureFavoritesCollection: async () => {
+        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
+        const { collections } = get();
+
+        // Check if Favorites collection already exists
+        let favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+
+        if (!favCollection) {
+          // Create the Favorites collection
+          try {
+            await api.createCollection({
+              name: FAVORITES_COLLECTION_NAME,
+              description: 'Your favorite images',
+              image_ids: [],
+            });
+            const updatedCollections = await api.fetchCollections();
+            set({ collections: updatedCollections });
+            favCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+          } catch (error) {
+            set({ error: (error as Error).message });
+          }
+        }
+
+        return favCollection?.id ?? '';
+      },
+
+      toggleFavorite: async (imageId) => {
+        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
+
+        try {
+          // Ensure Favorites collection exists
+          const collectionId = await get().ensureFavoritesCollection();
+          if (!collectionId) return;
+
+          const { collections } = get();
+          const favCollection = collections.find((c) => c.id === collectionId);
+
+          if (!favCollection) return;
+
+          const isCurrentlyFavorite = favCollection.image_ids.includes(imageId);
+
+          if (isCurrentlyFavorite) {
+            // Remove from Favorites collection
+            await api.removeFromCollection(collectionId, [imageId]);
+          } else {
+            // Add to Favorites collection
+            await api.addToCollection(collectionId, [imageId]);
+          }
+
+          // Refresh collections
+          const updatedCollections = await api.fetchCollections();
+          set({ collections: updatedCollections });
+
+          // Update legacy favorites array for backwards compatibility
+          const newFavCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+          if (newFavCollection) {
+            set({ favorites: newFavCollection.image_ids });
           }
         } catch (error) {
           set({ error: (error as Error).message });
@@ -677,22 +985,42 @@ export const useStore = create<AppStore>()(
       },
 
       batchFavorite: async (favorite) => {
+        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
         const { selectedIds } = get();
         if (selectedIds.size === 0) return;
 
         try {
-          await api.batchFavorite(Array.from(selectedIds), favorite);
-          await get().refreshData();
+          // Ensure Favorites collection exists
+          const collectionId = await get().ensureFavoritesCollection();
+          if (!collectionId) return;
 
-          const { favorites } = get();
+          const imageIds = Array.from(selectedIds);
+
           if (favorite) {
-            set({ favorites: [...new Set([...favorites, ...selectedIds])] });
+            await api.addToCollection(collectionId, imageIds);
           } else {
-            set({ favorites: favorites.filter((id) => !selectedIds.has(id)) });
+            await api.removeFromCollection(collectionId, imageIds);
+          }
+
+          // Refresh collections
+          const updatedCollections = await api.fetchCollections();
+          set({ collections: updatedCollections });
+
+          // Update legacy favorites array for backwards compatibility
+          const newFavCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+          if (newFavCollection) {
+            set({ favorites: newFavCollection.image_ids });
           }
         } catch (error) {
           set({ error: (error as Error).message });
         }
+      },
+
+      isInFavoritesCollection: (imageId) => {
+        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
+        const { collections } = get();
+        const favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+        return favCollection?.image_ids.includes(imageId) ?? false;
       },
 
       // Delete
@@ -912,14 +1240,77 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      viewCollection: (_id) => {
-        // Set to view collection mode (virtual prompt)
-        // TODO: Implement actual collection viewing with collection ID
+      viewCollection: (id) => {
+        // Set to view collection mode - clear prompt/draft selection
         set({
+          currentCollectionId: id,
           currentPromptId: null,
+          currentDraftId: null,
           currentImageIndex: 0,
           leftTab: 'collections',
         });
+      },
+
+      setCurrentCollection: (id) => {
+        if (id) {
+          set({
+            currentCollectionId: id,
+            currentPromptId: null,
+            currentDraftId: null,
+            currentImageIndex: 0,
+          });
+        } else {
+          set({ currentCollectionId: null });
+        }
+      },
+
+      getCurrentCollection: () => {
+        const { collections, currentCollectionId } = get();
+        return collections.find((c) => c.id === currentCollectionId) || null;
+      },
+
+      getCurrentCollectionImages: () => {
+        const { prompts, collections, currentCollectionId } = get();
+        const collection = collections.find((c) => c.id === currentCollectionId);
+        if (!collection) return [];
+
+        // Build a map of all images across all prompts
+        const imageMap = new Map<string, ImageData>();
+        for (const prompt of prompts) {
+          for (const image of prompt.images) {
+            imageMap.set(image.id, image);
+          }
+        }
+
+        // Return images in collection order
+        return collection.image_ids
+          .map((id) => imageMap.get(id))
+          .filter((img): img is ImageData => img !== undefined);
+      },
+
+      removeFromCollection: async (collectionId, imageId) => {
+        try {
+          await api.removeFromCollection(collectionId, [imageId]);
+          const collections = await api.fetchCollections();
+          set({ collections });
+
+          // Adjust current image index if needed
+          const { currentCollectionId, currentImageIndex } = get();
+          if (currentCollectionId === collectionId) {
+            const images = get().getCurrentCollectionImages();
+            if (currentImageIndex >= images.length) {
+              set({ currentImageIndex: Math.max(0, images.length - 1) });
+            }
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      removeFromCurrentCollection: async (imageId) => {
+        const { currentCollectionId } = get();
+        if (!currentCollectionId) return;
+        await get().removeFromCollection(currentCollectionId, imageId);
       },
 
       // Settings
@@ -1156,13 +1547,18 @@ export const useStore = create<AppStore>()(
       },
 
       getFavoriteImages: () => {
-        const { favorites } = get();
+        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
+        const { collections } = get();
+        const favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+        const favoriteIds = favCollection?.image_ids ?? [];
+
         const allImages = get().getAllImages();
-        return allImages.filter((item) => favorites.includes(item.image.id));
+        return allImages.filter((item) => favoriteIds.includes(item.image.id));
       },
 
       isImageFavorite: (imageId) => {
-        return get().favorites.includes(imageId);
+        // Now uses collection-based favorites
+        return get().isInFavoritesCollection(imageId);
       },
     }),
     {
@@ -1178,6 +1574,9 @@ export const useStore = create<AppStore>()(
         variationsTitle: state.variationsTitle,
         showPromptPreview: state.showPromptPreview,
         variationsImageParams: state.variationsImageParams,
+        // Persist draft prompts
+        draftPrompts: state.draftPrompts,
+        currentDraftId: state.currentDraftId,
       }),
     }
   )

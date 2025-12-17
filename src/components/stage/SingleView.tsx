@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -9,6 +10,7 @@ import {
   Trash2,
   Download,
   Plus,
+  FolderMinus,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -16,8 +18,11 @@ import { IconButton } from '../ui';
 import { InfoOverlay } from './InfoOverlay';
 
 export function SingleView() {
-  const currentPrompt = useStore((s) => s.getCurrentPrompt());
-  const currentImage = useStore((s) => s.getCurrentImage());
+  // Select primitive values and stable arrays to avoid infinite re-renders
+  const prompts = useStore((s) => s.prompts);
+  const collections = useStore((s) => s.collections);
+  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const nextImage = useStore((s) => s.nextImage);
@@ -26,12 +31,45 @@ export function SingleView() {
   const isImageFavorite = useStore((s) => s.isImageFavorite);
   const iterate = useStore((s) => s.iterate);
   const deleteImage = useStore((s) => s.deleteImage);
+  const removeFromCurrentCollection = useStore((s) => s.removeFromCurrentCollection);
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const selectedIds = useStore((s) => s.selectedIds);
   const setContextImages = useStore((s) => s.setContextImages);
+  const contextImageIds = useStore((s) => s.contextImageIds);
 
-  if (!currentPrompt || !currentImage) {
+  // Compute derived values with useMemo to avoid infinite re-renders
+  const currentPrompt = useMemo(
+    () => prompts.find((p) => p.id === currentPromptId) || null,
+    [prompts, currentPromptId]
+  );
+
+  const currentCollection = useMemo(
+    () => collections.find((c) => c.id === currentCollectionId) || null,
+    [collections, currentCollectionId]
+  );
+
+  const currentCollectionImages = useMemo(() => {
+    if (!currentCollection) return [];
+    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
+    for (const prompt of prompts) {
+      for (const image of prompt.images) {
+        imageMap.set(image.id, image);
+      }
+    }
+    return currentCollection.image_ids
+      .map((id) => imageMap.get(id))
+      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
+  }, [prompts, currentCollection]);
+
+  // Support both prompt and collection viewing
+  const displayImages = currentPrompt?.images ?? currentCollectionImages;
+  const displayTitle = currentPrompt?.title ?? currentCollection?.name ?? 'Image';
+  const isViewingCollection = !currentPrompt && !!currentCollection;
+
+  const currentImage = displayImages[currentImageIndex] || null;
+
+  if (!currentImage || displayImages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
         <p className="text-ink-muted">No image to display</p>
@@ -43,8 +81,10 @@ export function SingleView() {
   const isSelected = selectedIds.has(currentImage.id);
 
   const handleCopyPrompt = () => {
-    const text = currentImage.varied_prompt || currentPrompt.prompt;
-    navigator.clipboard.writeText(text);
+    const text = currentImage.varied_prompt || currentPrompt?.prompt || '';
+    if (text) {
+      navigator.clipboard.writeText(text);
+    }
   };
 
   return (
@@ -90,7 +130,7 @@ export function SingleView() {
           >
             <img
               src={getImageUrl(currentImage.image_path)}
-              alt={currentPrompt.title}
+              alt={displayTitle}
               className="max-h-full max-w-full object-contain"
             />
 
@@ -111,10 +151,12 @@ export function SingleView() {
                   </IconButton>
                   <IconButton
                     variant="default"
-                    tooltip="Use as context (replaces existing)"
+                    tooltip="Add to context"
                     onClick={(e) => {
                       e.stopPropagation();
-                      setContextImages([currentImage.id]);
+                      if (!contextImageIds.includes(currentImage.id)) {
+                        setContextImages([...contextImageIds, currentImage.id]);
+                      }
                     }}
                     className="bg-surface/90 backdrop-blur-sm"
                   >
@@ -133,7 +175,7 @@ export function SingleView() {
                   </IconButton>
                   <a
                     href={getImageUrl(currentImage.image_path)}
-                    download={`${currentPrompt.title}-${currentImage.id}.${currentImage.image_path.split('.').pop()}`}
+                    download={`${displayTitle}-${currentImage.id}.${currentImage.image_path.split('.').pop()}`}
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex"
                   >
@@ -145,17 +187,31 @@ export function SingleView() {
                       <Download size={18} />
                     </IconButton>
                   </a>
-                  <IconButton
-                    variant="danger"
-                    tooltip="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteImage(currentImage.id);
-                    }}
-                    className="bg-surface/90 backdrop-blur-sm"
-                  >
-                    <Trash2 size={18} />
-                  </IconButton>
+                  {isViewingCollection ? (
+                    <IconButton
+                      variant="default"
+                      tooltip="Remove from collection"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeFromCurrentCollection(currentImage.id);
+                      }}
+                      className="bg-surface/90 backdrop-blur-sm text-ink-secondary hover:text-danger"
+                    >
+                      <FolderMinus size={18} />
+                    </IconButton>
+                  ) : (
+                    <IconButton
+                      variant="danger"
+                      tooltip="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteImage(currentImage.id);
+                      }}
+                      className="bg-surface/90 backdrop-blur-sm"
+                    >
+                      <Trash2 size={18} />
+                    </IconButton>
+                  )}
                 </div>
               </div>
             </div>
@@ -190,7 +246,7 @@ export function SingleView() {
         </AnimatePresence>
 
         {/* Navigation - Next */}
-        {currentImageIndex < currentPrompt.images.length - 1 && (
+        {currentImageIndex < displayImages.length - 1 && (
           <button
             onClick={nextImage}
             className={clsx(
@@ -225,7 +281,7 @@ export function SingleView() {
 
       {/* Dot Navigation */}
       <div className="flex justify-center gap-2 py-2">
-        {currentPrompt.images.map((img, index) => {
+        {displayImages.map((img, index) => {
           const isActive = index === currentImageIndex;
           const imgIsFavorite = isImageFavorite(img.id);
 

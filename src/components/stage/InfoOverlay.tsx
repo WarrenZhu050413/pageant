@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronUp, ChevronDown, Copy, Check, Save } from 'lucide-react';
@@ -36,10 +36,23 @@ function isTagLiked(tag: string, likedAxes: Record<string, string[]> | undefined
 }
 
 export function InfoOverlay() {
-  const currentPrompt = useStore((s) => s.getCurrentPrompt());
-  const currentImage = useStore((s) => s.getCurrentImage());
+  // Select primitive values to avoid infinite re-renders
+  const prompts = useStore((s) => s.prompts);
+  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentImageIndex = useStore((s) => s.currentImageIndex);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
+
+  // Compute derived values with useMemo
+  const currentPrompt = useMemo(
+    () => prompts.find((p) => p.id === currentPromptId) || null,
+    [prompts, currentPromptId]
+  );
+
+  const currentImage = useMemo(() => {
+    if (!currentPrompt) return null;
+    return currentPrompt.images[currentImageIndex] || null;
+  }, [currentPrompt, currentImageIndex]);
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -138,7 +151,7 @@ export function InfoOverlay() {
             className="overflow-hidden"
           >
             <div className="px-4 pb-3 pt-2 border-t border-border/50">
-              {/* Three-column grid: Prompt | Caption | Design */}
+              {/* Three-column grid: Prompt | Annotation | Design */}
               <div className="grid grid-cols-3 gap-5">
                 {/* Column 1: Prompt */}
                 <div className="min-w-0">
@@ -162,10 +175,10 @@ export function InfoOverlay() {
                   </div>
                 </div>
 
-                {/* Column 2: Caption */}
+                {/* Column 2: Annotation */}
                 <div className="min-w-0">
                   <label className="block text-[0.6rem] font-medium text-ink-muted uppercase tracking-wide mb-1">
-                    Caption
+                    Annotation
                     <span className="ml-1 text-brass font-normal">(sent to AI)</span>
                   </label>
                   <textarea
@@ -179,7 +192,7 @@ export function InfoOverlay() {
                       'focus:outline-none focus:ring-1 focus:ring-brass/30 focus:border-brass',
                       'resize-none transition-colors'
                     )}
-                    rows={2}
+                    rows={3}
                   />
                   {/* Save button directly below caption */}
                   <button
@@ -203,7 +216,7 @@ export function InfoOverlay() {
                     ) : (
                       <>
                         <Save size={10} />
-                        Save Caption
+                        Save Annotation
                       </>
                     )}
                   </button>
@@ -215,7 +228,7 @@ export function InfoOverlay() {
                     Design
                   </label>
                   {currentImage.annotations && Object.keys(currentImage.annotations).length > 0 ? (
-                    <div className="space-y-1.5 max-h-[6rem] overflow-y-auto">
+                    <div className="space-y-1.5 max-h-[7.8rem] overflow-y-auto">
                       {Object.entries(currentImage.annotations).map(([axis, tags]) => (
                         tags && tags.length > 0 && (
                           <div key={axis}>

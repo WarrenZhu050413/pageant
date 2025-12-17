@@ -1,15 +1,41 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Image, FolderPlus, Plus, Check } from 'lucide-react';
+import { X, Image, FolderPlus, Plus, Check, Star, Trash2, CheckSquare, Square } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { Button, Input, Dialog } from '../ui';
+import { Button, Input, Dialog, IconButton } from '../ui';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
   const prompts = useStore((s) => s.prompts);
   const collections = useStore((s) => s.collections);
+  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentCollectionId = useStore((s) => s.currentCollectionId);
+
+  // Compute derived values with useMemo to avoid infinite re-renders
+  const currentPrompt = useMemo(
+    () => prompts.find((p) => p.id === currentPromptId) || null,
+    [prompts, currentPromptId]
+  );
+
+  const currentCollection = useMemo(
+    () => collections.find((c) => c.id === currentCollectionId) || null,
+    [collections, currentCollectionId]
+  );
+
+  const currentCollectionImages = useMemo(() => {
+    if (!currentCollection) return [];
+    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
+    for (const prompt of prompts) {
+      for (const image of prompt.images) {
+        imageMap.set(image.id, image);
+      }
+    }
+    return currentCollection.image_ids
+      .map((id) => imageMap.get(id))
+      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
+  }, [prompts, currentCollection]);
   const clearSelection = useStore((s) => s.clearSelection);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const setContextImages = useStore((s) => s.setContextImages);
@@ -17,11 +43,19 @@ export function SelectionTray() {
   const createCollection = useStore((s) => s.createCollection);
   const addToCollection = useStore((s) => s.addToCollection);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
+  const selectAll = useStore((s) => s.selectAll);
+  const batchFavorite = useStore((s) => s.batchFavorite);
+  const batchDelete = useStore((s) => s.batchDelete);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  // Get display images (from prompt or collection)
+  const displayImages = currentPrompt?.images ?? currentCollectionImages;
+  const allSelected = displayImages.length > 0 && selectedIds.size === displayImages.length;
 
   // Get selected images with their data
   const selectedImages = Array.from(selectedIds)
@@ -64,6 +98,27 @@ export function SelectionTray() {
     setIsCreatingNew(collections.length === 0);
     setCollectionName('');
     setIsCollectionDialogOpen(true);
+  };
+
+  const handleSelectAllToggle = () => {
+    if (allSelected) {
+      clearSelection();
+    } else {
+      selectAll();
+    }
+  };
+
+  const handleAddToFavorites = async () => {
+    await batchFavorite(true);
+    clearSelection();
+    setSelectionMode('none');
+  };
+
+  const handleDelete = async () => {
+    await batchDelete();
+    setIsDeleteDialogOpen(false);
+    clearSelection();
+    setSelectionMode('none');
   };
 
   return (
@@ -123,14 +178,16 @@ export function SelectionTray() {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
           <Button
             variant="ghost"
             size="sm"
-            onClick={clearSelection}
+            leftIcon={allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+            onClick={handleSelectAllToggle}
           >
-            Clear
+            {allSelected ? 'Deselect All' : 'Select All'}
           </Button>
+          <div className="w-px h-6 bg-border self-center" />
           <Button
             variant="secondary"
             size="sm"
@@ -140,6 +197,14 @@ export function SelectionTray() {
             Use as Context
           </Button>
           <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<Star size={14} />}
+            onClick={handleAddToFavorites}
+          >
+            Add to Favorites
+          </Button>
+          <Button
             variant="brass"
             size="sm"
             leftIcon={<FolderPlus size={14} />}
@@ -147,6 +212,15 @@ export function SelectionTray() {
           >
             Save Collection
           </Button>
+          <div className="w-px h-6 bg-border self-center" />
+          <IconButton
+            variant="danger"
+            size="sm"
+            tooltip="Delete selected"
+            onClick={() => setIsDeleteDialogOpen(true)}
+          >
+            <Trash2 size={14} />
+          </IconButton>
         </div>
       </motion.div>
 
@@ -255,6 +329,25 @@ export function SelectionTray() {
               {isCreatingNew ? 'Create & Add' : 'Add to Collection'}
             </Button>
           </div>
+        </div>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        isOpen={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        title="Delete Images"
+      >
+        <p className="text-sm text-ink-secondary mb-6">
+          Are you sure you want to delete {selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => setIsDeleteDialogOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleDelete}>
+            Delete
+          </Button>
         </div>
       </Dialog>
     </>

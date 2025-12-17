@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
 import { useStore } from '../../store';
-import { useKeyboardShortcuts } from '../../hooks';
+import { useKeyboardShortcuts, useTheme } from '../../hooks';
 import { LeftSidebar } from '../sidebar/LeftSidebar';
 import { MainStage } from '../stage/MainStage';
 import { RightPanel } from '../panel/RightPanel';
@@ -31,6 +31,9 @@ export function AppShell() {
 
   // Set up keyboard shortcuts
   useKeyboardShortcuts();
+
+  // Initialize theme (applies dark class to html element)
+  useTheme();
 
   // Handle mouse move for resizing
   const handleMouseMove = useCallback(

@@ -124,6 +124,20 @@ export interface Prompt {
   session_id?: string;
   _pending?: boolean;
   _count?: number;
+  // The original base prompt that generated variations for this prompt
+  basePrompt?: string;
+}
+
+// Draft prompt - ungenerated variations ready for editing
+export interface DraftPrompt {
+  id: string;
+  basePrompt: string;
+  title: string;
+  variations: PromptVariation[];
+  createdAt: string;
+  // Image params to use when generating
+  imageParams?: ImageGenerationParams;
+  contextImageIds?: string[];
 }
 
 export interface Template {
@@ -192,10 +206,12 @@ export interface Story {
 export const IMAGE_SIZE_OPTIONS = ['1K', '2K', '4K'] as const;
 export const ASPECT_RATIO_OPTIONS = ['1:1', '2:3', '3:2', '3:4', '4:3', '9:16', '16:9', '21:9'] as const;
 export const SAFETY_LEVEL_OPTIONS = ['BLOCK_NONE', 'BLOCK_ONLY_HIGH', 'BLOCK_MEDIUM_AND_ABOVE', 'BLOCK_LOW_AND_ABOVE'] as const;
+export const THINKING_LEVEL_OPTIONS = ['low', 'high'] as const;
 
 export type ImageSize = typeof IMAGE_SIZE_OPTIONS[number];
 export type AspectRatio = typeof ASPECT_RATIO_OPTIONS[number];
 export type SafetyLevel = typeof SAFETY_LEVEL_OPTIONS[number];
+export type ThinkingLevel = typeof THINKING_LEVEL_OPTIONS[number];
 
 // Image generation parameters (used in both Settings and GenerateRequest)
 export interface ImageGenerationParams {
@@ -203,6 +219,10 @@ export interface ImageGenerationParams {
   aspect_ratio?: AspectRatio;
   seed?: number;
   safety_level?: SafetyLevel;
+  // Nano Banana specific
+  thinking_level?: ThinkingLevel;
+  temperature?: number;
+  google_search_grounding?: boolean;
 }
 
 export interface Settings extends ImageGenerationParams {
@@ -222,7 +242,7 @@ export interface Session {
 // API Response types
 export interface GenerateRequest extends ImageGenerationParams {
   prompt: string;
-  title: string;
+  title?: string; // Optional - will be auto-generated if not provided
   category?: string;
   count?: number;
   input_image_id?: string;
@@ -244,10 +264,12 @@ export interface PromptVariation {
   text: string;
   mood: string;
   type: string;
+  design?: Record<string, string[]>;  // Design tags by axis (colors, composition, etc.)
 }
 
 export interface GeneratePromptsRequest extends ImageGenerationParams {
   prompt: string;
+  title?: string; // Optional - will be auto-generated if not provided
   count: number;
   context_image_ids?: string[];
 }
@@ -256,15 +278,17 @@ export interface GeneratePromptsResponse {
   success: boolean;
   variations: PromptVariation[];
   base_prompt: string;
+  generated_title?: string; // Title from model (generated or refined from user's)
   error?: string;
 }
 
 export interface GenerateFromPromptsRequest extends ImageGenerationParams {
   title: string;
-  prompts: { text: string; mood?: string }[];
+  prompts: { text: string; mood?: string; design?: Record<string, string[]> }[];
   context_image_ids?: string[];
   session_id?: string;
   category?: string;
+  base_prompt?: string;  // Original prompt that generated variations
 }
 
 export interface UploadResponse {
@@ -277,7 +301,7 @@ export interface UploadResponse {
 export type ViewMode = 'single' | 'grid' | 'compare';
 export type LeftTab = 'prompts' | 'collections' | 'library' | 'favorites' | 'preferences';
 export type RightTab = 'info' | 'generate' | 'settings';
-export type SelectionMode = 'none' | 'select' | 'batch';
+export type SelectionMode = 'none' | 'select';
 
 export interface SelectionState {
   mode: SelectionMode;

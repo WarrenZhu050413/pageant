@@ -13,13 +13,25 @@ const TYPE_CONFIG: Record<LibraryItemType, { label: string; icon: React.ReactNod
 };
 
 export function InfoTab() {
-  const currentPrompt = useStore((s) => s.getCurrentPrompt());
-  const currentImage = useStore((s) => s.getCurrentImage());
+  // Select primitive values to avoid infinite re-renders
+  const prompts = useStore((s) => s.prompts);
+  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentImageIndex = useStore((s) => s.currentImageIndex);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const deletePrompt = useStore((s) => s.deletePrompt);
-  const prompts = useStore((s) => s.prompts);
   const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
+
+  // Compute derived values with useMemo
+  const currentPrompt = useMemo(
+    () => prompts.find((p) => p.id === currentPromptId) || null,
+    [prompts, currentPromptId]
+  );
+
+  const currentImage = useMemo(() => {
+    if (!currentPrompt) return null;
+    return currentPrompt.images[currentImageIndex] || null;
+  }, [currentPrompt, currentImageIndex]);
 
   // Find reference images for this prompt
   const referenceImages = useMemo(() => {
@@ -171,8 +183,13 @@ export function InfoTab() {
 
         <div className="p-3 rounded-lg bg-canvas-subtle">
           <p className="text-xs font-[family-name:var(--font-mono)] text-ink-secondary leading-relaxed whitespace-pre-wrap">
-            {currentPrompt.prompt}
+            {currentImage?.varied_prompt || currentPrompt.prompt}
           </p>
+          {currentImage?.varied_prompt && currentImage.varied_prompt !== currentPrompt.prompt && (
+            <p className="text-[0.6rem] text-ink-muted mt-2 italic">
+              Varied from base prompt
+            </p>
+          )}
         </div>
       </section>
 
@@ -269,28 +286,16 @@ export function InfoTab() {
       {/* Image-specific info */}
       {currentImage && (
         <>
-          {/* Varied prompt */}
-          {currentImage.varied_prompt && currentImage.varied_prompt !== currentPrompt.prompt && (
-            <section>
-              <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
-                Image Variation
-              </h4>
-              <div className="p-3 rounded-lg bg-brass-muted/50">
-                <p className="text-xs font-[family-name:var(--font-mono)] text-brass-dark leading-relaxed">
-                  {currentImage.varied_prompt}
-                </p>
-              </div>
-              {(currentImage.mood || currentImage.variation_type) && (
-                <div className="flex gap-2 mt-2">
-                  {currentImage.mood && (
-                    <Badge>{currentImage.mood}</Badge>
-                  )}
-                  {currentImage.variation_type && (
-                    <Badge>{currentImage.variation_type}</Badge>
-                  )}
-                </div>
+          {/* Variation badges */}
+          {(currentImage.mood || currentImage.variation_type) && (
+            <div className="flex gap-2 -mt-4">
+              {currentImage.mood && (
+                <Badge>{currentImage.mood}</Badge>
               )}
-            </section>
+              {currentImage.variation_type && (
+                <Badge>{currentImage.variation_type}</Badge>
+              )}
+            </div>
           )}
 
           {/* Notes */}
@@ -305,14 +310,14 @@ export function InfoTab() {
             />
           </section>
 
-          {/* Caption */}
+          {/* Annotation */}
           <section>
             <Input
-              label="Caption"
+              label="Annotation"
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               onBlur={handleNotesBlur}
-              placeholder="Short caption for this image"
+              placeholder="Short annotation for AI context"
             />
           </section>
         </>

@@ -13,6 +13,8 @@ export function CollectionsTab() {
   const deleteCollection = useStore((s) => s.deleteCollection);
   const addContextImages = useStore((s) => s.addContextImages);
   const setRightTab = useStore((s) => s.setRightTab);
+  const viewCollection = useStore((s) => s.viewCollection);
+  const currentCollectionId = useStore((s) => s.currentCollectionId);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
@@ -48,6 +50,8 @@ export function CollectionsTab() {
           .map((id) => getImageById(id))
           .filter(Boolean);
 
+        const isActive = collection.id === currentCollectionId;
+
         return (
           <motion.div
             key={collection.id}
@@ -55,9 +59,12 @@ export function CollectionsTab() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.02 }}
             className={clsx(
-              'group rounded-lg overflow-hidden',
-              'hover:bg-canvas-subtle transition-colors'
+              'group rounded-lg overflow-hidden cursor-pointer',
+              isActive
+                ? 'bg-brass-muted border border-brass/30'
+                : 'hover:bg-canvas-subtle transition-colors'
             )}
+            onClick={() => viewCollection(collection.id)}
           >
             <div className="flex gap-3 p-2.5">
               {/* Thumbnail Grid */}
@@ -89,7 +96,10 @@ export function CollectionsTab() {
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className="text-sm font-medium text-ink-secondary truncate">
+                  <h3 className={clsx(
+                    'text-sm font-medium truncate',
+                    isActive ? 'text-brass-dark' : 'text-ink-secondary'
+                  )}>
                     {collection.name}
                   </h3>
                   <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-canvas-muted text-ink-tertiary">
@@ -108,7 +118,8 @@ export function CollectionsTab() {
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
                       addContextImages(collection.image_ids);
                       setRightTab('generate');
                     }}

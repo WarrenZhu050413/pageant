@@ -2,7 +2,7 @@ import type { StateCreator } from 'zustand'
 import type { PromptVariation } from '../../types'
 
 interface PendingPrompt {
-  title: string
+  title?: string  // Optional - will be auto-generated if not provided
   count: number
 }
 

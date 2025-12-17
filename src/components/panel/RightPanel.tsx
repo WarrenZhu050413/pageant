@@ -1,4 +1,3 @@
-import { motion, AnimatePresence } from 'framer-motion';
 import { Wand2, Settings } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
@@ -24,21 +23,22 @@ export function RightPanel() {
         onChange={(id) => setRightTab(id as RightTab)}
       />
 
-      {/* Tab Content */}
-      <div className="flex-1 overflow-hidden">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={rightTab}
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -10 }}
-            transition={{ duration: 0.15 }}
-            className="h-full overflow-y-auto"
-          >
-            {rightTab === 'generate' && <GenerateTab />}
-            {rightTab === 'settings' && <SettingsTab />}
-          </motion.div>
-        </AnimatePresence>
+      {/* Tab Content - both tabs always mounted to preserve state */}
+      <div className="flex-1 overflow-hidden relative">
+        <div
+          className={`h-full overflow-y-auto absolute inset-0 transition-opacity duration-150 ${
+            rightTab === 'generate' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <GenerateTab />
+        </div>
+        <div
+          className={`h-full overflow-y-auto absolute inset-0 transition-opacity duration-150 ${
+            rightTab === 'settings' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <SettingsTab />
+        </div>
       </div>
     </div>
   );

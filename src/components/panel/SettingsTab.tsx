@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Save, Check, Info, Loader2 } from 'lucide-react';
+import { Save, Check, Info, Loader2, Sun, Moon, Monitor } from 'lucide-react';
 import { useStore } from '../../store';
+import { useTheme, type ThemePreference } from '../../hooks';
 import { Button, Textarea, Badge, Input } from '../ui';
-import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS } from '../../types';
+import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS } from '../../types';
 
 // Price per image for display
 const SIZE_PRICES: Record<string, string> = {
@@ -12,9 +13,16 @@ const SIZE_PRICES: Record<string, string> = {
   '4K': '$0.24',
 };
 
+const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }[] = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+];
+
 export function SettingsTab() {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+  const { preference: themePreference, resolvedTheme, setTheme } = useTheme();
 
   const [variationPrompt, setVariationPrompt] = useState('');
   const [iterationPrompt, setIterationPrompt] = useState('');
@@ -23,6 +31,10 @@ export function SettingsTab() {
   const [aspectRatio, setAspectRatio] = useState<string>('');
   const [seed, setSeed] = useState<string>('');
   const [safetyLevel, setSafetyLevel] = useState<string>('');
+  // Nano Banana specific
+  const [thinkingLevel, setThinkingLevel] = useState<string>('');
+  const [temperature, setTemperature] = useState<string>('');
+  const [googleSearchGrounding, setGoogleSearchGrounding] = useState<boolean>(false);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -34,6 +46,10 @@ export function SettingsTab() {
   const serverAspectRatio = settings?.aspect_ratio ?? '';
   const serverSeed = settings?.seed?.toString() ?? '';
   const serverSafetyLevel = settings?.safety_level ?? '';
+  // Nano Banana specific
+  const serverThinkingLevel = settings?.thinking_level ?? '';
+  const serverTemperature = settings?.temperature?.toString() ?? '';
+  const serverGoogleSearchGrounding = settings?.google_search_grounding ?? false;
 
   useEffect(() => {
     if (serverVariation) setVariationPrompt(serverVariation);
@@ -59,6 +75,18 @@ export function SettingsTab() {
     setSafetyLevel(serverSafetyLevel);
   }, [serverSafetyLevel]);
 
+  useEffect(() => {
+    setThinkingLevel(serverThinkingLevel);
+  }, [serverThinkingLevel]);
+
+  useEffect(() => {
+    setTemperature(serverTemperature);
+  }, [serverTemperature]);
+
+  useEffect(() => {
+    setGoogleSearchGrounding(serverGoogleSearchGrounding);
+  }, [serverGoogleSearchGrounding]);
+
   const handleSave = async () => {
     setIsSaving(true);
     try {
@@ -69,6 +97,10 @@ export function SettingsTab() {
         aspect_ratio: aspectRatio || undefined,
         seed: seed ? parseInt(seed, 10) : undefined,
         safety_level: safetyLevel || undefined,
+        // Nano Banana specific
+        thinking_level: thinkingLevel || undefined,
+        temperature: temperature ? parseFloat(temperature) : undefined,
+        google_search_grounding: googleSearchGrounding || undefined,
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
@@ -83,7 +115,10 @@ export function SettingsTab() {
     imageSize !== serverImageSize ||
     aspectRatio !== serverAspectRatio ||
     seed !== serverSeed ||
-    safetyLevel !== serverSafetyLevel;
+    safetyLevel !== serverSafetyLevel ||
+    thinkingLevel !== serverThinkingLevel ||
+    temperature !== serverTemperature ||
+    googleSearchGrounding !== serverGoogleSearchGrounding;
   const isLoading = !settings;
 
   if (isLoading) {
@@ -121,6 +156,39 @@ export function SettingsTab() {
             <Badge variant="brass">Active</Badge>
           </div>
         </div>
+      </section>
+
+      {/* Appearance */}
+      <section>
+        <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-3">
+          Appearance
+        </h4>
+        <div className="flex gap-2">
+          {THEME_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setTheme(value)}
+              className={clsx(
+                'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                'border',
+                themePreference === value
+                  ? 'bg-brass-muted border-brass text-brass-dark'
+                  : 'bg-canvas-subtle border-border text-ink-secondary hover:bg-canvas-muted'
+              )}
+            >
+              <div className="flex items-center justify-center gap-1.5">
+                <Icon size={14} />
+                <span>{label}</span>
+              </div>
+            </button>
+          ))}
+        </div>
+        <p className="text-[0.625rem] text-ink-muted mt-1.5">
+          {themePreference === 'system'
+            ? `Following system preference (${resolvedTheme})`
+            : `${themePreference.charAt(0).toUpperCase() + themePreference.slice(1)} mode`}
+        </p>
       </section>
 
       {/* Image Generation Defaults */}
@@ -181,6 +249,9 @@ export function SettingsTab() {
                 </option>
               ))}
             </select>
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              {aspectRatio ? `Selected: ${aspectRatio}` : 'Default: Matches input image, or 1:1'}
+            </p>
           </div>
 
           {/* Seed */}
@@ -196,7 +267,7 @@ export function SettingsTab() {
               className="text-sm"
             />
             <p className="text-[0.625rem] text-ink-muted mt-1.5">
-              Set a seed for reproducible generations
+              {seed ? `Selected: ${seed}` : 'Default: Random (no seed)'}
             </p>
           </div>
 
@@ -221,6 +292,88 @@ export function SettingsTab() {
                 </option>
               ))}
             </select>
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              {safetyLevel
+                ? `Selected: ${safetyLevel.replace(/_/g, ' ').replace(/BLOCK /i, 'Block ')}`
+                : 'Default: Block Medium and Above'}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Advanced (Nano Banana) */}
+      <section>
+        <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-3">
+          Advanced (Nano Banana)
+        </h4>
+        <div className="space-y-4">
+          {/* Thinking Level */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Thinking Level
+            </label>
+            <div className="flex gap-2">
+              {THINKING_LEVEL_OPTIONS.map((level) => (
+                <button
+                  key={level}
+                  type="button"
+                  onClick={() => setThinkingLevel(thinkingLevel === level ? '' : level)}
+                  className={clsx(
+                    'flex-1 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
+                    'border',
+                    thinkingLevel === level
+                      ? 'bg-brass-muted border-brass text-brass-dark'
+                      : 'bg-canvas-subtle border-border text-ink-secondary hover:bg-canvas-muted'
+                  )}
+                >
+                  <div className="capitalize">{level}</div>
+                  <div className="text-[0.625rem] text-ink-muted mt-0.5">
+                    {level === 'low' ? 'Faster' : 'More detailed'}
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              {thinkingLevel ? `Selected: ${thinkingLevel}` : 'Default: High (more reasoning)'}
+            </p>
+          </div>
+
+          {/* Temperature */}
+          <div>
+            <label className="block text-xs font-medium text-ink-secondary mb-2">
+              Temperature
+            </label>
+            <Input
+              type="number"
+              step="0.1"
+              min="0"
+              max="2"
+              value={temperature}
+              onChange={(e) => setTemperature(e.target.value)}
+              placeholder="Leave empty for default (1.0)"
+              className="text-sm"
+            />
+            <p className="text-[0.625rem] text-ink-muted mt-1.5">
+              {temperature ? `Selected: ${temperature}` : 'Default: 1.0 (Google recommends not changing)'}
+            </p>
+          </div>
+
+          {/* Google Search Grounding */}
+          <div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={googleSearchGrounding}
+                onChange={(e) => setGoogleSearchGrounding(e.target.checked)}
+                className="w-4 h-4 rounded border-border text-brass focus:ring-brass/20"
+              />
+              <span className="text-xs font-medium text-ink-secondary">
+                Google Search Grounding
+              </span>
+            </label>
+            <p className="text-[0.625rem] text-ink-muted mt-1.5 ml-6">
+              Ground image generation in real-time web data
+            </p>
           </div>
         </div>
       </section>

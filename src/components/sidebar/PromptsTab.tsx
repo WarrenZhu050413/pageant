@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
@@ -9,36 +9,52 @@ import { Button, ConfirmDialog } from '../ui';
 export function PromptsTab() {
   const prompts = useStore((s) => s.prompts);
   const pendingPrompts = useStore((s) => s.pendingPrompts);
+  const draftPrompts = useStore((s) => s.draftPrompts);
+  const pendingCount = pendingPrompts.size;
   const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentDraftId = useStore((s) => s.currentDraftId);
   const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
+  const setCurrentDraft = useStore((s) => s.setCurrentDraft);
   const selectedPromptIds = useStore((s) => s.selectedPromptIds);
   const togglePromptSelection = useStore((s) => s.togglePromptSelection);
   const selectAllPrompts = useStore((s) => s.selectAllPrompts);
   const clearPromptSelection = useStore((s) => s.clearPromptSelection);
   const batchDeletePrompts = useStore((s) => s.batchDeletePrompts);
+  const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
-  // Combine pending and actual prompts
+  // Combine drafts, pending, and actual prompts
   type PromptItem = {
     id: string;
     title: string;
     count: number;
-    isPending: boolean;
+    itemType: 'draft' | 'pending' | 'prompt';
     created_at: string;
     prompt?: string;
     category?: string;
     thumbnail?: string;
+    variationCount?: number;
   };
 
   const allItems: PromptItem[] = [
-    // Pending prompts always at top
+    // Draft prompts always at very top
+    ...draftPrompts.map((d) => ({
+      id: d.id,
+      title: d.title,
+      count: d.variations.length,
+      itemType: 'draft' as const,
+      created_at: d.createdAt,
+      prompt: d.basePrompt,
+      variationCount: d.variations.length,
+    })),
+    // Pending prompts at top (below drafts)
     ...Array.from(pendingPrompts.entries()).map(([id, data]) => ({
       id,
-      title: data.title,
+      title: data.title || 'Generating...',
       count: data.count,
-      isPending: true as const,
+      itemType: 'pending' as const,
       created_at: new Date().toISOString(),
     })),
     // Sort actual prompts by created_at descending (newest first)
@@ -51,13 +67,13 @@ export function PromptsTab() {
         prompt: p.prompt,
         category: p.category,
         count: p.images.length,
-        isPending: false as const,
+        itemType: 'prompt' as const,
         created_at: p.created_at,
         thumbnail: p.images[0]?.image_path,
       })),
   ];
 
-  const selectableItems = allItems.filter((item) => !item.isPending);
+  const selectableItems = allItems.filter((item) => item.itemType === 'prompt');
   const allSelected = selectableItems.length > 0 && selectedPromptIds.size === selectableItems.length;
 
   const handleToggleSelectionMode = () => {
@@ -91,6 +107,13 @@ export function PromptsTab() {
     <div className="flex flex-col h-full">
       {/* Selection mode header */}
       <div className="p-2 border-b border-border flex items-center justify-between">
+        {/* Pending generations indicator */}
+        {pendingCount > 0 && !isSelectionMode && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-generating/15 text-generating text-xs font-medium">
+            <Loader2 size={12} className="animate-spin" />
+            {pendingCount} generating
+          </div>
+        )}
         {isSelectionMode ? (
           <>
             <div className="flex items-center gap-2">
@@ -140,7 +163,12 @@ export function PromptsTab() {
       {/* Prompts list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {allItems.map((item, index) => {
-          const isActive = item.id === currentPromptId;
+          const isDraft = item.itemType === 'draft';
+          const isPending = item.itemType === 'pending';
+          const isPrompt = item.itemType === 'prompt';
+          const isActive = isDraft
+            ? item.id === currentDraftId
+            : item.id === currentPromptId;
           const isSelected = selectedPromptIds.has(item.id);
 
           return (
@@ -152,15 +180,19 @@ export function PromptsTab() {
               className={clsx(
                 'flex items-center gap-2 rounded-lg overflow-hidden',
                 'transition-all duration-150',
-                item.isPending && 'shimmer cursor-wait',
+                isPending && 'shimmer cursor-wait',
+                isDraft && 'border border-dashed border-brass/40',
+                isDraft && isGeneratingVariations && item.variationCount === 0 && 'shimmer',
                 isActive && !isSelectionMode
-                  ? 'bg-brass-muted ring-1 ring-brass/30'
+                  ? isDraft
+                    ? 'bg-brass/10 ring-1 ring-brass/40'
+                    : 'bg-brass-muted ring-1 ring-brass/30'
                   : 'hover:bg-canvas-subtle',
                 isSelected && 'bg-brass-muted/50'
               )}
             >
-              {/* Checkbox (only in selection mode) */}
-              {isSelectionMode && !item.isPending && (
+              {/* Checkbox (only in selection mode, only for prompts) */}
+              {isSelectionMode && isPrompt && (
                 <button
                   onClick={() => togglePromptSelection(item.id)}
                   className="pl-2 py-2.5"
@@ -186,13 +218,16 @@ export function PromptsTab() {
               {/* Main content button */}
               <button
                 onClick={() => {
-                  if (isSelectionMode && !item.isPending) {
+                  if (isSelectionMode && isPrompt) {
                     togglePromptSelection(item.id);
-                  } else if (!item.isPending) {
+                  } else if (isDraft) {
+                    setCurrentDraft(item.id);
+                  } else if (isPrompt) {
+                    setCurrentDraft(null); // Clear any selected draft
                     setCurrentPrompt(item.id);
                   }
                 }}
-                disabled={item.isPending}
+                disabled={isPending}
                 className="flex-1 text-left"
               >
                 <div className="flex gap-3 p-2.5 pl-0">
@@ -200,11 +235,20 @@ export function PromptsTab() {
                   <div
                     className={clsx(
                       'w-12 h-12 rounded-md flex-shrink-0 overflow-hidden',
-                      'bg-canvas-muted',
+                      isDraft ? 'bg-brass/10 border border-dashed border-brass/30' : 'bg-canvas-muted',
                       !isSelectionMode && 'ml-2.5'
                     )}
                   >
-                    {item.isPending ? (
+                    {isDraft ? (
+                      // Draft: show edit icon or loading
+                      <div className="w-full h-full flex items-center justify-center">
+                        {isGeneratingVariations && item.variationCount === 0 ? (
+                          <Loader2 size={16} className="text-brass animate-spin" />
+                        ) : (
+                          <FileEdit size={16} className="text-brass" />
+                        )}
+                      </div>
+                    ) : isPending ? (
                       // Show grid of placeholder slots for each image being generated
                       <div className="w-full h-full grid grid-cols-2 gap-px">
                         {Array.from({ length: Math.min(item.count, 4) }).map((_, i) => (
@@ -243,23 +287,29 @@ export function PromptsTab() {
                       <span
                         className={clsx(
                           'flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
-                          item.isPending
+                          isDraft
+                            ? 'bg-brass/15 text-brass'
+                            : isPending
                             ? 'bg-generating/15 text-generating'
                             : 'bg-canvas-muted text-ink-tertiary'
                         )}
                       >
-                        {item.count}
+                        {isDraft ? 'Draft' : item.count}
                       </span>
                     </div>
 
                     {item.prompt && (
                       <p className="text-xs text-ink-muted truncate mt-0.5 font-[family-name:var(--font-mono)]">
-                        {item.prompt.slice(0, 50)}...
+                        {item.prompt.slice(0, 50)}{item.prompt.length > 50 ? '...' : ''}
                       </p>
                     )}
 
                     <p className="text-[0.625rem] text-ink-muted mt-1">
-                      {item.isPending
+                      {isDraft
+                        ? isGeneratingVariations && item.variationCount === 0
+                          ? 'Creating variations...'
+                          : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
+                        : isPending
                         ? 'Generating...'
                         : new Date(item.created_at).toLocaleDateString('en-US', {
                             month: 'short',

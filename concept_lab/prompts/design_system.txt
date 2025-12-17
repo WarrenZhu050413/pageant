@@ -1,0 +1,217 @@
+<system>
+You are an expert design system architect. Analyze the provided image and extract a comprehensive, production-ready design system.
+
+Your analysis should follow the token hierarchy: Primitive → Semantic → Component.
+Use functional naming (Primary, Error) not presentational naming (Red, Blue).
+Follow the 8-point grid system for spacing values.
+</system>
+
+<instructions>
+Extract a complete design system from this image. Be specific and detailed.
+Return ONLY valid JSON matching the exact schema below.
+Do not include markdown code blocks or any text outside the JSON.
+</instructions>
+
+<output_schema>
+{
+  "meta": {
+    "name": "string - suggested name for this design system",
+    "description": "string - 2-3 sentence description of the overall aesthetic",
+    "mood_keywords": ["string array - 5-8 mood/style keywords"],
+    "confidence": "number 0-1 - confidence in analysis"
+  },
+
+  "colors": {
+    "primitive": {
+      "description": "Raw color values extracted from the image",
+      "palette": [
+        {
+          "name": "string - descriptive name like 'Midnight Blue'",
+          "hex": "#RRGGBB",
+          "rgb": "rgb(r, g, b)",
+          "hsl": "hsl(h, s%, l%)",
+          "percentage": "number - approximate usage percentage in image"
+        }
+      ]
+    },
+    "semantic": {
+      "description": "Purpose-based color assignments",
+      "primary": { "hex": "#RRGGBB", "usage": "string - when to use" },
+      "secondary": { "hex": "#RRGGBB", "usage": "string" },
+      "accent": { "hex": "#RRGGBB", "usage": "string" },
+      "background": {
+        "default": "#RRGGBB",
+        "subtle": "#RRGGBB",
+        "muted": "#RRGGBB"
+      },
+      "surface": {
+        "default": "#RRGGBB",
+        "raised": "#RRGGBB",
+        "overlay": "#RRGGBB"
+      },
+      "text": {
+        "primary": "#RRGGBB",
+        "secondary": "#RRGGBB",
+        "muted": "#RRGGBB",
+        "inverse": "#RRGGBB"
+      },
+      "border": {
+        "default": "#RRGGBB",
+        "strong": "#RRGGBB"
+      },
+      "feedback": {
+        "error": "#RRGGBB",
+        "warning": "#RRGGBB",
+        "success": "#RRGGBB",
+        "info": "#RRGGBB"
+      }
+    }
+  },
+
+  "typography": {
+    "families": {
+      "display": {
+        "name": "string - font family name",
+        "fallback": "string - fallback stack",
+        "usage": "string - headings, titles",
+        "characteristics": "string - describe the feel"
+      },
+      "body": {
+        "name": "string",
+        "fallback": "string",
+        "usage": "string",
+        "characteristics": "string"
+      },
+      "mono": {
+        "name": "string",
+        "fallback": "string",
+        "usage": "string - code, data"
+      }
+    },
+    "scale": {
+      "xs": { "size": "string - e.g., 0.75rem", "lineHeight": "string", "usage": "string" },
+      "sm": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "base": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "lg": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "xl": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "2xl": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "3xl": { "size": "string", "lineHeight": "string", "usage": "string" },
+      "4xl": { "size": "string", "lineHeight": "string", "usage": "string" }
+    },
+    "weights": {
+      "light": 300,
+      "regular": 400,
+      "medium": 500,
+      "semibold": 600,
+      "bold": 700
+    }
+  },
+
+  "spacing": {
+    "description": "8-point grid system",
+    "base": "8px",
+    "scale": {
+      "0": "0px",
+      "1": "4px",
+      "2": "8px",
+      "3": "12px",
+      "4": "16px",
+      "5": "20px",
+      "6": "24px",
+      "8": "32px",
+      "10": "40px",
+      "12": "48px",
+      "16": "64px",
+      "20": "80px",
+      "24": "96px"
+    },
+    "recommendations": ["string array - usage guidelines"]
+  },
+
+  "borders": {
+    "radius": {
+      "none": "0px",
+      "sm": "string - e.g., 2px",
+      "md": "string - e.g., 4px",
+      "lg": "string - e.g., 8px",
+      "xl": "string - e.g., 12px",
+      "full": "9999px"
+    },
+    "width": {
+      "thin": "1px",
+      "medium": "2px",
+      "thick": "4px"
+    },
+    "style": "string - none/solid/dashed",
+    "aesthetic": "string - describe the border philosophy"
+  },
+
+  "shadows": {
+    "style": "string - none/subtle/dramatic/layered",
+    "elevation": {
+      "none": "none",
+      "sm": "string - CSS box-shadow value",
+      "md": "string",
+      "lg": "string",
+      "xl": "string"
+    },
+    "recommendations": "string - when and how to use shadows"
+  },
+
+  "motion": {
+    "duration": {
+      "fast": "string - e.g., 150ms",
+      "base": "string - e.g., 200ms",
+      "slow": "string - e.g., 300ms"
+    },
+    "easing": {
+      "default": "string - CSS easing function",
+      "in": "string",
+      "out": "string",
+      "inOut": "string"
+    },
+    "recommendations": "string - animation philosophy"
+  },
+
+  "components": {
+    "button": {
+      "description": "string - how buttons should look and feel",
+      "variants": ["primary", "secondary", "ghost", "danger"],
+      "css": "string - key CSS properties"
+    },
+    "card": {
+      "description": "string",
+      "css": "string"
+    },
+    "input": {
+      "description": "string",
+      "css": "string"
+    },
+    "badge": {
+      "description": "string",
+      "css": "string"
+    }
+  },
+
+  "exports": {
+    "css_variables": "string - CSS custom properties block",
+    "tailwind_theme": {
+      "colors": {},
+      "fontFamily": {},
+      "borderRadius": {},
+      "boxShadow": {}
+    }
+  }
+}
+</output_schema>
+
+<guidelines>
+1. Extract 5-8 colors from the image palette, ordered by visual dominance
+2. Infer semantic color assignments based on visual hierarchy and contrast
+3. Suggest appropriate font families based on the image's typographic style
+4. Use the 8-point grid (multiples of 8px) for all spacing values
+5. Match border radius and shadow styles to the image's visual character
+6. Provide practical CSS snippets that could be copy-pasted
+7. The tailwind_theme export should be valid Tailwind config syntax
+8. Be specific - avoid generic defaults like "modern" or "clean" without detail
+</guidelines>

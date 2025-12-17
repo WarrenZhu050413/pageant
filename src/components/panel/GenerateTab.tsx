@@ -176,11 +176,11 @@ export function GenerateTab() {
 
   // Generate variations (two-phase workflow - default)
   const handleGenerateVariations = () => {
-    if (!prompt.trim() || !title.trim()) return;
+    if (!prompt.trim()) return;
 
     generateVariations({
       prompt: buildFinalPrompt(),
-      title: title.trim(),
+      title: title.trim() || undefined, // Optional - will be auto-generated if not provided
       count,
       ...buildImageParams(),
     });
@@ -200,11 +200,11 @@ export function GenerateTab() {
 
   // Direct generate (bypass variations preview)
   const handleDirectGenerate = () => {
-    if (!prompt.trim() || !title.trim()) return;
+    if (!prompt.trim()) return;
 
     generate({
       prompt: buildFinalPrompt(),
-      title: title.trim(),
+      title: title.trim() || undefined, // Optional - will be auto-generated
       count,
       ...buildImageParams(),
     });
@@ -222,7 +222,9 @@ export function GenerateTab() {
     setShowAdvanced(false);
   };
 
-  const isDisabled = isGenerating || isGeneratingVariations || !prompt.trim() || !title.trim();
+  // Only prompt is required - title is auto-generated if not provided
+  // Note: Allow multiple generations to run concurrently (only block during variations preview)
+  const isDisabled = isGeneratingVariations || !prompt.trim();
 
   const handleAddFromSelection = () => {
     // Append selected images to existing context (avoid duplicates)
@@ -258,12 +260,12 @@ export function GenerateTab() {
 
   return (
     <div className="p-4 space-y-5">
-      {/* Title */}
+      {/* Title (optional) */}
       <Input
-        label="Title"
+        label="Title (optional)"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        placeholder="My Generation"
+        placeholder="Auto-generate from prompt"
       />
 
       {/* Count */}
@@ -572,7 +574,7 @@ export function GenerateTab() {
             variant="brass"
             size="lg"
             leftIcon={
-              isGenerating || isGeneratingVariations ? (
+              isGeneratingVariations ? (
                 <Loader2 size={18} className="animate-spin" />
               ) : (
                 <Wand2 size={18} />
@@ -582,9 +584,7 @@ export function GenerateTab() {
             disabled={isDisabled}
             className="flex-1 rounded-r-none"
           >
-            {isGenerating
-              ? 'Generating...'
-              : isGeneratingVariations
+            {isGeneratingVariations
               ? 'Getting Variations...'
               : 'Generate Variations'}
           </Button>

@@ -1,0 +1,39 @@
+BUG:
+
+When I switch between different images, the Prompt Section of the Info Panel does not udpate to reflect the prompt of the currently selected image. It continues to display the prompt of the previously selected image until I manually refresh or reselect the image. This leads to confusion as the displayed prompt does not match the actual prompt used for the current image.
+
+Feature:
+
+# Small
+
+1. I want the add to context for a single image to not replace the existing image context that is already there in the generationb bar.
+
+2. To enable more rapid design, I want to be able to generate multiple batches of images at once. The generate images only shows the indicator inside the prompt where the images are being generated, but not the generated image itself. Thanks!
+
+3. Change the name "Caption (SENT TO AI)" to just "Annotation (SENT TO AI)"
+
+# Large
+
+Change the UI layout, so that the bottom InfoPanel is actually just a separate part of the left side panel. After Style, it should be a Info section. Arrange it so it has 
+
+Prompt
+
+Original User Prompt (collapsed by default)
+
+Actual Prompt (Gemini Generated)
+
+------
+
+Caption
+
+------
+
+Design
+
+
+As the three sections.
+
+
+
+
+

@@ -1,17 +1,28 @@
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Star, Download, FileCode } from 'lucide-react';
+import { Star, Download, FileCode, FolderOpen } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, getExportFavoritesUrl, getExportGalleryUrl } from '../../api';
 import { Button } from '../ui';
+
+const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
 
 export function FavoritesTab() {
   const getFavoriteImages = useStore((s) => s.getFavoriteImages);
   const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
+  const viewCollection = useStore((s) => s.viewCollection);
+  const collections = useStore((s) => s.collections);
   const prompts = useStore((s) => s.prompts);
 
   const favoriteImages = getFavoriteImages();
+  const favoritesCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
+
+  const handleViewCollection = () => {
+    if (favoritesCollection) {
+      viewCollection(favoritesCollection.id);
+    }
+  };
 
   const handleImageClick = (promptId: string, imageId: string) => {
     setCurrentPrompt(promptId);
@@ -40,6 +51,21 @@ export function FavoritesTab() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* View Collection Button */}
+      {favoritesCollection && (
+        <div className="p-3 border-b border-border">
+          <Button
+            size="sm"
+            variant="brass"
+            leftIcon={<FolderOpen size={14} />}
+            onClick={handleViewCollection}
+            className="w-full"
+          >
+            View as Collection
+          </Button>
+        </div>
+      )}
+
       {/* Export Buttons */}
       <div className="p-3 border-b border-border flex gap-2">
         <Button

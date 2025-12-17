@@ -1,12 +1,20 @@
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
 import { Star, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 
 export function CompareView() {
-  const currentPrompt = useStore((s) => s.getCurrentPrompt());
+  // Select primitive values to avoid infinite re-renders
+  const prompts = useStore((s) => s.prompts);
+  const currentPromptId = useStore((s) => s.currentPromptId);
+
+  // Compute derived value with useMemo
+  const currentPrompt = useMemo(
+    () => prompts.find((p) => p.id === currentPromptId) || null,
+    [prompts, currentPromptId]
+  );
   const compareLeftId = useStore((s) => s.compareLeftId);
   const compareRightId = useStore((s) => s.compareRightId);
   const setCompareImages = useStore((s) => s.setCompareImages);

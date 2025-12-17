@@ -1,0 +1,948 @@
+# Design System Extraction - Parsing & Display Plan
+
+## Overview
+
+This document outlines how to parse the design system JSON response and display it
+in a React UI with tabs for different sections.
+
+---
+
+## 1. API Response Structure
+
+The `/api/analysis/design-system` endpoint returns:
+
+```typescript
+{
+  success: boolean;
+  design_system: DesignSystemResponse;  // The JSON matching our schema
+  raw_analysis: string;                  // Raw text from Gemini
+}
+```
+
+## 2. TypeScript Types
+
+```typescript
+// types/design-system.ts
+
+interface ColorValue {
+  hex: string;
+  rgb?: string;
+  hsl?: string;
+  usage?: string;
+  percentage?: number;
+  name?: string;
+}
+
+interface PrimitiveColor {
+  name: string;
+  hex: string;
+  rgb: string;
+  hsl: string;
+  percentage: number;
+}
+
+interface DesignSystemColors {
+  primitive: {
+    description: string;
+    palette: PrimitiveColor[];
+  };
+  semantic: {
+    description: string;
+    primary: ColorValue;
+    secondary: ColorValue;
+    accent: ColorValue;
+    background: { default: string; subtle: string; muted: string };
+    surface: { default: string; raised: string; overlay: string };
+    text: { primary: string; secondary: string; muted: string; inverse: string };
+    border: { default: string; strong: string };
+    feedback: { error: string; warning: string; success: string; info: string };
+  };
+}
+
+interface FontFamily {
+  name: string;
+  fallback: string;
+  usage: string;
+  characteristics?: string;
+}
+
+interface TypeScale {
+  size: string;
+  lineHeight: string;
+  usage: string;
+}
+
+interface DesignSystemTypography {
+  families: {
+    display: FontFamily;
+    body: FontFamily;
+    mono: FontFamily;
+  };
+  scale: Record<string, TypeScale>;
+  weights: Record<string, number>;
+}
+
+interface DesignSystemSpacing {
+  description: string;
+  base: string;
+  scale: Record<string, string>;
+  recommendations: string[];
+}
+
+interface DesignSystemBorders {
+  radius: Record<string, string>;
+  width: Record<string, string>;
+  style: string;
+  aesthetic: string;
+}
+
+interface DesignSystemShadows {
+  style: string;
+  elevation: Record<string, string>;
+  recommendations: string;
+}
+
+interface DesignSystemMotion {
+  duration: Record<string, string>;
+  easing: Record<string, string>;
+  recommendations: string;
+}
+
+interface ComponentSpec {
+  description: string;
+  variants?: string[];
+  css: string;
+}
+
+interface DesignSystemExports {
+  css_variables: string;
+  tailwind_theme: {
+    colors: Record<string, any>;
+    fontFamily: Record<string, string[]>;
+    borderRadius: Record<string, string>;
+    boxShadow: Record<string, string>;
+  };
+}
+
+interface DesignSystemResponse {
+  meta: {
+    name: string;
+    description: string;
+    mood_keywords: string[];
+    confidence: number;
+  };
+  colors: DesignSystemColors;
+  typography: DesignSystemTypography;
+  spacing: DesignSystemSpacing;
+  borders: DesignSystemBorders;
+  shadows: DesignSystemShadows;
+  motion: DesignSystemMotion;
+  components: Record<string, ComponentSpec>;
+  exports: DesignSystemExports;
+}
+```
+
+---
+
+## 3. UI Tab Structure
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  [Overview] [Colors] [Typography] [Spacing] [Components]    │
+│  [Borders] [Shadows] [Motion] [Export]                      │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│                    Tab Content Area                         │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. Tab Content Components
+
+### Tab 1: Overview
+- Display `meta.name` as title (serif font)
+- Display `meta.description` as subtitle
+- Show `meta.confidence` as percentage bar
+- Render `meta.mood_keywords` as tag pills
+- Quick preview grid showing: 3 primary colors, 2 fonts, border radius sample
+
+### Tab 2: Colors
+**Sub-sections:**
+1. **Palette** - Grid of primitive colors
+   - Each color shows: swatch, name, hex, percentage bar
+   - Click to copy hex
+2. **Semantic** - Grouped by purpose
+   - Primary/Secondary/Accent row
+   - Background colors row
+   - Surface colors row
+   - Text colors row
+   - Feedback colors row (error/warning/success/info)
+   - Border colors row
+
+**Display Component:**
+```tsx
+<ColorSwatch
+  color={hex}
+  name={name}
+  usage={usage}
+  copyable
+/>
+```
+
+### Tab 3: Typography
+**Sub-sections:**
+1. **Font Families** - Display each family with:
+   - Live preview text in that font
+   - Name + fallback stack
+   - Usage description
+2. **Type Scale** - Visual ladder showing:
+   - Each size (xs through 4xl)
+   - Actual rendered preview
+   - Size value + line height
+3. **Weights** - Show weight variations on sample text
+
+**Display Component:**
+```tsx
+<TypePreview
+  fontFamily={family.name}
+  fallback={family.fallback}
+  size={scale.size}
+  lineHeight={scale.lineHeight}
+  label={scaleName}
+/>
+```
+
+### Tab 4: Spacing
+**Display:**
+- Visual spacing scale with bars
+- Each spacing value shown as proportional width
+- Hover shows usage recommendation
+- Grid preview showing spacing in context
+
+**Display Component:**
+```tsx
+<SpacingBar
+  value={spacing}
+  label={key}
+  showPixels
+/>
+```
+
+### Tab 5: Components
+**For each component (button, card, input, badge):**
+- Description text
+- Variants list (if applicable)
+- Live CSS preview in code block
+- Optional: Rendered preview using the extracted CSS
+
+### Tab 6: Borders
+- Radius scale visual (rectangles with each radius)
+- Width examples
+- Style description
+- Aesthetic philosophy text
+
+### Tab 7: Shadows
+- Visual elevation layers
+- Each shadow level rendered on a card
+- Style description
+- Usage recommendations
+
+### Tab 8: Motion
+- Duration values with animated examples
+- Easing visualizations (CSS animation curves)
+- Recommendations text
+
+### Tab 9: Export
+**Three export formats with copy buttons:**
+1. **CSS Variables** - Syntax highlighted code block
+2. **Tailwind Config** - JSON with syntax highlighting
+3. **Full JSON** - Complete design system object
+
+---
+
+## 5. Parsing Strategy
+
+```typescript
+// hooks/useDesignSystem.ts
+
+function parseDesignSystem(response: any): DesignSystemResponse | null {
+  if (!response?.success || !response?.design_system) {
+    return null;
+  }
+
+  const ds = response.design_system;
+
+  // Validate required sections exist
+  const requiredSections = ['meta', 'colors', 'typography', 'spacing'];
+  for (const section of requiredSections) {
+    if (!ds[section]) {
+      console.warn(`Missing required section: ${section}`);
+    }
+  }
+
+  // Normalize color values (ensure hex format)
+  if (ds.colors?.primitive?.palette) {
+    ds.colors.primitive.palette = ds.colors.primitive.palette.map(c => ({
+      ...c,
+      hex: normalizeHex(c.hex),
+    }));
+  }
+
+  // Ensure spacing values have 'px' suffix
+  if (ds.spacing?.scale) {
+    Object.keys(ds.spacing.scale).forEach(key => {
+      const val = ds.spacing.scale[key];
+      if (!val.includes('px') && !val.includes('rem')) {
+        ds.spacing.scale[key] = `${val}px`;
+      }
+    });
+  }
+
+  return ds as DesignSystemResponse;
+}
+
+function normalizeHex(hex: string): string {
+  if (!hex.startsWith('#')) hex = '#' + hex;
+  if (hex.length === 4) {
+    // Expand shorthand (#RGB -> #RRGGBB)
+    hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+  }
+  return hex.toUpperCase();
+}
+```
+
+---
+
+## 6. Error Handling
+
+```typescript
+// Fallback for missing sections
+const defaultColors = {
+  primary: { hex: '#3B82F6', usage: 'Primary actions' },
+  // ... defaults
+};
+
+function getColorsOrDefault(ds: DesignSystemResponse) {
+  return ds.colors?.semantic || defaultColors;
+}
+```
+
+---
+
+## 7. Copy to Clipboard Utilities
+
+```typescript
+async function copyToClipboard(text: string, label: string) {
+  await navigator.clipboard.writeText(text);
+  toast.success(`Copied ${label} to clipboard`);
+}
+
+function generateCSSVariables(ds: DesignSystemResponse): string {
+  // Use the exports.css_variables if available
+  if (ds.exports?.css_variables) {
+    return ds.exports.css_variables;
+  }
+
+  // Otherwise generate from semantic colors
+  let css = ':root {\n';
+  const colors = ds.colors.semantic;
+  css += `  --color-primary: ${colors.primary.hex};\n`;
+  css += `  --color-secondary: ${colors.secondary.hex};\n`;
+  // ... etc
+  css += '}\n';
+  return css;
+}
+
+function generateTailwindConfig(ds: DesignSystemResponse): string {
+  return JSON.stringify(ds.exports?.tailwind_theme || {}, null, 2);
+}
+```
+
+---
+
+## 8. Responsive Considerations
+
+- Tabs become scrollable horizontal list on mobile
+- Color grid: 4 columns desktop → 2 columns mobile
+- Typography preview: Full width on mobile
+- Spacing bars: Scaled proportionally
+- Export code blocks: Horizontal scroll on mobile
+
+---
+
+## 9. Accessibility
+
+- Color swatches include contrast ratio indicators
+- Font previews use actual fonts (with fallback)
+- All interactive elements have keyboard focus
+- Copy actions announce success to screen readers
+- Tab panel has proper ARIA roles
+
+---
+
+## 10. Performance
+
+- Lazy load Google Fonts only when Typography tab is active
+- Memoize parsed design system object
+- Debounce copy-to-clipboard actions
+- Use CSS containment on tab panels
+
+---
+
+## 11. Validation Strategy
+
+### 11.1 Zod Schema Validation (Runtime Type Safety)
+
+```typescript
+// validation/design-system.schema.ts
+import { z } from 'zod';
+
+// === Primitive Validators ===
+
+const hexColorRegex = /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/;
+const rgbRegex = /^rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)$/;
+const hslRegex = /^hsl\(\s*\d{1,3}\s*,\s*\d{1,3}%?\s*,\s*\d{1,3}%?\s*\)$/;
+const cssUnitRegex = /^-?\d+(\.\d+)?(px|rem|em|%|vh|vw|pt)?$/;
+const cssDurationRegex = /^\d+(\.\d+)?(ms|s)$/;
+const cssEasingRegex = /^(ease|ease-in|ease-out|ease-in-out|linear|cubic-bezier\(.+\))$/;
+
+// Color validators
+const HexColor = z.string().regex(hexColorRegex, 'Invalid hex color format');
+const RgbColor = z.string().regex(rgbRegex, 'Invalid rgb() format');
+const HslColor = z.string().regex(hslRegex, 'Invalid hsl() format');
+const CssUnit = z.string().regex(cssUnitRegex, 'Invalid CSS unit');
+const CssDuration = z.string().regex(cssDurationRegex, 'Invalid duration (use ms or s)');
+const CssEasing = z.string().regex(cssEasingRegex, 'Invalid easing function');
+
+// Box-shadow validator (complex)
+const boxShadowRegex = /^(none|(\d+px\s+){2,4}(#[A-Fa-f0-9]{6}|rgba?\(.+\))(,\s*(\d+px\s+){2,4}(#[A-Fa-f0-9]{6}|rgba?\(.+\)))*)$/;
+const BoxShadow = z.string().refine(
+  (val) => val === 'none' || boxShadowRegex.test(val) || val.includes('px'),
+  'Invalid box-shadow syntax'
+);
+
+// === Schema Definitions ===
+
+const ColorValueSchema = z.object({
+  hex: HexColor,
+  rgb: RgbColor.optional(),
+  hsl: HslColor.optional(),
+  usage: z.string().optional(),
+  percentage: z.number().min(0).max(100).optional(),
+  name: z.string().optional(),
+});
+
+const PrimitiveColorSchema = z.object({
+  name: z.string().min(1),
+  hex: HexColor,
+  rgb: RgbColor,
+  hsl: HslColor,
+  percentage: z.number().min(0).max(100),
+});
+
+const SemanticColorsSchema = z.object({
+  description: z.string(),
+  primary: ColorValueSchema,
+  secondary: ColorValueSchema,
+  accent: ColorValueSchema,
+  background: z.object({
+    default: HexColor,
+    subtle: HexColor,
+    muted: HexColor,
+  }),
+  surface: z.object({
+    default: HexColor,
+    raised: HexColor,
+    overlay: HexColor,
+  }),
+  text: z.object({
+    primary: HexColor,
+    secondary: HexColor,
+    muted: HexColor,
+    inverse: HexColor,
+  }),
+  border: z.object({
+    default: HexColor,
+    strong: HexColor,
+  }),
+  feedback: z.object({
+    error: HexColor,
+    warning: HexColor,
+    success: HexColor,
+    info: HexColor,
+  }),
+});
+
+const FontFamilySchema = z.object({
+  name: z.string().min(1),
+  fallback: z.string().min(1),
+  usage: z.string(),
+  characteristics: z.string().optional(),
+});
+
+const TypeScaleSchema = z.object({
+  size: CssUnit,
+  lineHeight: z.string(), // Can be unitless (1.5) or with unit
+  usage: z.string(),
+});
+
+const TypographySchema = z.object({
+  families: z.object({
+    display: FontFamilySchema,
+    body: FontFamilySchema,
+    mono: FontFamilySchema,
+  }),
+  scale: z.record(TypeScaleSchema),
+  weights: z.record(z.number().min(100).max(900)),
+});
+
+const SpacingSchema = z.object({
+  description: z.string(),
+  base: CssUnit,
+  scale: z.record(CssUnit),
+  recommendations: z.array(z.string()),
+});
+
+const BordersSchema = z.object({
+  radius: z.record(CssUnit.or(z.literal('9999px'))),
+  width: z.record(CssUnit),
+  style: z.enum(['none', 'solid', 'dashed', 'dotted']),
+  aesthetic: z.string(),
+});
+
+const ShadowsSchema = z.object({
+  style: z.string(),
+  elevation: z.record(BoxShadow),
+  recommendations: z.string(),
+});
+
+const MotionSchema = z.object({
+  duration: z.record(CssDuration),
+  easing: z.record(CssEasing),
+  recommendations: z.string(),
+});
+
+const ComponentSpecSchema = z.object({
+  description: z.string(),
+  variants: z.array(z.string()).optional(),
+  css: z.string(),
+});
+
+const TailwindThemeSchema = z.object({
+  colors: z.record(z.any()),
+  fontFamily: z.record(z.array(z.string())),
+  borderRadius: z.record(z.string()),
+  boxShadow: z.record(z.string()),
+});
+
+const ExportsSchema = z.object({
+  css_variables: z.string(),
+  tailwind_theme: TailwindThemeSchema,
+});
+
+const MetaSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(10),
+  mood_keywords: z.array(z.string()).min(3).max(10),
+  confidence: z.number().min(0).max(1),
+});
+
+// === Main Schema ===
+
+export const DesignSystemSchema = z.object({
+  meta: MetaSchema,
+  colors: z.object({
+    primitive: z.object({
+      description: z.string(),
+      palette: z.array(PrimitiveColorSchema).min(3).max(12),
+    }),
+    semantic: SemanticColorsSchema,
+  }),
+  typography: TypographySchema,
+  spacing: SpacingSchema,
+  borders: BordersSchema,
+  shadows: ShadowsSchema,
+  motion: MotionSchema,
+  components: z.record(ComponentSpecSchema),
+  exports: ExportsSchema,
+});
+
+export type DesignSystem = z.infer<typeof DesignSystemSchema>;
+```
+
+### 11.2 Validation Functions
+
+```typescript
+// validation/validators.ts
+
+import { DesignSystemSchema, type DesignSystem } from './design-system.schema';
+
+interface ValidationResult {
+  valid: boolean;
+  data?: DesignSystem;
+  errors?: ValidationError[];
+  warnings?: string[];
+}
+
+interface ValidationError {
+  path: string;
+  message: string;
+  received: unknown;
+}
+
+export function validateDesignSystem(input: unknown): ValidationResult {
+  const result = DesignSystemSchema.safeParse(input);
+
+  if (result.success) {
+    const warnings = collectWarnings(result.data);
+    return { valid: true, data: result.data, warnings };
+  }
+
+  const errors: ValidationError[] = result.error.issues.map(issue => ({
+    path: issue.path.join('.'),
+    message: issue.message,
+    received: issue.received,
+  }));
+
+  return { valid: false, errors };
+}
+
+function collectWarnings(ds: DesignSystem): string[] {
+  const warnings: string[] = [];
+
+  // Check color contrast
+  const textPrimary = ds.colors.semantic.text.primary;
+  const bgDefault = ds.colors.semantic.background.default;
+  const contrast = calculateContrast(textPrimary, bgDefault);
+  if (contrast < 4.5) {
+    warnings.push(`Low contrast ratio (${contrast.toFixed(2)}) between text.primary and background.default. WCAG AA requires 4.5:1`);
+  }
+
+  // Check for missing common spacing values
+  const commonSpacing = ['4', '8', '16', '24', '32'];
+  for (const space of commonSpacing) {
+    if (!ds.spacing.scale[space]) {
+      warnings.push(`Missing common spacing value: ${space}`);
+    }
+  }
+
+  // Check font fallbacks
+  if (!ds.typography.families.body.fallback.includes('sans-serif')) {
+    warnings.push('Body font fallback should include generic "sans-serif"');
+  }
+
+  return warnings;
+}
+```
+
+### 11.3 Color Validation Utilities
+
+```typescript
+// validation/color-utils.ts
+
+export function isValidHex(hex: string): boolean {
+  return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex);
+}
+
+export function isValidRgb(rgb: string): boolean {
+  const match = rgb.match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/);
+  if (!match) return false;
+  const [, r, g, b] = match.map(Number);
+  return [r, g, b].every(v => v >= 0 && v <= 255);
+}
+
+export function isValidHsl(hsl: string): boolean {
+  const match = hsl.match(/^hsl\(\s*(\d{1,3})\s*,\s*(\d{1,3})%?\s*,\s*(\d{1,3})%?\s*\)$/);
+  if (!match) return false;
+  const [, h, s, l] = match.map(Number);
+  return h >= 0 && h <= 360 && s >= 0 && s <= 100 && l >= 0 && l <= 100;
+}
+
+export function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16),
+  } : null;
+}
+
+export function calculateContrast(hex1: string, hex2: string): number {
+  const rgb1 = hexToRgb(hex1);
+  const rgb2 = hexToRgb(hex2);
+  if (!rgb1 || !rgb2) return 0;
+
+  const luminance = (rgb: { r: number; g: number; b: number }) => {
+    const [r, g, b] = [rgb.r, rgb.g, rgb.b].map(v => {
+      v /= 255;
+      return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+    });
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+
+  const l1 = luminance(rgb1);
+  const l2 = luminance(rgb2);
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+
+  return (lighter + 0.05) / (darker + 0.05);
+}
+```
+
+### 11.4 CSS Syntax Validation
+
+```typescript
+// validation/css-validators.ts
+
+export function isValidCssVariablesBlock(css: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  // Check for :root wrapper
+  if (!css.includes(':root')) {
+    errors.push('CSS variables should be wrapped in :root { }');
+  }
+
+  // Check for balanced braces
+  const openBraces = (css.match(/{/g) || []).length;
+  const closeBraces = (css.match(/}/g) || []).length;
+  if (openBraces !== closeBraces) {
+    errors.push('Unbalanced braces in CSS');
+  }
+
+  // Check variable syntax
+  const varDeclarations = css.match(/--[\w-]+:\s*[^;]+;/g) || [];
+  for (const decl of varDeclarations) {
+    if (!decl.match(/^--[\w-]+:\s*.+;$/)) {
+      errors.push(`Invalid variable declaration: ${decl}`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function isValidBoxShadow(shadow: string): boolean {
+  if (shadow === 'none') return true;
+
+  // Simple validation: should have px values and a color
+  const hasPixels = shadow.includes('px');
+  const hasColor = shadow.includes('#') || shadow.includes('rgb') || shadow.includes('rgba');
+
+  return hasPixels && hasColor;
+}
+
+export function isValidCssUnit(value: string): boolean {
+  return /^-?\d+(\.\d+)?(px|rem|em|%|vh|vw|pt|ch|ex|vmin|vmax)?$/.test(value);
+}
+```
+
+### 11.5 Tailwind Config Validation
+
+```typescript
+// validation/tailwind-validators.ts
+
+export function validateTailwindConfig(config: unknown): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  if (typeof config !== 'object' || config === null) {
+    return { valid: false, errors: ['Config must be an object'] };
+  }
+
+  const cfg = config as Record<string, unknown>;
+
+  // Validate colors structure
+  if (cfg.colors && typeof cfg.colors === 'object') {
+    for (const [key, value] of Object.entries(cfg.colors as object)) {
+      if (typeof value === 'string' && !isValidHex(value)) {
+        errors.push(`Invalid color value for "${key}": ${value}`);
+      }
+      if (typeof value === 'object' && value !== null) {
+        // Nested color object (e.g., primary: { 50: '#...', 100: '#...' })
+        for (const [shade, hex] of Object.entries(value as object)) {
+          if (typeof hex === 'string' && !isValidHex(hex)) {
+            errors.push(`Invalid color value for "${key}.${shade}": ${hex}`);
+          }
+        }
+      }
+    }
+  }
+
+  // Validate fontFamily structure
+  if (cfg.fontFamily && typeof cfg.fontFamily === 'object') {
+    for (const [key, value] of Object.entries(cfg.fontFamily as object)) {
+      if (!Array.isArray(value)) {
+        errors.push(`fontFamily.${key} should be an array of strings`);
+      }
+    }
+  }
+
+  // Validate borderRadius
+  if (cfg.borderRadius && typeof cfg.borderRadius === 'object') {
+    for (const [key, value] of Object.entries(cfg.borderRadius as object)) {
+      if (typeof value === 'string' && !isValidCssUnit(value) && value !== '9999px') {
+        errors.push(`Invalid borderRadius value for "${key}": ${value}`);
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+function isValidHex(hex: string): boolean {
+  return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hex);
+}
+```
+
+### 11.6 Usage in API Response Handler
+
+```typescript
+// hooks/useDesignSystem.ts
+
+import { validateDesignSystem } from '../validation/validators';
+import { validateTailwindConfig } from '../validation/tailwind-validators';
+import { isValidCssVariablesBlock } from '../validation/css-validators';
+
+export function useDesignSystem(apiResponse: unknown) {
+  const [validationResult, setValidationResult] = useState<ValidationResult | null>(null);
+
+  useEffect(() => {
+    if (!apiResponse) return;
+
+    const response = apiResponse as { success: boolean; design_system: unknown };
+
+    if (!response.success || !response.design_system) {
+      setValidationResult({ valid: false, errors: [{ path: 'root', message: 'Invalid API response' }] });
+      return;
+    }
+
+    // Main schema validation
+    const result = validateDesignSystem(response.design_system);
+
+    if (result.valid && result.data) {
+      // Additional validation for exports
+      const cssValidation = isValidCssVariablesBlock(result.data.exports.css_variables);
+      const tailwindValidation = validateTailwindConfig(result.data.exports.tailwind_theme);
+
+      if (!cssValidation.valid) {
+        result.warnings = [...(result.warnings || []), ...cssValidation.errors.map(e => `CSS: ${e}`)];
+      }
+      if (!tailwindValidation.valid) {
+        result.warnings = [...(result.warnings || []), ...tailwindValidation.errors.map(e => `Tailwind: ${e}`)];
+      }
+    }
+
+    setValidationResult(result);
+  }, [apiResponse]);
+
+  return validationResult;
+}
+```
+
+### 11.7 Validation UI Component
+
+```tsx
+// components/ValidationStatus.tsx
+
+interface ValidationStatusProps {
+  result: ValidationResult;
+}
+
+export function ValidationStatus({ result }: ValidationStatusProps) {
+  if (result.valid) {
+    return (
+      <div className="flex items-center gap-2 text-success">
+        <CheckCircle size={16} />
+        <span>Valid design system</span>
+        {result.warnings && result.warnings.length > 0 && (
+          <span className="text-warning">({result.warnings.length} warnings)</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 text-error">
+        <XCircle size={16} />
+        <span>Validation failed</span>
+      </div>
+      <ul className="text-sm text-error/80 space-y-1">
+        {result.errors?.map((error, i) => (
+          <li key={i}>
+            <code className="text-xs">{error.path}</code>: {error.message}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+```
+
+### 11.8 Auto-Fix / Normalization
+
+```typescript
+// validation/normalizers.ts
+
+export function normalizeDesignSystem(raw: unknown): unknown {
+  if (typeof raw !== 'object' || raw === null) return raw;
+
+  const ds = structuredClone(raw) as Record<string, any>;
+
+  // Normalize hex colors (add # if missing, uppercase)
+  function normalizeHex(hex: string): string {
+    if (!hex) return hex;
+    if (!hex.startsWith('#')) hex = '#' + hex;
+    if (hex.length === 4) {
+      hex = '#' + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
+    }
+    return hex.toUpperCase();
+  }
+
+  // Walk through colors and normalize
+  function normalizeColors(obj: any): void {
+    if (!obj || typeof obj !== 'object') return;
+    for (const key of Object.keys(obj)) {
+      if (key === 'hex' && typeof obj[key] === 'string') {
+        obj[key] = normalizeHex(obj[key]);
+      } else if (typeof obj[key] === 'object') {
+        normalizeColors(obj[key]);
+      }
+    }
+  }
+
+  normalizeColors(ds.colors);
+
+  // Add 'px' suffix to spacing values if missing
+  if (ds.spacing?.scale) {
+    for (const key of Object.keys(ds.spacing.scale)) {
+      const val = ds.spacing.scale[key];
+      if (typeof val === 'string' && /^\d+$/.test(val)) {
+        ds.spacing.scale[key] = val + 'px';
+      }
+    }
+  }
+
+  // Ensure font fallbacks end with generic family
+  if (ds.typography?.families) {
+    for (const family of Object.values(ds.typography.families) as any[]) {
+      if (family.fallback && !family.fallback.includes('sans-serif') &&
+          !family.fallback.includes('serif') && !family.fallback.includes('monospace')) {
+        family.fallback += ', sans-serif';
+      }
+    }
+  }
+
+  return ds;
+}
+```
+
+---
+
+## References
+
+- [Design Tokens - Contentful](https://www.contentful.com/blog/design-token-system/)
+- [Naming Best Practices - Smashing Magazine](https://www.smashingmagazine.com/2024/05/naming-best-practices/)
+- [Typography in Design Systems - EightShapes](https://medium.com/eightshapes-llc/typography-in-design-systems-6ed771432f1e)
+- [Colors in Design Systems - UX Collective](https://uxdesign.cc/defining-colors-in-your-design-system-828148e210a)
+- [State of Design Tokens 2024](https://www.supernova.io/state-of-design-tokens)

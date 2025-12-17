@@ -158,6 +158,7 @@ class GenerateRequest(BaseModel):
 class GeneratePromptsRequest(BaseModel):
     """Request for generating prompt variations only (phase 1)."""
     prompt: str
+    title: str | None = None  # Optional - will be auto-generated if not provided
     count: int = 4
     context_image_ids: list[str] = []
     # Image generation parameters (validated, for phase 2)
@@ -191,6 +192,7 @@ class PromptVariation(BaseModel):
     text: str
     mood: str = ""
     type: str = ""
+    design: dict[str, list[str]] = {}  # Design tags by axis (colors, composition, etc.)
 
 
 class GeneratePromptsResponse(BaseModel):
@@ -198,6 +200,7 @@ class GeneratePromptsResponse(BaseModel):
     success: bool
     variations: list[PromptVariation] = []
     base_prompt: str = ""
+    generated_title: str | None = None  # Title from model (generated or refined from user's)
     error: str | None = None
 
 
@@ -208,6 +211,7 @@ class GenerateFromPromptsRequest(BaseModel):
     context_image_ids: list[str] = []
     session_id: str | None = None
     category: str = "Custom"
+    base_prompt: str | None = None  # Original prompt that generated variations
     # Image generation parameters (validated)
     image_size: ImageSizeType | None = None
     aspect_ratio: AspectRatioType | None = None
@@ -290,6 +294,10 @@ class CollectionUpdateRequest(BaseModel):
     name: str | None = None
     description: str | None = None
     image_ids: list[str] | None = None
+
+
+class CollectionImagesRequest(BaseModel):
+    image_ids: list[str]
 
 
 # === Stories ===
@@ -506,18 +514,32 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     Uses Gemini's structured JSON output for guaranteed valid responses.
     Returns text variations that the user can review, edit, and select
     before committing to image generation.
+
+    If context_image_ids are provided, the images and their captions are
+    passed to the model to inform the variations.
     """
     count = min(max(1, req.count), 10)  # Clamp between 1 and 10
-    logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'")
+    title_info = f", title='{req.title}'" if req.title else ""
+    logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'{title_info}, context_images={len(req.context_image_ids)}")
+
+    # Load context images with captions if specified
+    metadata = load_metadata()
+    context_images = None
+    if req.context_image_ids:
+        context_images = _load_context_images(metadata, req.context_image_ids)
+        if context_images:
+            logger.info(f"Using {len(context_images)} context image(s) with captions for prompt variation")
 
     try:
         # Use structured output for guaranteed JSON response
         logger.info(f"Generating {count} prompt variations (structured output)...")
-        scene_variations = await gemini.generate_prompt_variations(
+        generated_title, scene_variations = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
+            context_images=context_images,
+            title=req.title,  # Pass user-provided title as context (or None)
         )
-        logger.info(f"Received {len(scene_variations)} structured scene variations")
+        logger.info(f"Received title='{generated_title}', {len(scene_variations)} structured scene variations")
 
         # Convert SceneVariation objects to response model
         variations = []
@@ -527,6 +549,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
                 text=scene.description,
                 mood=scene.mood,
                 type=scene.type,
+                design=scene.design.model_dump() if scene.design else {},
             ))
 
         if not variations:
@@ -540,6 +563,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
             success=True,
             variations=variations,
             base_prompt=req.prompt,
+            generated_title=generated_title,
         )
 
     except Exception as e:
@@ -629,6 +653,7 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         "created_at": datetime.now().isoformat(),
         "images": images,
         "generation_mode": "two-phase",  # Mark as two-phase generation
+        "base_prompt": req.base_prompt,  # Original prompt that generated variations
     }
 
     metadata["prompts"].append(prompt_entry)
@@ -686,7 +711,7 @@ async def generate_images(req: GenerateRequest):
     # === Step 1: Generate varied prompts via text model (structured output) ===
     try:
         logger.info(f"Generating {count} prompt variations (structured output)...")
-        scene_variations = await gemini.generate_prompt_variations(
+        _, scene_variations = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
         )
@@ -1386,7 +1411,7 @@ async def generate_more_like_this(image_id: str, count: int = 4):
     logger.info(f"Generating {count} variations of {image_id}")
 
     try:
-        scene_variations = await gemini.generate_prompt_variations(
+        _, scene_variations = await gemini.generate_prompt_variations(
             base_prompt=base_variation_prompt,
             count=count,
         )
@@ -1715,26 +1740,26 @@ async def update_collection(collection_id: str, req: CollectionUpdateRequest):
 
 
 @app.post("/api/collections/{collection_id}/images")
-async def add_images_to_collection(collection_id: str, image_ids: list[str]):
+async def add_images_to_collection(collection_id: str, req: CollectionImagesRequest):
     """Add images to a collection."""
     metadata = load_metadata()
 
     for coll in metadata.get("collections", []):
         if coll["id"] == collection_id:
-            for img_id in image_ids:
+            for img_id in req.image_ids:
                 if img_id not in coll["image_ids"]:
                     coll["image_ids"].append(img_id)
             coll["updated_at"] = datetime.now().isoformat()
 
             save_metadata(metadata)
-            logger.info(f"Added {len(image_ids)} images to collection {collection_id}")
+            logger.info(f"Added {len(req.image_ids)} images to collection {collection_id}")
             return {"success": True, "collection": coll}
 
     raise HTTPException(status_code=404, detail="Collection not found")
 
 
 @app.delete("/api/collections/{collection_id}/images")
-async def remove_images_from_collection(collection_id: str, image_ids: list[str]):
+async def remove_images_from_collection(collection_id: str, req: CollectionImagesRequest):
     """Remove images from a collection."""
     metadata = load_metadata()
 
@@ -1742,12 +1767,12 @@ async def remove_images_from_collection(collection_id: str, image_ids: list[str]
         if coll["id"] == collection_id:
             coll["image_ids"] = [
                 img_id for img_id in coll["image_ids"]
-                if img_id not in image_ids
+                if img_id not in req.image_ids
             ]
             coll["updated_at"] = datetime.now().isoformat()
 
             save_metadata(metadata)
-            logger.info(f"Removed {len(image_ids)} images from collection {collection_id}")
+            logger.info(f"Removed {len(req.image_ids)} images from collection {collection_id}")
             return {"success": True, "collection": coll}
 
     raise HTTPException(status_code=404, detail="Collection not found")

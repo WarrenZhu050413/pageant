@@ -39,6 +39,7 @@ class SceneVariation(BaseModel):
 
 class SceneVariationsResponse(BaseModel):
     """Response containing multiple scene variations."""
+    title: str = Field(description="A short, creative title for this generation (2-5 words)")
     scenes: list[SceneVariation] = Field(description="List of scene variations")
 
 
@@ -377,8 +378,10 @@ class GeminiService:
         self,
         base_prompt: str,
         count: int,
+        context_images: list[tuple[bytes, str, str | None]] | None = None,
+        title: str | None = None,
         prompt_template: str | None = None,
-    ) -> list[SceneVariation]:
+    ) -> tuple[str, list[SceneVariation]]:
         """Generate varied prompt descriptions using structured JSON output.
 
         Uses Gemini's structured output feature to guarantee valid JSON responses.
@@ -386,16 +389,23 @@ class GeminiService:
         Args:
             base_prompt: User's original prompt
             count: Number of variations to generate
-            prompt_template: Optional custom prompt template with {base_prompt} and {count} placeholders.
+            context_images: Optional list of (image_bytes, mime_type, caption) tuples.
+                           Images are shown to the model with their captions for context.
+            title: Optional user-provided title. If provided, used as context for variations.
+                   Model always returns a title (generated or refined from user's).
+            prompt_template: Optional custom prompt template with {base_prompt}, {count},
+                           and {title_context} placeholders.
                            If not provided, loads from prompts/variation_structured.txt
 
         Returns:
-            List of SceneVariation objects with guaranteed structure
+            Tuple of (title, list of SceneVariation objects)
         """
         model_name = self.DEFAULT_TEXT_MODEL
         start_time = time.time()
 
-        logger.info(f"Generating {count} structured prompt variations for: {base_prompt[:100]}...")
+        num_images = len(context_images) if context_images else 0
+        title_info = f", title='{title}'" if title else ", no title"
+        logger.info(f"Generating {count} structured prompt variations for: {base_prompt[:100]}... (with {num_images} context images{title_info})")
 
         # Load prompt template from file if not provided
         if prompt_template is None:
@@ -404,18 +414,47 @@ class GeminiService:
             with open(prompt_file, "r") as f:
                 prompt_template = f.read()
 
-        # Format the prompt with the base_prompt and count
-        prompt = prompt_template.format(base_prompt=base_prompt, count=count)
+        # Build title context
+        title_context = ""
+        if title:
+            title_context = f'USER-PROVIDED TITLE: "{title}"\nUse this title as context for your variations. You may refine it or use it as-is for the output title.'
+
+        # Format the prompt with the base_prompt, count, and title_context
+        prompt = prompt_template.format(base_prompt=base_prompt, count=count, title_context=title_context)
+
+        # Build context section if images are provided
+        context_section = ""
+        if context_images:
+            context_section = "\n\nCONTEXT IMAGES:\n"
+            context_section += "The following reference images have been provided by the user. "
+            context_section += "Use them to understand the visual direction, style, mood, and subject matter the user is interested in.\n"
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=SceneVariationsResponse,
         )
 
+        # Build interleaved contents: [img1, caption1, img2, caption2, ..., prompt]
+        if context_images:
+            contents = []
+            # Add context intro
+            contents.append(context_section)
+            # Interleave images with captions
+            for i, (img_bytes, mime_type, caption) in enumerate(context_images):
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                if caption:
+                    contents.append(f"Reference {i+1} caption: {caption}")
+                else:
+                    contents.append(f"Reference {i+1}: (no caption provided)")
+            # Add the main prompt
+            contents.append("\n" + prompt)
+        else:
+            contents = prompt
+
         try:
             response = await self.client.aio.models.generate_content(
                 model=model_name,
-                contents=prompt,
+                contents=contents,
                 config=config,
             )
 
@@ -424,11 +463,11 @@ class GeminiService:
             # Parse the structured response
             result = SceneVariationsResponse.model_validate_json(response.text)
 
-            logger.info(f"Structured variations response: {len(result.scenes)} scenes in {elapsed:.1f}s")
+            logger.info(f"Structured variations response: title='{result.title}', {len(result.scenes)} scenes in {elapsed:.1f}s")
             for i, scene in enumerate(result.scenes):
                 logger.debug(f"Scene {i+1}: type={scene.type}, mood={scene.mood}, desc={scene.description[:50]}...")
 
-            return result.scenes
+            return result.title, result.scenes
 
         except Exception as e:
             elapsed = time.time() - start_time

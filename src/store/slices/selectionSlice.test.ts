@@ -34,8 +34,8 @@ describe('selectionSlice', () => {
 
   describe('setSelectionMode', () => {
     it('updates selectionMode', () => {
-      slice.setSelectionMode('batch')
-      expect(slice.selectionMode).toBe('batch')
+      slice.setSelectionMode('select')
+      expect(slice.selectionMode).toBe('select')
     })
 
     it('clears selectedIds when changing mode', () => {
@@ -47,13 +47,13 @@ describe('selectionSlice', () => {
 
   describe('toggleSelection', () => {
     it('adds id when not selected', () => {
-      slice.selectionMode = 'batch'
+      slice.selectionMode = 'select'
       slice.toggleSelection('id-1')
       expect(slice.selectedIds.has('id-1')).toBe(true)
     })
 
     it('removes id when already selected', () => {
-      slice.selectionMode = 'batch'
+      slice.selectionMode = 'select'
       slice.selectedIds = new Set(['id-1'])
       slice.toggleSelection('id-1')
       expect(slice.selectedIds.has('id-1')).toBe(false)

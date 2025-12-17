@@ -101,15 +101,6 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Batch mode
-        case 'b':
-        case 'B':
-          if (!isMeta) {
-            event.preventDefault();
-            setSelectionMode(selectionMode === 'batch' ? 'none' : 'batch');
-          }
-          break;
-
         // Escape - exit modes
         case 'Escape':
           if (selectionMode !== 'none') {

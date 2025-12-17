@@ -1,0 +1,969 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concept Isolation Lab</title>
+    <script type="module">
+        // Import transformers.js for browser-based segmentation
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.1.2';
+
+        // Make available globally
+        window.transformers = { pipeline, env };
+
+        // Configure for browser
+        env.allowLocalModels = false;
+        env.backends.onnx.wasm.numThreads = 4;
+    </script>
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #1a1a1a;
+            --surface-elevated: #252525;
+            --text: #e5e5e5;
+            --text-muted: #888;
+            --accent: #6366f1;
+            --accent-hover: #818cf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            margin-bottom: 24px;
+        }
+
+        .main-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        .panel {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .panel-title {
+            font-size: 1rem;
+            font-weight: 500;
+        }
+
+        .badge {
+            background: var(--surface-elevated);
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .badge.loading {
+            background: var(--warning);
+            color: black;
+        }
+
+        .badge.ready {
+            background: var(--success);
+            color: black;
+        }
+
+        .canvas-container {
+            position: relative;
+            background: var(--bg);
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 1;
+            cursor: crosshair;
+        }
+
+        .canvas-container canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        #imageCanvas {
+            z-index: 1;
+        }
+
+        #maskCanvas {
+            z-index: 2;
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        #drawCanvas {
+            z-index: 3;
+        }
+
+        .placeholder {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-muted);
+            gap: 12px;
+            z-index: 0;
+        }
+
+        .placeholder svg {
+            width: 48px;
+            height: 48px;
+            opacity: 0.5;
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .control-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .control-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            min-width: 100px;
+        }
+
+        input[type="text"], input[type="file"], textarea {
+            flex: 1;
+            background: var(--bg);
+            border: 1px solid var(--surface-elevated);
+            border-radius: 6px;
+            padding: 10px 12px;
+            color: var(--text);
+            font-size: 0.9rem;
+        }
+
+        input[type="file"] {
+            padding: 8px;
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 16px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: var(--accent-hover);
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        button.secondary {
+            background: var(--surface-elevated);
+        }
+
+        button.secondary:hover {
+            background: #333;
+        }
+
+        .mode-tabs {
+            display: flex;
+            gap: 4px;
+            background: var(--bg);
+            padding: 4px;
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .mode-tab {
+            flex: 1;
+            padding: 8px 12px;
+            background: transparent;
+            border: none;
+            border-radius: 6px;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+
+        .mode-tab.active {
+            background: var(--surface-elevated);
+            color: var(--text);
+        }
+
+        .results-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .result-item {
+            background: var(--bg);
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 1;
+        }
+
+        .result-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .concept-description {
+            background: var(--bg);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+        }
+
+        .status-bar {
+            background: var(--surface-elevated);
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 12px;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--text-muted);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .model-selector {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .model-option {
+            padding: 6px 12px;
+            background: var(--bg);
+            border: 1px solid var(--surface-elevated);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .model-option:hover {
+            border-color: var(--accent);
+        }
+
+        .model-option.selected {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+
+        .sample-images {
+            display: flex;
+            gap: 8px;
+            margin-top: 8px;
+            overflow-x: auto;
+            padding-bottom: 8px;
+        }
+
+        .sample-image {
+            width: 60px;
+            height: 60px;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            border: 2px solid transparent;
+            transition: border-color 0.2s;
+            flex-shrink: 0;
+        }
+
+        .sample-image:hover {
+            border-color: var(--accent);
+        }
+
+        .sample-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Concept Isolation Lab</h1>
+        <p class="subtitle">Extract and regenerate pure design concepts from images using browser-based segmentation</p>
+
+        <div class="main-layout">
+            <!-- Left Panel: Input -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Input Image</span>
+                    <span class="badge" id="modelStatus">Loading models...</span>
+                </div>
+
+                <div class="canvas-container" id="canvasContainer">
+                    <div class="placeholder" id="placeholder">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                        <span>Drop image here or click to upload</span>
+                    </div>
+                    <canvas id="imageCanvas"></canvas>
+                    <canvas id="maskCanvas"></canvas>
+                    <canvas id="drawCanvas"></canvas>
+                </div>
+
+                <div class="controls">
+                    <div class="control-row">
+                        <span class="control-label">Load Image</span>
+                        <input type="file" id="imageInput" accept="image/*">
+                    </div>
+
+                    <div class="control-row">
+                        <span class="control-label">Sample Images</span>
+                    </div>
+                    <div class="sample-images" id="sampleImages">
+                        <!-- Will be populated with sample images -->
+                    </div>
+
+                    <div class="mode-tabs">
+                        <button class="mode-tab active" data-mode="point">Click to Select</button>
+                        <button class="mode-tab" data-mode="box">Draw Box</button>
+                        <button class="mode-tab" data-mode="text">Text Prompt</button>
+                    </div>
+
+                    <div id="textPromptContainer" style="display: none;">
+                        <div class="control-row">
+                            <span class="control-label">Text Prompt</span>
+                            <input type="text" id="textPrompt" placeholder="e.g., 'the hands', 'the lighting', 'the texture'">
+                        </div>
+                        <button id="segmentText" style="margin-top: 8px;">Segment with Text</button>
+                    </div>
+
+                    <div class="control-row">
+                        <button id="clearMask" class="secondary">Clear Selection</button>
+                        <button id="runSegmentation" disabled>Run Segmentation</button>
+                    </div>
+                </div>
+
+                <div class="status-bar" id="statusBar">
+                    Ready to load image
+                </div>
+            </div>
+
+            <!-- Right Panel: Output -->
+            <div class="panel">
+                <div class="panel-header">
+                    <span class="panel-title">Concept Extraction</span>
+                </div>
+
+                <div class="controls">
+                    <div class="control-row">
+                        <span class="control-label">Concept Focus</span>
+                    </div>
+                    <div class="model-selector" id="conceptTypeSelector">
+                        <div class="model-option selected" data-type="general">General</div>
+                        <div class="model-option" data-type="texture">Texture</div>
+                        <div class="model-option" data-type="lighting">Lighting</div>
+                        <div class="model-option" data-type="color">Color</div>
+                        <div class="model-option" data-type="composition">Composition</div>
+                        <div class="model-option" data-type="mood">Mood</div>
+                    </div>
+
+                    <div class="control-row" style="margin-top: 16px;">
+                        <button id="extractConcept" disabled>Extract Concept</button>
+                        <button id="generateConcept" disabled>Generate Pure Concept</button>
+                    </div>
+                </div>
+
+                <div class="concept-description" id="conceptDescription">
+                    Select a region of the image to extract its design concept...
+                </div>
+
+                <div class="results-grid" id="resultsGrid">
+                    <!-- Generated concept images will appear here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        // State
+        let currentImage = null;
+        let currentMask = null;
+        let segmentationMode = 'point';
+        let selectedConceptType = 'general';
+        let clickPoints = [];
+        let boxStart = null;
+        let isDrawing = false;
+
+        // Model state
+        let samProcessor = null;
+        let samModel = null;
+        let clipSegPipeline = null;
+        let modelsLoaded = false;
+
+        // Canvas elements
+        const canvasContainer = document.getElementById('canvasContainer');
+        const imageCanvas = document.getElementById('imageCanvas');
+        const maskCanvas = document.getElementById('maskCanvas');
+        const drawCanvas = document.getElementById('drawCanvas');
+        const imageCtx = imageCanvas.getContext('2d');
+        const maskCtx = maskCanvas.getContext('2d');
+        const drawCtx = drawCanvas.getContext('2d');
+
+        // UI elements
+        const modelStatus = document.getElementById('modelStatus');
+        const statusBar = document.getElementById('statusBar');
+        const placeholder = document.getElementById('placeholder');
+        const imageInput = document.getElementById('imageInput');
+        const textPrompt = document.getElementById('textPrompt');
+        const textPromptContainer = document.getElementById('textPromptContainer');
+        const conceptDescription = document.getElementById('conceptDescription');
+        const resultsGrid = document.getElementById('resultsGrid');
+
+        // Buttons
+        const runSegmentationBtn = document.getElementById('runSegmentation');
+        const clearMaskBtn = document.getElementById('clearMask');
+        const segmentTextBtn = document.getElementById('segmentText');
+        const extractConceptBtn = document.getElementById('extractConcept');
+        const generateConceptBtn = document.getElementById('generateConcept');
+
+        // Sample images
+        const sampleImages = [
+            '/Users/wz/Desktop/Concepts/03e31479-45c8-40a8-954b-646feed6f3c0.jpg',
+            '/Users/wz/Desktop/Concepts/3b1dbba4-2896-4dce-803c-0003e1f84a6e.jpg',
+            '/Users/wz/Desktop/Concepts/7403b592-5716-41b8-a349-e77a9104873b.jpg',
+            '/Users/wz/Desktop/Concepts/a93ca773-f513-412a-8f71-f971282b248c.jpg',
+            '/Users/wz/Desktop/Concepts/ba14b6c5-14b1-416e-8f90-9f51989d3ecf.jpg',
+        ];
+
+        // Initialize
+        async function init() {
+            setupEventListeners();
+            loadSampleImageThumbnails();
+            await loadModels();
+        }
+
+        function setupEventListeners() {
+            // Image input
+            imageInput.addEventListener('change', handleImageUpload);
+
+            // Drag and drop
+            canvasContainer.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                canvasContainer.style.borderColor = 'var(--accent)';
+            });
+            canvasContainer.addEventListener('dragleave', () => {
+                canvasContainer.style.borderColor = 'transparent';
+            });
+            canvasContainer.addEventListener('drop', handleDrop);
+
+            // Canvas interactions
+            drawCanvas.addEventListener('mousedown', handleCanvasMouseDown);
+            drawCanvas.addEventListener('mousemove', handleCanvasMouseMove);
+            drawCanvas.addEventListener('mouseup', handleCanvasMouseUp);
+            drawCanvas.addEventListener('click', handleCanvasClick);
+
+            // Mode tabs
+            document.querySelectorAll('.mode-tab').forEach(tab => {
+                tab.addEventListener('click', () => {
+                    document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+                    tab.classList.add('active');
+                    segmentationMode = tab.dataset.mode;
+                    textPromptContainer.style.display = segmentationMode === 'text' ? 'block' : 'none';
+                    clearDrawings();
+                });
+            });
+
+            // Concept type selector
+            document.querySelectorAll('.model-option').forEach(option => {
+                option.addEventListener('click', () => {
+                    document.querySelectorAll('.model-option').forEach(o => o.classList.remove('selected'));
+                    option.classList.add('selected');
+                    selectedConceptType = option.dataset.type;
+                });
+            });
+
+            // Buttons
+            clearMaskBtn.addEventListener('click', clearMask);
+            runSegmentationBtn.addEventListener('click', runSegmentation);
+            segmentTextBtn.addEventListener('click', runTextSegmentation);
+            extractConceptBtn.addEventListener('click', extractConcept);
+            generateConceptBtn.addEventListener('click', generateConcept);
+        }
+
+        async function loadModels() {
+            setStatus('Loading segmentation models...', 'loading');
+            modelStatus.textContent = 'Loading...';
+            modelStatus.className = 'badge loading';
+
+            try {
+                const { pipeline, env } = window.transformers;
+
+                // Try to load CLIPSeg for text-based segmentation
+                setStatus('Loading CLIPSeg for text-guided segmentation...', 'loading');
+                try {
+                    clipSegPipeline = await pipeline('image-segmentation', 'Xenova/clipseg-rd64-refined', {
+                        device: 'webgpu',
+                    });
+                    setStatus('CLIPSeg loaded successfully', 'success');
+                } catch (e) {
+                    console.warn('CLIPSeg WebGPU failed, trying WASM:', e);
+                    try {
+                        clipSegPipeline = await pipeline('image-segmentation', 'Xenova/clipseg-rd64-refined');
+                        setStatus('CLIPSeg loaded (WASM fallback)', 'success');
+                    } catch (e2) {
+                        console.error('CLIPSeg failed to load:', e2);
+                        setStatus('CLIPSeg unavailable - text segmentation disabled', 'warning');
+                    }
+                }
+
+                modelsLoaded = true;
+                modelStatus.textContent = 'Ready';
+                modelStatus.className = 'badge ready';
+                setStatus('Models loaded. Upload an image to begin.', 'ready');
+
+            } catch (error) {
+                console.error('Failed to load models:', error);
+                modelStatus.textContent = 'Error';
+                modelStatus.className = 'badge';
+                setStatus(`Model loading failed: ${error.message}`, 'error');
+            }
+        }
+
+        function loadSampleImageThumbnails() {
+            const container = document.getElementById('sampleImages');
+            container.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">Sample images from /Desktop/Concepts/</span>';
+
+            // Note: In a real scenario, we'd need to serve these through a server
+            // For now, show placeholder instructions
+            const note = document.createElement('div');
+            note.innerHTML = `
+                <small style="color: var(--text-muted);">
+                    Drag images from Finder, or use the file picker above.
+                </small>
+            `;
+            container.appendChild(note);
+        }
+
+        async function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (file) {
+                await loadImage(file);
+            }
+        }
+
+        async function handleDrop(e) {
+            e.preventDefault();
+            canvasContainer.style.borderColor = 'transparent';
+            const file = e.dataTransfer.files[0];
+            if (file && file.type.startsWith('image/')) {
+                await loadImage(file);
+            }
+        }
+
+        async function loadImage(file) {
+            setStatus('Loading image...', 'loading');
+
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        // Set canvas sizes
+                        const size = Math.min(canvasContainer.clientWidth, canvasContainer.clientHeight);
+                        [imageCanvas, maskCanvas, drawCanvas].forEach(canvas => {
+                            canvas.width = size;
+                            canvas.height = size;
+                        });
+
+                        // Draw image maintaining aspect ratio
+                        const scale = Math.min(size / img.width, size / img.height);
+                        const w = img.width * scale;
+                        const h = img.height * scale;
+                        const x = (size - w) / 2;
+                        const y = (size - h) / 2;
+
+                        imageCtx.fillStyle = '#000';
+                        imageCtx.fillRect(0, 0, size, size);
+                        imageCtx.drawImage(img, x, y, w, h);
+
+                        currentImage = {
+                            element: img,
+                            file: file,
+                            dataUrl: e.target.result,
+                            drawBounds: { x, y, w, h }
+                        };
+
+                        placeholder.style.display = 'none';
+                        runSegmentationBtn.disabled = false;
+                        extractConceptBtn.disabled = false;
+
+                        clearMask();
+                        setStatus('Image loaded. Select a region to segment.', 'ready');
+                        resolve();
+                    };
+                    img.src = e.target.result;
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function handleCanvasClick(e) {
+            if (!currentImage || segmentationMode !== 'point') return;
+
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            clickPoints.push({ x, y });
+            drawPoints();
+
+            // Auto-run segmentation on click
+            if (modelsLoaded) {
+                runSegmentation();
+            }
+        }
+
+        function handleCanvasMouseDown(e) {
+            if (!currentImage || segmentationMode !== 'box') return;
+
+            const rect = drawCanvas.getBoundingClientRect();
+            boxStart = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+            isDrawing = true;
+        }
+
+        function handleCanvasMouseMove(e) {
+            if (!isDrawing || !boxStart) return;
+
+            const rect = drawCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            drawCtx.strokeStyle = '#6366f1';
+            drawCtx.lineWidth = 2;
+            drawCtx.setLineDash([5, 5]);
+            drawCtx.strokeRect(boxStart.x, boxStart.y, x - boxStart.x, y - boxStart.y);
+        }
+
+        function handleCanvasMouseUp(e) {
+            if (!isDrawing || !boxStart) return;
+
+            const rect = drawCanvas.getBoundingClientRect();
+            const boxEnd = {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+
+            isDrawing = false;
+
+            // If box is large enough, run segmentation
+            const boxWidth = Math.abs(boxEnd.x - boxStart.x);
+            const boxHeight = Math.abs(boxEnd.y - boxStart.y);
+
+            if (boxWidth > 10 && boxHeight > 10 && modelsLoaded) {
+                runSegmentation();
+            }
+        }
+
+        function drawPoints() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+
+            clickPoints.forEach((point, i) => {
+                drawCtx.beginPath();
+                drawCtx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+                drawCtx.fillStyle = '#6366f1';
+                drawCtx.fill();
+                drawCtx.strokeStyle = '#fff';
+                drawCtx.lineWidth = 2;
+                drawCtx.stroke();
+            });
+        }
+
+        function clearDrawings() {
+            drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+            clickPoints = [];
+            boxStart = null;
+        }
+
+        function clearMask() {
+            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+            currentMask = null;
+            clearDrawings();
+        }
+
+        async function runSegmentation() {
+            if (!currentImage) return;
+
+            setStatus('Running segmentation...', 'loading');
+
+            // For now, create a simple mask based on click points or box
+            // In a full implementation, this would use SAM
+
+            if (segmentationMode === 'point' && clickPoints.length > 0) {
+                // Create a circular mask around the click point
+                const point = clickPoints[clickPoints.length - 1];
+                createCircularMask(point.x, point.y, 100);
+            } else if (segmentationMode === 'box' && boxStart) {
+                const rect = drawCanvas.getBoundingClientRect();
+                // Create rectangular mask
+                const boxEnd = { x: boxStart.x + 100, y: boxStart.y + 100 }; // Placeholder
+                createBoxMask(boxStart.x, boxStart.y, 200, 200);
+            }
+
+            extractConceptBtn.disabled = false;
+            setStatus('Region selected. Extract concept or refine selection.', 'ready');
+        }
+
+        async function runTextSegmentation() {
+            if (!currentImage || !clipSegPipeline) {
+                setStatus('CLIPSeg not available', 'error');
+                return;
+            }
+
+            const prompt = textPrompt.value.trim();
+            if (!prompt) {
+                setStatus('Enter a text prompt', 'warning');
+                return;
+            }
+
+            setStatus(`Segmenting with prompt: "${prompt}"...`, 'loading');
+
+            try {
+                // Run CLIPSeg
+                const result = await clipSegPipeline(currentImage.dataUrl, {
+                    candidate_labels: [prompt],
+                    threshold: 0.1,
+                });
+
+                console.log('CLIPSeg result:', result);
+
+                if (result && result.length > 0 && result[0].mask) {
+                    // Draw the mask
+                    const maskImg = new Image();
+                    maskImg.onload = () => {
+                        maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+                        maskCtx.drawImage(maskImg, 0, 0, maskCanvas.width, maskCanvas.height);
+
+                        // Color the mask
+                        const imageData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+                        for (let i = 0; i < imageData.data.length; i += 4) {
+                            if (imageData.data[i] > 128) {
+                                imageData.data[i] = 99;     // R
+                                imageData.data[i + 1] = 102; // G
+                                imageData.data[i + 2] = 241; // B
+                                imageData.data[i + 3] = 150; // A
+                            } else {
+                                imageData.data[i + 3] = 0;
+                            }
+                        }
+                        maskCtx.putImageData(imageData, 0, 0);
+
+                        currentMask = maskCanvas.toDataURL();
+                        extractConceptBtn.disabled = false;
+                        setStatus(`Segmentation complete for "${prompt}"`, 'ready');
+                    };
+                    maskImg.src = result[0].mask;
+                } else {
+                    setStatus('No mask generated - try a different prompt', 'warning');
+                }
+
+            } catch (error) {
+                console.error('Text segmentation error:', error);
+                setStatus(`Segmentation failed: ${error.message}`, 'error');
+            }
+        }
+
+        function createCircularMask(cx, cy, radius) {
+            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+            maskCtx.beginPath();
+            maskCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+            maskCtx.fillStyle = 'rgba(99, 102, 241, 0.5)';
+            maskCtx.fill();
+            currentMask = maskCanvas.toDataURL();
+        }
+
+        function createBoxMask(x, y, w, h) {
+            maskCtx.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+            maskCtx.fillStyle = 'rgba(99, 102, 241, 0.5)';
+            maskCtx.fillRect(x, y, w, h);
+            currentMask = maskCanvas.toDataURL();
+        }
+
+        async function extractConcept() {
+            if (!currentImage) return;
+
+            setStatus('Extracting concept...', 'loading');
+            extractConceptBtn.disabled = true;
+
+            try {
+                // Get image as base64 (without data URL prefix)
+                const imageBase64 = currentImage.dataUrl.split(',')[1];
+                const maskBase64 = currentMask ? currentMask.split(',')[1] : null;
+
+                const response = await fetch('http://localhost:8766/api/describe-concept', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_base64: imageBase64,
+                        mask_base64: maskBase64,
+                        concept_prompt: selectedConceptType,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    conceptDescription.textContent = result.description;
+                    conceptDescription.dataset.description = result.description;
+                    generateConceptBtn.disabled = false;
+                    setStatus(`Concept extracted (${result.concept_type})`, 'ready');
+                } else {
+                    throw new Error(result.detail || 'Failed to extract concept');
+                }
+
+            } catch (error) {
+                console.error('Concept extraction error:', error);
+                setStatus(`Extraction failed: ${error.message}`, 'error');
+                conceptDescription.textContent = `Error: ${error.message}. Make sure the backend server is running on port 8766.`;
+            } finally {
+                extractConceptBtn.disabled = false;
+            }
+        }
+
+        async function generateConcept() {
+            const description = conceptDescription.dataset.description;
+            if (!description) {
+                setStatus('Extract a concept first', 'warning');
+                return;
+            }
+
+            setStatus('Generating concept images...', 'loading');
+            generateConceptBtn.disabled = true;
+            resultsGrid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px;"><div class="loading-spinner"></div>Generating...</div>';
+
+            try {
+                const response = await fetch('http://localhost:8766/api/isolate-concept', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_base64: currentImage.dataUrl.split(',')[1],
+                        mask_base64: currentMask ? currentMask.split(',')[1] : null,
+                        concept_prompt: selectedConceptType,
+                        generate_variations: 4,
+                    }),
+                });
+
+                const result = await response.json();
+
+                if (result.success && result.generated_images.length > 0) {
+                    resultsGrid.innerHTML = '';
+
+                    result.generated_images.forEach(img => {
+                        const div = document.createElement('div');
+                        div.className = 'result-item';
+                        div.innerHTML = `<img src="data:${img.mime_type};base64,${img.image_base64}" alt="Generated concept">`;
+                        resultsGrid.appendChild(div);
+                    });
+
+                    // Update concept description if we got a new one
+                    if (result.concept_description) {
+                        conceptDescription.textContent = result.concept_description;
+                        conceptDescription.dataset.description = result.concept_description;
+                    }
+
+                    setStatus(`Generated ${result.generated_images.length} concept images`, 'ready');
+                } else {
+                    throw new Error(result.errors?.join(', ') || 'No images generated');
+                }
+
+            } catch (error) {
+                console.error('Concept generation error:', error);
+                setStatus(`Generation failed: ${error.message}`, 'error');
+                resultsGrid.innerHTML = `<div style="grid-column: 1 / -1; color: var(--error); padding: 20px;">Error: ${error.message}</div>`;
+            } finally {
+                generateConceptBtn.disabled = false;
+            }
+        }
+
+        function setStatus(message, type = 'info') {
+            statusBar.innerHTML = message;
+            if (type === 'loading') {
+                statusBar.innerHTML = `<span class="loading-spinner"></span>${message}`;
+            }
+        }
+
+        // Initialize on load
+        init();
+    </script>
+</body>
+</html>

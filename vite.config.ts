@@ -12,5 +12,12 @@ export default defineConfig({
       '/api': 'http://localhost:8765',
       '/images': 'http://localhost:8765'
     }
+  },
+  preview: {
+    port: 4173,
+    proxy: {
+      '/api': 'http://localhost:8766',
+      '/images': 'http://localhost:8766'
+    }
   }
 })
