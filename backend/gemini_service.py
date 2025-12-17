@@ -89,13 +89,14 @@ class DesignAnnotation:
 class GeminiService:
     """Service for Gemini image and text generation."""
 
-    DEFAULT_TEXT_MODEL = "gemini-3-pro-preview"
-    DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview"
-
     def __init__(self, api_key: str | None = None):
-        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
-        if not self.api_key:
-            raise ValueError("GEMINI_API_KEY not provided")
+        # Import here to avoid circular imports
+        from .config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
+
+        self.DEFAULT_TEXT_MODEL = DEFAULT_TEXT_MODEL
+        self.DEFAULT_IMAGE_MODEL = DEFAULT_IMAGE_MODEL
+
+        self.api_key = api_key or get_gemini_api_key()
         self.client = genai.Client(api_key=self.api_key)
 
     async def generate_image(
@@ -120,7 +121,7 @@ class GeminiService:
             aspect_ratio: Output aspect ratio - "1:1", "16:9", etc.
             seed: Random seed for reproducibility
             safety_level: Safety filter level - "BLOCK_NONE", "BLOCK_ONLY_HIGH", etc.
-            thinking_level: Reasoning depth - "low" or "high" (Nano Banana specific)
+            thinking_level: Reasoning depth - "low" or "high" (Gemini 3 models)
             temperature: Randomness control 0.0-2.0 (default 1.0)
             google_search_grounding: Enable real-time web grounding for image gen
         """
@@ -183,8 +184,11 @@ class GeminiService:
             "safety_settings": safety_settings,
             "seed": seed,
         }
+        # thinking_level must be wrapped in ThinkingConfig (not passed directly)
         if thinking_level:
-            config_kwargs["thinking_level"] = thinking_level
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=thinking_level
+            )
         if temperature is not None:
             config_kwargs["temperature"] = temperature
         if tools:

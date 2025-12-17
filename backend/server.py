@@ -40,9 +40,11 @@ ThinkingLevelType = Literal["low", "high"]
 try:
     from backend.metadata_manager import MetadataManager
     from backend.gemini_service import GeminiService
+    from backend import config
 except ImportError:
     from metadata_manager import MetadataManager
     from gemini_service import GeminiService
+    import config
 
 # Configure logging
 LOG_DIR = Path(__file__).parent.parent / "logs"
@@ -78,39 +80,8 @@ METADATA_PATH = IMAGES_DIR / "metadata.json"
 # Global metadata manager instance
 _metadata_manager = MetadataManager(METADATA_PATH, IMAGES_DIR)
 
-# Initialize Gemini service
-# API key can be configured via:
-# 1. Environment variable: GEMINI_API_KEY (direct key)
-# 2. Environment variable: GEMINI_API_KEY_PATH (path to file)
-# 3. Default path: ~/.gemini/apikey_backup.txt
-def load_api_key() -> str:
-    # Direct API key from environment
-    if api_key := os.environ.get("GEMINI_API_KEY"):
-        return api_key.strip()
-
-    # Path to API key file from environment
-    if key_path_str := os.environ.get("GEMINI_API_KEY_PATH"):
-        key_path = Path(key_path_str).expanduser()
-        if key_path.exists():
-            return key_path.read_text().strip()
-        raise FileNotFoundError(f"API key file not found: {key_path}")
-
-    # Default path
-    default_path = Path.home() / ".gemini" / "apikey_backup.txt"
-    if default_path.exists():
-        return default_path.read_text().strip()
-
-    # Fallback to old path for backward compatibility
-    old_path = Path.home() / ".gemini" / "apikey.txt"
-    if old_path.exists():
-        return old_path.read_text().strip()
-
-    raise FileNotFoundError(
-        "Gemini API key not found. Set GEMINI_API_KEY env var or create ~/.gemini/apikey_backup.txt"
-    )
-
-api_key = load_api_key()
-gemini = GeminiService(api_key=api_key)
+# Initialize Gemini service (API key loaded from config)
+gemini = GeminiService(api_key=config.get_gemini_api_key())
 
 
 # Image generation parameter options (matching frontend)
@@ -400,13 +371,7 @@ def get_metadata_manager() -> MetadataManager:
 
 
 # === Prompt Variation System ===
-PROMPTS_DIR = Path(__file__).parent / "prompts"
-
-
-def load_default_variation_prompt() -> str:
-    """Load the default variation prompt template from file."""
-    prompt_path = PROMPTS_DIR / "variation_structured.txt"
-    return prompt_path.read_text()
+# Prompts are now loaded from config.PROMPTS_DIR via config.load_prompt()
 
 
 def _flatten_design(design: dict) -> list[str]:
@@ -465,7 +430,7 @@ async def _generate_single_image(
             "image_path": img_filename,
             "mime_type": img_data["mime_type"],
             "generated_at": datetime.now().isoformat(),
-            "prompt_used": prompt,  # Store the actual prompt used
+            "varied_prompt": prompt,  # Store the actual prompt used for this image
         }
     except Exception as e:
         error_type = type(e).__name__
@@ -2291,12 +2256,6 @@ async def remove_prompts_from_session(session_id: str, prompt_ids: list[str]):
 
 # === Settings Endpoints ===
 
-DEFAULT_ITERATION_PROMPT = """Create a variation of this image while maintaining its core essence.
-Focus on: {focus}
-Original concept: {original_prompt}
-
-Generate a new scene description that explores this direction while keeping the fundamental visual identity."""
-
 
 @app.get("/api/settings")
 async def get_settings():
@@ -2306,14 +2265,14 @@ async def get_settings():
     return {
         "variation_prompt": settings.get(
             "variation_prompt",
-            load_default_variation_prompt()
+            config.load_variation_prompt()
         ),
         "iteration_prompt": settings.get(
             "iteration_prompt",
-            DEFAULT_ITERATION_PROMPT
+            config.load_iteration_prompt()
         ),
-        "text_model": GeminiService.DEFAULT_TEXT_MODEL,
-        "image_model": GeminiService.DEFAULT_IMAGE_MODEL,
+        "text_model": config.DEFAULT_TEXT_MODEL,
+        "image_model": config.DEFAULT_IMAGE_MODEL,
         # Image generation defaults
         "image_size": settings.get("image_size"),  # None = use model default (1K)
         "aspect_ratio": settings.get("aspect_ratio"),  # None = use model default (1:1)
