@@ -102,7 +102,7 @@ class GeminiService:
         # Build image config if any image-specific params are set
         image_config = None
         if image_size or aspect_ratio:
-            image_config = types.ImageGenerationConfig(
+            image_config = types.ImageConfig(
                 image_size=image_size,
                 aspect_ratio=aspect_ratio,
             )
