@@ -38,7 +38,9 @@ function isTagLiked(tag: string, likedAxes: Record<string, string[]> | undefined
 export function InfoOverlay() {
   // Select primitive values to avoid infinite re-renders
   const prompts = useStore((s) => s.prompts);
+  const collections = useStore((s) => s.collections);
   const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
@@ -49,10 +51,40 @@ export function InfoOverlay() {
     [prompts, currentPromptId]
   );
 
-  const currentImage = useMemo(() => {
-    if (!currentPrompt) return null;
-    return currentPrompt.images[currentImageIndex] || null;
-  }, [currentPrompt, currentImageIndex]);
+  const currentCollection = useMemo(
+    () => collections.find((c) => c.id === currentCollectionId) || null,
+    [collections, currentCollectionId]
+  );
+
+  // Build image map for looking up images by ID
+  const imageMap = useMemo(() => {
+    const map = new Map<string, { image: typeof prompts[0]['images'][0]; prompt: typeof prompts[0] }>();
+    for (const prompt of prompts) {
+      for (const image of prompt.images) {
+        map.set(image.id, { image, prompt });
+      }
+    }
+    return map;
+  }, [prompts]);
+
+  // Get current image and its parent prompt - works for both prompt and collection viewing
+  const { currentImage, imagePrompt } = useMemo(() => {
+    if (currentPrompt) {
+      // Viewing a prompt - get image by index
+      const image = currentPrompt.images[currentImageIndex] || null;
+      return { currentImage: image, imagePrompt: currentPrompt };
+    } else if (currentCollection) {
+      // Viewing a collection - get image from collection's image_ids
+      const imageId = currentCollection.image_ids[currentImageIndex];
+      if (imageId) {
+        const found = imageMap.get(imageId);
+        if (found) {
+          return { currentImage: found.image, imagePrompt: found.prompt };
+        }
+      }
+    }
+    return { currentImage: null, imagePrompt: null };
+  }, [currentPrompt, currentCollection, currentImageIndex, imageMap]);
 
   const [isExpanded, setIsExpanded] = useState(true);
   const [copied, setCopied] = useState(false);
@@ -65,10 +97,10 @@ export function InfoOverlay() {
     setCaption(currentImage?.caption || '');
   }, [currentImage?.id, currentImage?.caption]);
 
-  if (!currentPrompt || !currentImage) return null;
+  if (!imagePrompt || !currentImage) return null;
 
   const handleCopyPrompt = () => {
-    const text = currentImage.varied_prompt || currentPrompt.prompt;
+    const text = currentImage.varied_prompt || imagePrompt.prompt;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -91,7 +123,7 @@ export function InfoOverlay() {
     toggleAxisLike(currentImage.id, axis, tag, !isLiked);
   };
 
-  const displayPrompt = currentImage.varied_prompt || currentPrompt.prompt;
+  const displayPrompt = currentImage.varied_prompt || imagePrompt.prompt;
 
   // Check if there are unsaved changes
   const hasChanges = caption !== (currentImage.caption || '');
@@ -108,13 +140,13 @@ export function InfoOverlay() {
       >
         <div className="flex items-center gap-3 min-w-0">
           <h3 className="font-[family-name:var(--font-display)] text-sm font-semibold text-ink truncate">
-            {currentPrompt.title}
+            {imagePrompt.title}
           </h3>
           {currentImage.mood && (
             <Badge variant="secondary" size="sm">{currentImage.mood}</Badge>
           )}
           <span className="text-xs text-ink-muted">
-            {currentPrompt.images.length} images
+            {imagePrompt.images.length} images
           </span>
         </div>
 
@@ -163,7 +195,7 @@ export function InfoOverlay() {
                   </p>
                   <div className="mt-1.5 flex items-center gap-2 text-[0.55rem] text-ink-muted">
                     <span>
-                      {new Date(currentPrompt.created_at).toLocaleDateString('en-US', {
+                      {new Date(imagePrompt.created_at).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                       })}

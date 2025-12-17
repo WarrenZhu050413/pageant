@@ -55,7 +55,18 @@ stop-dev:
 # =============================================================================
 preview: build stop-preview
 	@echo "Starting Pageant (preview mode)..."
-	@make -j2 preview-frontend preview-backend
+	@echo "Starting backend..."
+	@uv run uvicorn backend.server:app --host 0.0.0.0 --port $(PREVIEW_BACKEND_PORT) & \
+	echo "Waiting for backend to be ready..." && \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s http://localhost:$(PREVIEW_BACKEND_PORT)/api/settings > /dev/null 2>&1; then \
+			echo "Backend ready!"; \
+			break; \
+		fi; \
+		sleep 0.5; \
+	done && \
+	echo "Starting frontend..." && \
+	bun run preview
 
 preview-frontend:
 	@-lsof -ti:$(PREVIEW_FRONTEND_PORT) | xargs kill -9 2>/dev/null || true
