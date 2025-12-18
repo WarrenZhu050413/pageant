@@ -54,7 +54,7 @@ export function Dialog({ isOpen, onClose, title, children, className }: DialogPr
             className={clsx(
               'fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2',
               'bg-surface rounded-xl shadow-xl',
-              'max-h-[85vh] overflow-auto',
+              'max-h-[80vh] overflow-auto',
               'z-50',
               className
             )}

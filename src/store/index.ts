@@ -3,7 +3,6 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Prompt,
   Collection,
-  Story,
   Settings,
   Session,
   ViewMode,
@@ -14,11 +13,11 @@ import type {
   DesignPreferences,
   DesignAxis,
   DesignDimension,
-  LibraryItem,
-  LibraryItemType,
+  DesignToken,
   PromptVariation,
   ImageGenerationParams,
   DraftPrompt,
+  CreateTokenRequest,
 } from '../types';
 import * as api from '../api';
 
@@ -30,10 +29,8 @@ interface PendingPrompt {
 interface AppStore {
   // Data
   prompts: Prompt[];
-  favorites: string[];
-  libraryItems: LibraryItem[];
+  designTokens: DesignToken[];
   collections: Collection[];
-  stories: Story[];
   settings: Settings | null;
 
   // Navigation
@@ -81,6 +78,9 @@ interface AppStore {
   // Actions
   initialize: () => Promise<void>;
   refreshData: () => Promise<void>;
+  refreshPrompts: () => Promise<void>;
+  refreshCollections: () => Promise<void>;
+  refreshDesignTokens: () => Promise<void>;
 
   // Prompt navigation
   setCurrentPrompt: (id: string | null) => void;
@@ -135,6 +135,7 @@ interface AppStore {
   updateDraftVariationNotes: (draftId: string, variationId: string, notes: string) => void;
   toggleDraftVariationTag: (draftId: string, variationId: string, tag: string) => void;
   removeDraftVariation: (draftId: string, variationId: string) => void;
+  removeMultipleDraftVariations: (draftId: string, variationIds: string[]) => void;
   duplicateDraftVariation: (draftId: string, variationId: string) => void;
   regenerateDraftVariation: (draftId: string, variationId: string) => Promise<void>;
   addMoreDraftVariations: (draftId: string, count?: number) => Promise<void>;
@@ -143,12 +144,6 @@ interface AppStore {
   generateFromDraft: (draftId: string) => Promise<void>;
   deleteDraft: (draftId: string) => void;
   getCurrentDraft: () => DraftPrompt | null;
-
-  // Favorites (Collection-based)
-  ensureFavoritesCollection: () => Promise<string>;  // Returns collection ID
-  toggleFavorite: (imageId: string) => Promise<void>;
-  batchFavorite: (favorite: boolean) => Promise<void>;
-  isInFavoritesCollection: (imageId: string) => boolean;
 
   // Delete
   deleteImage: (imageId: string) => Promise<void>;
@@ -165,25 +160,18 @@ interface AppStore {
   // Image notes
   updateImageNotes: (imageId: string, notes: string, annotation?: string) => Promise<void>;
 
-  // Design Library
-  createLibraryItem: (data: {
-    type: LibraryItemType;
-    name: string;
-    description?: string;
-    text?: string;
-    style_tags?: string[];
-    prompt?: string;
-    category?: string;
-    tags?: string[];
-  }) => Promise<void>;
-  deleteLibraryItem: (id: string) => Promise<void>;
-  useLibraryItem: (id: string) => Promise<LibraryItem | undefined>;
-  extractDesignToken: (imageId: string, annotation?: string, likedTags?: string[]) => Promise<LibraryItem | undefined>;
+  // Design Tokens
+  createToken: (data: CreateTokenRequest) => Promise<DesignToken | undefined>;
+  deleteToken: (id: string) => Promise<void>;
+  useToken: (id: string) => Promise<DesignToken | undefined>;
+  suggestDimensions: (imageIds: string[]) => Promise<DesignDimension[]>;
+  generateTokenConcept: (tokenId: string) => Promise<void>;
 
   // Collections
-  createCollection: (name: string, description?: string) => Promise<void>;
+  createCollection: (name: string, description?: string, imageIds?: string[]) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
   addToCollection: (collectionId: string) => Promise<void>;
+  addImagesToCollection: (collectionId: string, imageIds: string[]) => Promise<void>;
   viewCollection: (id: string) => void;
   setCurrentCollection: (id: string | null) => void;
   getCurrentCollection: () => Collection | null;
@@ -237,8 +225,6 @@ interface AppStore {
   getCurrentPrompt: () => Prompt | null;
   getCurrentImage: () => ImageData | null;
   getAllImages: () => { image: ImageData; promptId: string; promptTitle: string }[];
-  getFavoriteImages: () => { image: ImageData; promptId: string; promptTitle: string }[];
-  isImageFavorite: (imageId: string) => boolean;
 }
 
 export const useStore = create<AppStore>()(
@@ -246,10 +232,8 @@ export const useStore = create<AppStore>()(
     (set, get) => ({
       // Initial state
       prompts: [],
-      favorites: [],
-      libraryItems: [],
+      designTokens: [],
       collections: [],
-      stories: [],
       settings: null,
 
       currentPromptId: null,
@@ -300,16 +284,13 @@ export const useStore = create<AppStore>()(
       // Initialize app
       initialize: async () => {
         try {
-          const [prompts, libraryItems, collections, settings, sessions] = await Promise.all([
+          const [prompts, designTokens, collections, settings, sessions] = await Promise.all([
             api.fetchPrompts(),
-            api.fetchLibraryItems(),
+            api.fetchTokens(),
             api.fetchCollections(),
             api.fetchSettings(),
             api.fetchSessions(),
           ]);
-
-          const favResponse = await api.fetchFavorites();
-          const favoriteIds = favResponse.map((f) => f.id);
 
           // Convert SessionData to Session type
           const sessionsTyped: Session[] = sessions.map((s) => ({
@@ -321,10 +302,9 @@ export const useStore = create<AppStore>()(
 
           set({
             prompts,
-            libraryItems,
+            designTokens,
             collections,
             settings,
-            favorites: favoriteIds,
             sessions: sessionsTyped,
             currentPromptId: prompts[0]?.id || null,
           });
@@ -335,16 +315,40 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [prompts, libraryItems, collections] = await Promise.all([
+          const [prompts, designTokens, collections] = await Promise.all([
             api.fetchPrompts(),
-            api.fetchLibraryItems(),
+            api.fetchTokens(),
             api.fetchCollections(),
           ]);
 
-          const favResponse = await api.fetchFavorites();
-          const favoriteIds = favResponse.map((f) => f.id);
+          set({ prompts, designTokens, collections });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
 
-          set({ prompts, libraryItems, collections, favorites: favoriteIds });
+      refreshPrompts: async () => {
+        try {
+          const prompts = await api.fetchPrompts();
+          set({ prompts });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      refreshCollections: async () => {
+        try {
+          const collections = await api.fetchCollections();
+          set({ collections });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      refreshDesignTokens: async () => {
+        try {
+          const designTokens = await api.fetchTokens();
+          set({ designTokens });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -455,7 +459,7 @@ export const useStore = create<AppStore>()(
         set({ isGenerating: true, pendingPrompts: newPending, error: null });
 
         try {
-          const response = await api.generateImages({
+          await api.generateImages({
             prompt,
             title,
             count,
@@ -473,10 +477,9 @@ export const useStore = create<AppStore>()(
 
           await get().refreshData();
 
-          // Navigate to new prompt, derive isGenerating from pending count
+          // Don't auto-navigate to new prompt - only update generation state
+          // User can click on the new prompt in the left panel to view it
           set({
-            currentPromptId: response.prompt_id,
-            currentImageIndex: 0,
             isGenerating: updatedPending.size > 0,
             pendingPrompts: updatedPending,
             contextImageIds: [],
@@ -496,12 +499,11 @@ export const useStore = create<AppStore>()(
         set({ isGenerating: true, error: null });
 
         try {
-          const response = await api.iterateImage(imageId);
+          await api.iterateImage(imageId);
           await get().refreshData();
 
+          // Don't auto-navigate - stay on current view
           set({
-            currentPromptId: response.prompt_id,
-            currentImageIndex: 0,
             isGenerating: false,
           });
         } catch (error) {
@@ -576,6 +578,52 @@ export const useStore = create<AppStore>()(
             // Use generated title from model if user didn't provide one
             const finalTitle = response.generated_title || title || 'Untitled';
 
+            // Auto-apply annotation suggestions: apply suggested annotations to images
+            // and store original_annotation for revert capability
+            if (response.annotation_suggestions && response.annotation_suggestions.length > 0) {
+              const { prompts } = get();
+              // Build a map of current annotations to preserve as originals
+              const currentAnnotations = new Map<string, string>();
+              for (const prompt of prompts) {
+                for (const img of prompt.images) {
+                  if (img.annotation) {
+                    currentAnnotations.set(img.id, img.annotation);
+                  }
+                }
+              }
+
+              // Enrich suggestions with original annotations and apply them
+              const enrichedSuggestions = response.annotation_suggestions.map(sug => ({
+                ...sug,
+                original_annotation: sug.original_annotation || currentAnnotations.get(sug.image_id) || '',
+              }));
+
+              // Apply suggested annotations to images
+              const updatedPrompts = prompts.map((p) => ({
+                ...p,
+                images: p.images.map((img) => {
+                  const suggestion = enrichedSuggestions.find(s => s.image_id === img.id);
+                  if (suggestion) {
+                    return { ...img, annotation: suggestion.suggested_annotation };
+                  }
+                  return img;
+                }),
+              }));
+
+              // Update prompts with applied annotations
+              set({ prompts: updatedPrompts });
+
+              // Also persist each annotation to the backend
+              for (const sug of enrichedSuggestions) {
+                api.updateImageNotes(sug.image_id, '', sug.suggested_annotation).catch(err => {
+                  console.error(`Failed to persist annotation for ${sug.image_id}:`, err);
+                });
+              }
+
+              // Store enriched suggestions (with originals) on the draft
+              response.annotation_suggestions = enrichedSuggestions;
+            }
+
             // Update the draft with variations, title, and annotation suggestions
             // Set isGenerating: false on this specific draft
             set({
@@ -596,22 +644,20 @@ export const useStore = create<AppStore>()(
               streamingText: '', // Clear streaming text on success
             });
           } else {
-            // Mark this draft as no longer generating on error
+            // Remove failed draft - don't leave zombies with 0 variations
             set({
-              draftPrompts: get().draftPrompts.map((d) =>
-                d.id === draftId ? { ...d, isGenerating: false } : d
-              ),
+              draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
+              currentDraftId: get().currentDraftId === draftId ? null : get().currentDraftId,
               isGeneratingVariations: false,
               streamingText: '',
               error: response.error || 'Failed to generate variations',
             });
           }
         } catch (error) {
-          // Mark this draft as no longer generating on error
+          // Remove failed draft - don't leave zombies with 0 variations
           set({
-            draftPrompts: get().draftPrompts.map((d) =>
-              d.id === draftId ? { ...d, isGenerating: false } : d
-            ),
+            draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
+            currentDraftId: get().currentDraftId === draftId ? null : get().currentDraftId,
             isGeneratingVariations: false,
             streamingText: '',
             error: (error as Error).message,
@@ -842,6 +888,18 @@ export const useStore = create<AppStore>()(
         });
       },
 
+      removeMultipleDraftVariations: (draftId, variationIds) => {
+        const { draftPrompts } = get();
+        const idsToRemove = new Set(variationIds);
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId
+              ? { ...d, variations: d.variations.filter((v) => !idsToRemove.has(v.id)) }
+              : d
+          ),
+        });
+      },
+
       duplicateDraftVariation: (draftId, variationId) => {
         const { draftPrompts } = get();
         const draft = draftPrompts.find((d) => d.id === draftId);
@@ -1050,15 +1108,24 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromDraft: async (draftId) => {
-        const { draftPrompts, currentSessionId, generatingImageDraftIds } = get();
+        const { draftPrompts, currentSessionId, generatingImageDraftIds, pendingPrompts } = get();
         const draft = draftPrompts.find((d) => d.id === draftId);
         if (!draft || draft.variations.length === 0) return;
 
         // Add to generating set (allows concurrent batch generation)
         const newGeneratingIds = new Set(generatingImageDraftIds);
         newGeneratingIds.add(draftId);
+
+        // Add to pendingPrompts for sidebar animation
+        const newPending = new Map(pendingPrompts);
+        newPending.set(draftId, {
+          title: draft.title,
+          count: draft.variations.length,
+        });
+
         set({
           generatingImageDraftIds: newGeneratingIds,
+          pendingPrompts: newPending,
           isGenerating: true, // Keep for backwards compat
           error: null
         });
@@ -1068,6 +1135,7 @@ export const useStore = create<AppStore>()(
             title: draft.title,
             prompts: draft.variations.map((v) => ({
               text: v.text,
+              title: v.title,  // Pass variation title for display
               mood: v.mood,
               design: v.design,
               // Include per-variation context for targeted image generation
@@ -1079,18 +1147,21 @@ export const useStore = create<AppStore>()(
             ...draft.imageParams,
           });
 
-          // Remove from generating set and delete the draft
+          // Remove from generating set, pendingPrompts, and delete the draft
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
           updatedGeneratingIds.delete(draftId);
+          const updatedPending = new Map(get().pendingPrompts);
+          updatedPending.delete(draftId);
 
           set({
             draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
             currentDraftId: null,
             generatingImageDraftIds: updatedGeneratingIds,
+            pendingPrompts: updatedPending,
             isGenerating: updatedGeneratingIds.size > 0, // Derive from set
           });
 
-          await get().refreshData();
+          await get().refreshPrompts();
 
           // Navigate to newly created prompt
           set({
@@ -1099,12 +1170,15 @@ export const useStore = create<AppStore>()(
             contextImageIds: [],
           });
         } catch (error) {
-          // Remove from generating set on error
+          // Remove from generating set and pendingPrompts on error
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
           updatedGeneratingIds.delete(draftId);
+          const updatedPending = new Map(get().pendingPrompts);
+          updatedPending.delete(draftId);
 
           set({
             generatingImageDraftIds: updatedGeneratingIds,
+            pendingPrompts: updatedPending,
             isGenerating: updatedGeneratingIds.size > 0,
             error: (error as Error).message,
           });
@@ -1125,109 +1199,6 @@ export const useStore = create<AppStore>()(
       getCurrentDraft: () => {
         const { draftPrompts, currentDraftId } = get();
         return draftPrompts.find((d) => d.id === currentDraftId) || null;
-      },
-
-      // Favorites (Collection-based)
-      ensureFavoritesCollection: async () => {
-        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
-        const { collections } = get();
-
-        // Check if Favorites collection already exists
-        let favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-
-        if (!favCollection) {
-          // Create the Favorites collection
-          try {
-            await api.createCollection({
-              name: FAVORITES_COLLECTION_NAME,
-              description: 'Your favorite images',
-              image_ids: [],
-            });
-            const updatedCollections = await api.fetchCollections();
-            set({ collections: updatedCollections });
-            favCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-          } catch (error) {
-            set({ error: (error as Error).message });
-          }
-        }
-
-        return favCollection?.id ?? '';
-      },
-
-      toggleFavorite: async (imageId) => {
-        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
-
-        try {
-          // Ensure Favorites collection exists
-          const collectionId = await get().ensureFavoritesCollection();
-          if (!collectionId) return;
-
-          const { collections } = get();
-          const favCollection = collections.find((c) => c.id === collectionId);
-
-          if (!favCollection) return;
-
-          const isCurrentlyFavorite = favCollection.image_ids.includes(imageId);
-
-          if (isCurrentlyFavorite) {
-            // Remove from Favorites collection
-            await api.removeFromCollection(collectionId, [imageId]);
-          } else {
-            // Add to Favorites collection
-            await api.addToCollection(collectionId, [imageId]);
-          }
-
-          // Refresh collections
-          const updatedCollections = await api.fetchCollections();
-          set({ collections: updatedCollections });
-
-          // Update legacy favorites array for backwards compatibility
-          const newFavCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-          if (newFavCollection) {
-            set({ favorites: newFavCollection.image_ids });
-          }
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      batchFavorite: async (favorite) => {
-        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
-        const { selectedIds } = get();
-        if (selectedIds.size === 0) return;
-
-        try {
-          // Ensure Favorites collection exists
-          const collectionId = await get().ensureFavoritesCollection();
-          if (!collectionId) return;
-
-          const imageIds = Array.from(selectedIds);
-
-          if (favorite) {
-            await api.addToCollection(collectionId, imageIds);
-          } else {
-            await api.removeFromCollection(collectionId, imageIds);
-          }
-
-          // Refresh collections
-          const updatedCollections = await api.fetchCollections();
-          set({ collections: updatedCollections });
-
-          // Update legacy favorites array for backwards compatibility
-          const newFavCollection = updatedCollections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-          if (newFavCollection) {
-            set({ favorites: newFavCollection.image_ids });
-          }
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      isInFavoritesCollection: (imageId) => {
-        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
-        const { collections } = get();
-        const favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-        return favCollection?.image_ids.includes(imageId) ?? false;
       },
 
       // Delete
@@ -1341,70 +1312,77 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // Design Library
-      createLibraryItem: async (data) => {
+      // Design Tokens
+      createToken: async (data) => {
         try {
-          await api.createLibraryItem(data);
-          const libraryItems = await api.fetchLibraryItems();
-          set({ libraryItems });
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      deleteLibraryItem: async (id) => {
-        try {
-          await api.deleteLibraryItem(id);
-          const libraryItems = await api.fetchLibraryItems();
-          set({ libraryItems });
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      useLibraryItem: async (id) => {
-        try {
-          const item = await api.useLibraryItem(id);
-          const libraryItems = await api.fetchLibraryItems();
-          set({ libraryItems });
-          return item;
+          const token = await api.createToken(data);
+          const designTokens = await api.fetchTokens();
+          set({ designTokens });
+          return token;
         } catch (error) {
           set({ error: (error as Error).message });
           return undefined;
         }
       },
 
-      extractDesignToken: async (imageId, annotation, likedTags) => {
+      deleteToken: async (id) => {
         try {
-          const response = await api.extractDesignToken({
-            image_id: imageId,
-            annotation,
-            liked_tags: likedTags,
-          });
-          if (response.success && response.item) {
-            const libraryItems = await api.fetchLibraryItems();
-            set({ libraryItems });
-            return response.item;
+          await api.deleteToken(id);
+          const designTokens = await api.fetchTokens();
+          set({ designTokens });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      useToken: async (id) => {
+        try {
+          const token = await api.useToken(id);
+          const designTokens = await api.fetchTokens();
+          set({ designTokens });
+          return token;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return undefined;
+        }
+      },
+
+      suggestDimensions: async (imageIds) => {
+        try {
+          const response = await api.suggestDimensions(imageIds);
+          if (response.success) {
+            return response.dimensions;
           } else {
-            set({ error: response.error || 'Failed to extract design token' });
-            return undefined;
+            set({ error: response.error || 'Failed to suggest dimensions' });
+            return [];
           }
         } catch (error) {
           set({ error: (error as Error).message });
-          return undefined;
+          return [];
+        }
+      },
+
+      generateTokenConcept: async (tokenId) => {
+        try {
+          await api.generateTokenConcept(tokenId);
+          const designTokens = await api.fetchTokens();
+          set({ designTokens });
+        } catch (error) {
+          set({ error: (error as Error).message });
         }
       },
 
       // Collections
-      createCollection: async (name, description) => {
-        const { selectedIds } = get();
-        if (selectedIds.size === 0) return;
+      createCollection: async (name, description, imageIds) => {
+        // Use provided imageIds, or fall back to selectedIds
+        const ids = imageIds ?? Array.from(get().selectedIds);
+        if (ids.length === 0) return;
 
         try {
           await api.createCollection({
             name,
             description,
-            image_ids: Array.from(selectedIds),
+            image_ids: ids,
           });
           const collections = await api.fetchCollections();
           set({ collections, selectedIds: new Set(), selectionMode: 'none' });
@@ -1429,6 +1407,18 @@ export const useStore = create<AppStore>()(
 
         try {
           await api.addToCollection(collectionId, Array.from(selectedIds));
+          const collections = await api.fetchCollections();
+          set({ collections });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      addImagesToCollection: async (collectionId, imageIds) => {
+        if (imageIds.length === 0) return;
+
+        try {
+          await api.addToCollection(collectionId, imageIds);
           const collections = await api.fetchCollections();
           set({ collections });
         } catch (error) {
@@ -1834,21 +1824,6 @@ export const useStore = create<AppStore>()(
         });
 
         return result;
-      },
-
-      getFavoriteImages: () => {
-        const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
-        const { collections } = get();
-        const favCollection = collections.find((c) => c.name === FAVORITES_COLLECTION_NAME);
-        const favoriteIds = favCollection?.image_ids ?? [];
-
-        const allImages = get().getAllImages();
-        return allImages.filter((item) => favoriteIds.includes(item.image.id));
-      },
-
-      isImageFavorite: (imageId) => {
-        // Now uses collection-based favorites
-        return get().isInFavoritesCollection(imageId);
       },
     }),
     {
