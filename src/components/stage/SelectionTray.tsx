@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Image, FolderPlus, Plus, Check, Star, Trash2, CheckSquare, Square } from 'lucide-react';
+import { X, FolderPlus, Plus, Check, Star, Trash2, CheckSquare, Square, Bookmark, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, Input, Dialog, IconButton } from '../ui';
@@ -46,8 +46,11 @@ export function SelectionTray() {
   const selectAll = useStore((s) => s.selectAll);
   const batchFavorite = useStore((s) => s.batchFavorite);
   const batchDelete = useStore((s) => s.batchDelete);
+  const extractDesignToken = useStore((s) => s.extractDesignToken);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionProgress, setExtractionProgress] = useState({ done: 0, total: 0 });
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
@@ -68,10 +71,30 @@ export function SelectionTray() {
     })
     .filter(Boolean);
 
+  // Count images eligible for token extraction (have annotation or liked_axes)
+  const extractableCount = useMemo(() => {
+    return selectedImages.filter((img) => {
+      if (!img) return false;
+      const hasAnnotation = !!img.annotation?.trim();
+      const hasLikedTags = img.liked_axes && Object.keys(img.liked_axes).length > 0;
+      return hasAnnotation || hasLikedTags;
+    }).length;
+  }, [selectedImages]);
+
   if (selectedIds.size === 0) return null;
 
-  const handleUseAsContext = () => {
-    setContextImages(Array.from(selectedIds));
+  // Get current context images from store
+  const contextImageIds = useStore((s) => s.contextImageIds);
+
+  const handleAddToContext = () => {
+    // Add selected images to existing context (additive, not replacement)
+    const newContextIds = [...contextImageIds];
+    for (const id of selectedIds) {
+      if (!newContextIds.includes(id)) {
+        newContextIds.push(id);
+      }
+    }
+    setContextImages(newContextIds);
     setRightTab('generate');
     clearSelection();
   };
@@ -119,6 +142,51 @@ export function SelectionTray() {
     setIsDeleteDialogOpen(false);
     clearSelection();
     setSelectionMode('none');
+  };
+
+  const handleBatchExtractTokens = async () => {
+    // Filter to only extractable images
+    const extractableImages = selectedImages.filter((img) => {
+      if (!img) return false;
+      const hasAnnotation = !!img.annotation?.trim();
+      const hasLikedTags = img.liked_axes && Object.keys(img.liked_axes).length > 0;
+      return hasAnnotation || hasLikedTags;
+    });
+
+    if (extractableImages.length === 0) return;
+
+    setIsExtracting(true);
+    setExtractionProgress({ done: 0, total: extractableImages.length });
+
+    let successCount = 0;
+    for (const img of extractableImages) {
+      if (!img) continue;
+
+      // Flatten liked_axes to a simple tag list
+      const likedTags = img.liked_axes
+        ? Object.values(img.liked_axes).flat()
+        : undefined;
+
+      const item = await extractDesignToken(
+        img.id,
+        img.annotation || undefined,
+        likedTags
+      );
+
+      if (item) {
+        successCount++;
+      }
+      setExtractionProgress((prev) => ({ ...prev, done: prev.done + 1 }));
+    }
+
+    setIsExtracting(false);
+    setExtractionProgress({ done: 0, total: 0 });
+
+    if (successCount > 0) {
+      // Clear selection after successful extraction
+      clearSelection();
+      setSelectionMode('none');
+    }
   };
 
   return (
@@ -191,10 +259,10 @@ export function SelectionTray() {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<Image size={14} />}
-            onClick={handleUseAsContext}
+            leftIcon={<Plus size={14} />}
+            onClick={handleAddToContext}
           >
-            Use as Context
+            Add to Context
           </Button>
           <Button
             variant="secondary"
@@ -212,6 +280,19 @@ export function SelectionTray() {
           >
             Save Collection
           </Button>
+          {extractableCount > 0 && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={isExtracting ? <Loader2 size={14} className="animate-spin" /> : <Bookmark size={14} />}
+              onClick={handleBatchExtractTokens}
+              disabled={isExtracting}
+            >
+              {isExtracting
+                ? `Extracting... (${extractionProgress.done}/${extractionProgress.total})`
+                : `Extract Tokens (${extractableCount})`}
+            </Button>
+          )}
           <div className="w-px h-6 bg-border self-center" />
           <IconButton
             variant="danger"

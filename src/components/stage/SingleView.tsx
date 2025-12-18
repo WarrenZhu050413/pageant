@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -11,6 +11,9 @@ import {
   Download,
   Plus,
   FolderMinus,
+  Check,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -69,6 +72,10 @@ export function SingleView() {
 
   const currentImage = displayImages[currentImageIndex] || null;
 
+  // State for prompt display - MUST be before any early returns (React hooks rule)
+  const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+  const [copiedField, setCopiedField] = useState<'original' | 'generated' | null>(null);
+
   if (!currentImage || displayImages.length === 0) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -80,17 +87,111 @@ export function SingleView() {
   const isFavorite = isImageFavorite(currentImage.id);
   const isSelected = selectedIds.has(currentImage.id);
 
-  const handleCopyPrompt = () => {
-    const text = currentImage.varied_prompt || currentPrompt?.prompt || '';
+  // The original user prompt (what user typed in the prompt box)
+  const originalUserPrompt = currentPrompt?.basePrompt || currentPrompt?.prompt || '';
+  // The Gemini-generated variation used for this specific image
+  const geminiGeneratedPrompt = currentImage.varied_prompt || '';
+
+  const handleCopyPrompt = (type: 'original' | 'generated') => {
+    const text = type === 'original' ? originalUserPrompt : geminiGeneratedPrompt;
     if (text) {
       navigator.clipboard.writeText(text);
+      setCopiedField(type);
+      setTimeout(() => setCopiedField(null), 2000);
     }
   };
 
   return (
     <div className="h-full flex flex-col">
+      {/* Prompt Display - Above Image */}
+      <div className="border-b border-border bg-surface shrink-0">
+        <button
+          onClick={() => setIsPromptExpanded(!isPromptExpanded)}
+          className={clsx(
+            'w-full px-4 py-2 flex items-center justify-between',
+            'cursor-pointer hover:bg-canvas-subtle/50 transition-colors text-left'
+          )}
+        >
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <span className="text-xs font-medium text-ink-muted uppercase tracking-wide shrink-0">
+              Prompt
+            </span>
+            <p className="text-sm text-ink-secondary truncate">
+              {originalUserPrompt.slice(0, 80)}{originalUserPrompt.length > 80 ? '...' : ''}
+            </p>
+          </div>
+          {isPromptExpanded ? (
+            <ChevronUp size={16} className="text-ink-tertiary shrink-0 ml-2" />
+          ) : (
+            <ChevronDown size={16} className="text-ink-tertiary shrink-0 ml-2" />
+          )}
+        </button>
+
+        {/* Expanded prompt content */}
+        <AnimatePresence>
+          {isPromptExpanded && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: 'auto', opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="overflow-hidden"
+            >
+              <div className="px-4 pb-3 pt-1 border-t border-border/50 space-y-3">
+                {/* Original User Prompt */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[0.6rem] font-medium text-ink-muted uppercase tracking-wide">
+                      Original User Prompt
+                    </label>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCopyPrompt('original');
+                      }}
+                      className="p-1 rounded text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
+                      title="Copy original prompt"
+                    >
+                      {copiedField === 'original' ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-ink-secondary leading-relaxed">
+                    {originalUserPrompt || <span className="italic text-ink-muted">No prompt</span>}
+                  </p>
+                </div>
+
+                {/* Gemini Generated Variation */}
+                {geminiGeneratedPrompt && (
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[0.6rem] font-medium text-brass uppercase tracking-wide">
+                        Gemini Generated
+                      </label>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopyPrompt('generated');
+                        }}
+                        className="p-1 rounded text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
+                        title="Copy generated prompt"
+                      >
+                        {copiedField === 'generated' ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+                      </button>
+                    </div>
+                    <p className="text-xs text-ink leading-relaxed">
+                      {geminiGeneratedPrompt}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
       {/* Image Container */}
-      <div className="flex-1 relative flex items-center justify-center p-4 min-h-0">
+      <div className="flex-1 relative min-h-0 overflow-hidden">
+        <div className="absolute inset-4 flex items-center justify-center">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
           <button
@@ -118,7 +219,7 @@ export function SingleView() {
             transition={{ duration: 0.2 }}
             className={clsx(
               'relative max-h-full max-w-full',
-              'rounded-xl overflow-hidden shadow-lg',
+              'rounded-xl shadow-lg',
               selectionMode !== 'none' && 'cursor-pointer',
               isSelected && 'ring-4 ring-brass'
             )}
@@ -131,11 +232,11 @@ export function SingleView() {
             <img
               src={getImageUrl(currentImage.image_path)}
               alt={displayTitle}
-              className="max-h-full max-w-full object-contain"
+              className="max-h-full max-w-full object-contain rounded-xl"
             />
 
             {/* Overlay Actions */}
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity">
+            <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-xl">
               <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
                 <div className="flex gap-2">
                   <IconButton
@@ -167,7 +268,7 @@ export function SingleView() {
                     tooltip="Copy prompt"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleCopyPrompt();
+                      handleCopyPrompt('generated');
                     }}
                     className="bg-surface/90 backdrop-blur-sm"
                   >
@@ -277,6 +378,7 @@ export function SingleView() {
         >
           <Star size={24} fill={isFavorite ? 'currentColor' : 'none'} />
         </button>
+        </div>
       </div>
 
       {/* Dot Navigation */}

@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pageant Favicon Concepts</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      padding: 40px;
+      color: #fff;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2.5rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #8892b0;
+      margin-bottom: 48px;
+      font-size: 1.1rem;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.05);
+      border-radius: 16px;
+      padding: 24px;
+      border: 1px solid rgba(255,255,255,0.1);
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(240, 147, 251, 0.4);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .card.selected {
+      border-color: #f093fb;
+      background: rgba(240, 147, 251, 0.1);
+    }
+
+    .preview-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .favicon-preview {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .size-label {
+      font-size: 10px;
+      color: #64748b;
+      text-align: center;
+    }
+
+    .favicon-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .favicon-16 {
+      width: 16px;
+      height: 16px;
+    }
+
+    .favicon-32 {
+      width: 32px;
+      height: 32px;
+    }
+
+    .favicon-64 {
+      width: 64px;
+      height: 64px;
+    }
+
+    .favicon-128 {
+      width: 128px;
+      height: 128px;
+    }
+
+    .browser-mock {
+      background: #2d3748;
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .browser-mock svg {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+    }
+
+    .browser-mock span {
+      font-size: 12px;
+      color: #a0aec0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .card-letter {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      border-radius: 6px;
+      text-align: center;
+      line-height: 24px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-right: 8px;
+    }
+
+    .card-concept {
+      color: #8892b0;
+      font-size: 0.9rem;
+      margin-bottom: 16px;
+    }
+
+    .dark-preview {
+      background: #0d1117;
+      padding: 16px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+      margin-bottom: 12px;
+    }
+
+    .light-preview {
+      background: #ffffff;
+      padding: 16px;
+      border-radius: 8px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .vote-btn {
+      margin-top: 16px;
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    .vote-btn:hover {
+      opacity: 0.9;
+    }
+
+    .selected .vote-btn {
+      background: #22c55e;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 48px;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <h1>Pageant Favicon Concepts</h1>
+  <p class="subtitle">Click a card to preview it as the page favicon. 10 distinct directions for your image generation studio.</p>
+
+  <div class="grid">
+    <!-- A: Crown -->
+    <div class="card" onclick="selectFavicon(this, 'crown')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" id="crown-icon" viewBox="0 0 32 32">
+              <defs>
+                <linearGradient id="crown-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#fbbf24"/>
+                  <stop offset="100%" style="stop-color:#f59e0b"/>
+                </linearGradient>
+              </defs>
+              <path d="M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z" fill="url(#crown-grad)"/>
+              <rect x="4" y="24" width="24" height="4" rx="1" fill="url(#crown-grad)"/>
+              <circle cx="8" cy="10" r="2" fill="#fcd34d"/>
+              <circle cx="16" cy="6" r="2" fill="#fcd34d"/>
+              <circle cx="24" cy="10" r="2" fill="#fcd34d"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <defs>
+                <linearGradient id="crown-grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#fbbf24"/>
+                  <stop offset="100%" style="stop-color:#f59e0b"/>
+                </linearGradient>
+              </defs>
+              <path d="M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z" fill="url(#crown-grad2)"/>
+              <rect x="4" y="24" width="24" height="4" rx="1" fill="url(#crown-grad2)"/>
+              <circle cx="8" cy="10" r="2" fill="#fcd34d"/>
+              <circle cx="16" cy="6" r="2" fill="#fcd34d"/>
+              <circle cx="24" cy="10" r="2" fill="#fcd34d"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <path d="M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z" fill="#fbbf24"/>
+            <rect x="4" y="24" width="24" height="4" rx="1" fill="#fbbf24"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">A</span>Crown</h3>
+      <p class="card-concept">Pageant winner's crown. Regal, prestigious, "best in show" for AI images.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <path d="M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z" fill="#fbbf24"/>
+          <rect x="4" y="24" width="24" height="4" rx="1" fill="#fbbf24"/>
+          <circle cx="8" cy="10" r="2" fill="#fcd34d"/>
+          <circle cx="16" cy="6" r="2" fill="#fcd34d"/>
+          <circle cx="24" cy="10" r="2" fill="#fcd34d"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <path d="M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z" fill="#d97706"/>
+          <rect x="4" y="24" width="24" height="4" rx="1" fill="#d97706"/>
+          <circle cx="8" cy="10" r="2" fill="#fbbf24"/>
+          <circle cx="16" cy="6" r="2" fill="#fbbf24"/>
+          <circle cx="24" cy="10" r="2" fill="#fbbf24"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- B: Frame -->
+    <div class="card" onclick="selectFavicon(this, 'frame')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <rect x="2" y="6" width="18" height="14" rx="2" fill="none" stroke="#818cf8" stroke-width="2.5"/>
+              <rect x="12" y="12" width="18" height="14" rx="2" fill="#818cf8"/>
+              <rect x="14" y="14" width="14" height="10" rx="1" fill="#c7d2fe"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <rect x="2" y="6" width="18" height="14" rx="2" fill="none" stroke="#818cf8" stroke-width="2.5"/>
+              <rect x="12" y="12" width="18" height="14" rx="2" fill="#818cf8"/>
+              <rect x="14" y="14" width="14" height="10" rx="1" fill="#c7d2fe"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <rect x="2" y="6" width="18" height="14" rx="2" fill="none" stroke="#818cf8" stroke-width="2.5"/>
+            <rect x="12" y="12" width="18" height="14" rx="2" fill="#818cf8"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">B</span>Frames</h3>
+      <p class="card-concept">Overlapping picture frames. Gallery/collection metaphor, visual showcase.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="6" width="18" height="14" rx="2" fill="none" stroke="#818cf8" stroke-width="2.5"/>
+          <rect x="12" y="12" width="18" height="14" rx="2" fill="#818cf8"/>
+          <rect x="14" y="14" width="14" height="10" rx="1" fill="#c7d2fe"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="6" width="18" height="14" rx="2" fill="none" stroke="#6366f1" stroke-width="2.5"/>
+          <rect x="12" y="12" width="18" height="14" rx="2" fill="#6366f1"/>
+          <rect x="14" y="14" width="14" height="10" rx="1" fill="#e0e7ff"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- C: Spark -->
+    <div class="card" onclick="selectFavicon(this, 'spark')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <path d="M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z" fill="#f472b6"/>
+              <circle cx="16" cy="16" r="4" fill="#fdf2f8"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <path d="M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z" fill="#f472b6"/>
+              <circle cx="16" cy="16" r="4" fill="#fdf2f8"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <path d="M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z" fill="#f472b6"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">C</span>Spark</h3>
+      <p class="card-concept">AI magic sparkle. Generation, creation, that "wow" moment.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <path d="M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z" fill="#f472b6"/>
+          <circle cx="16" cy="16" r="4" fill="#fdf2f8"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <path d="M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z" fill="#ec4899"/>
+          <circle cx="16" cy="16" r="4" fill="#fce7f3"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- D: P Monogram -->
+    <div class="card" onclick="selectFavicon(this, 'monogram')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <defs>
+                <linearGradient id="p-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#a855f7"/>
+                  <stop offset="100%" style="stop-color:#6366f1"/>
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#p-grad)"/>
+              <path d="M10 8v16M10 8h8a6 6 0 010 12h-8" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <defs>
+                <linearGradient id="p-grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" style="stop-color:#a855f7"/>
+                  <stop offset="100%" style="stop-color:#6366f1"/>
+                </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#p-grad2)"/>
+              <path d="M10 8v16M10 8h8a6 6 0 010 12h-8" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <rect x="2" y="2" width="28" height="28" rx="6" fill="#a855f7"/>
+            <path d="M10 8v16M10 8h8a6 6 0 010 12h-8" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">D</span>P Monogram</h3>
+      <p class="card-concept">Elegant "P" lettermark. Professional, brandable, instantly recognizable.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#p-grad)"/>
+          <path d="M10 8v16M10 8h8a6 6 0 010 12h-8" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="2" width="28" height="28" rx="6" fill="#7c3aed"/>
+          <path d="M10 8v16M10 8h8a6 6 0 010 12h-8" stroke="white" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- E: Lens -->
+    <div class="card" onclick="selectFavicon(this, 'lens')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <circle cx="16" cy="16" r="13" fill="none" stroke="#0ea5e9" stroke-width="2"/>
+              <circle cx="16" cy="16" r="9" fill="none" stroke="#0ea5e9" stroke-width="1.5"/>
+              <circle cx="16" cy="16" r="5" fill="#0ea5e9"/>
+              <path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="#0ea5e9" stroke-width="1.5"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <circle cx="16" cy="16" r="13" fill="none" stroke="#0ea5e9" stroke-width="2"/>
+              <circle cx="16" cy="16" r="9" fill="none" stroke="#0ea5e9" stroke-width="1.5"/>
+              <circle cx="16" cy="16" r="5" fill="#0ea5e9"/>
+              <path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="#0ea5e9" stroke-width="1.5"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <circle cx="16" cy="16" r="13" fill="none" stroke="#0ea5e9" stroke-width="2"/>
+            <circle cx="16" cy="16" r="5" fill="#0ea5e9"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">E</span>Lens</h3>
+      <p class="card-concept">Camera aperture/crosshairs. Focus on visuals, precision, photography roots.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="#0ea5e9" stroke-width="2"/>
+          <circle cx="16" cy="16" r="9" fill="none" stroke="#0ea5e9" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="5" fill="#0ea5e9"/>
+          <path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="#0ea5e9" stroke-width="1.5"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <circle cx="16" cy="16" r="13" fill="none" stroke="#0284c7" stroke-width="2"/>
+          <circle cx="16" cy="16" r="9" fill="none" stroke="#0284c7" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="5" fill="#0284c7"/>
+          <path d="M16 3v4M16 25v4M3 16h4M25 16h4" stroke="#0284c7" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- F: Grid -->
+    <div class="card" onclick="selectFavicon(this, 'grid')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <rect x="3" y="3" width="12" height="12" rx="2" fill="#10b981"/>
+              <rect x="17" y="3" width="12" height="12" rx="2" fill="#34d399"/>
+              <rect x="3" y="17" width="12" height="12" rx="2" fill="#6ee7b7"/>
+              <rect x="17" y="17" width="12" height="12" rx="2" fill="#10b981"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <rect x="3" y="3" width="12" height="12" rx="2" fill="#10b981"/>
+              <rect x="17" y="3" width="12" height="12" rx="2" fill="#34d399"/>
+              <rect x="3" y="17" width="12" height="12" rx="2" fill="#6ee7b7"/>
+              <rect x="17" y="17" width="12" height="12" rx="2" fill="#10b981"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <rect x="3" y="3" width="12" height="12" rx="2" fill="#10b981"/>
+            <rect x="17" y="3" width="12" height="12" rx="2" fill="#34d399"/>
+            <rect x="3" y="17" width="12" height="12" rx="2" fill="#6ee7b7"/>
+            <rect x="17" y="17" width="12" height="12" rx="2" fill="#10b981"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">F</span>Grid</h3>
+      <p class="card-concept">2x2 gallery grid. Collections, organization, batch generation.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="3" y="3" width="12" height="12" rx="2" fill="#10b981"/>
+          <rect x="17" y="3" width="12" height="12" rx="2" fill="#34d399"/>
+          <rect x="3" y="17" width="12" height="12" rx="2" fill="#6ee7b7"/>
+          <rect x="17" y="17" width="12" height="12" rx="2" fill="#10b981"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="3" y="3" width="12" height="12" rx="2" fill="#059669"/>
+          <rect x="17" y="3" width="12" height="12" rx="2" fill="#10b981"/>
+          <rect x="3" y="17" width="12" height="12" rx="2" fill="#34d399"/>
+          <rect x="17" y="17" width="12" height="12" rx="2" fill="#059669"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- G: Wand -->
+    <div class="card" onclick="selectFavicon(this, 'wand')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <line x1="6" y1="26" x2="22" y2="10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+              <path d="M24 8l-4-4 4 1 1 4-1-1z" fill="#fbbf24"/>
+              <circle cx="26" cy="6" r="2" fill="#fcd34d"/>
+              <circle cx="8" cy="6" r="1.5" fill="#fcd34d"/>
+              <circle cx="12" cy="10" r="1" fill="#fcd34d"/>
+              <circle cx="28" cy="14" r="1.5" fill="#fcd34d"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <line x1="6" y1="26" x2="22" y2="10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+              <path d="M24 8l-4-4 4 1 1 4-1-1z" fill="#fbbf24"/>
+              <circle cx="26" cy="6" r="2" fill="#fcd34d"/>
+              <circle cx="8" cy="6" r="1.5" fill="#fcd34d"/>
+              <circle cx="12" cy="10" r="1" fill="#fcd34d"/>
+              <circle cx="28" cy="14" r="1.5" fill="#fcd34d"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <line x1="6" y1="26" x2="22" y2="10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="26" cy="6" r="2" fill="#fcd34d"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">G</span>Wand</h3>
+      <p class="card-concept">Magic wand with sparkles. Creation, transformation, AI magic.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <line x1="6" y1="26" x2="22" y2="10" stroke="#f59e0b" stroke-width="3" stroke-linecap="round"/>
+          <path d="M24 8l-4-4 4 1 1 4-1-1z" fill="#fbbf24"/>
+          <circle cx="26" cy="6" r="2" fill="#fcd34d"/>
+          <circle cx="8" cy="6" r="1.5" fill="#fcd34d"/>
+          <circle cx="12" cy="10" r="1" fill="#fcd34d"/>
+          <circle cx="28" cy="14" r="1.5" fill="#fcd34d"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <line x1="6" y1="26" x2="22" y2="10" stroke="#d97706" stroke-width="3" stroke-linecap="round"/>
+          <path d="M24 8l-4-4 4 1 1 4-1-1z" fill="#f59e0b"/>
+          <circle cx="26" cy="6" r="2" fill="#fbbf24"/>
+          <circle cx="8" cy="6" r="1.5" fill="#fbbf24"/>
+          <circle cx="12" cy="10" r="1" fill="#fbbf24"/>
+          <circle cx="28" cy="14" r="1.5" fill="#fbbf24"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- H: Ribbon -->
+    <div class="card" onclick="selectFavicon(this, 'ribbon')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <circle cx="16" cy="12" r="9" fill="#ef4444"/>
+              <circle cx="16" cy="12" r="5" fill="#fca5a5"/>
+              <path d="M12 20l-4 10 4-3 4 3V20" fill="#dc2626"/>
+              <path d="M20 20l4 10-4-3-4 3V20" fill="#dc2626"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <circle cx="16" cy="12" r="9" fill="#ef4444"/>
+              <circle cx="16" cy="12" r="5" fill="#fca5a5"/>
+              <path d="M12 20l-4 10 4-3 4 3V20" fill="#dc2626"/>
+              <path d="M20 20l4 10-4-3-4 3V20" fill="#dc2626"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <circle cx="16" cy="12" r="9" fill="#ef4444"/>
+            <path d="M12 20l-4 10 4-3 4 3V20M20 20l4 10-4-3-4 3V20" fill="#dc2626"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">H</span>Ribbon</h3>
+      <p class="card-concept">Award ribbon/rosette. Recognition, excellence, pageant winner.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <circle cx="16" cy="12" r="9" fill="#ef4444"/>
+          <circle cx="16" cy="12" r="5" fill="#fca5a5"/>
+          <path d="M12 20l-4 10 4-3 4 3V20" fill="#dc2626"/>
+          <path d="M20 20l4 10-4-3-4 3V20" fill="#dc2626"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <circle cx="16" cy="12" r="9" fill="#dc2626"/>
+          <circle cx="16" cy="12" r="5" fill="#fecaca"/>
+          <path d="M12 20l-4 10 4-3 4 3V20" fill="#b91c1c"/>
+          <path d="M20 20l4 10-4-3-4 3V20" fill="#b91c1c"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- I: Gem -->
+    <div class="card" onclick="selectFavicon(this, 'gem')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <polygon points="16,2 28,12 16,30 4,12" fill="#8b5cf6"/>
+              <polygon points="16,2 4,12 16,12" fill="#c4b5fd"/>
+              <polygon points="16,2 28,12 16,12" fill="#a78bfa"/>
+              <polygon points="16,12 4,12 16,30" fill="#7c3aed"/>
+              <polygon points="16,12 28,12 16,30" fill="#6d28d9"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <polygon points="16,2 28,12 16,30 4,12" fill="#8b5cf6"/>
+              <polygon points="16,2 4,12 16,12" fill="#c4b5fd"/>
+              <polygon points="16,2 28,12 16,12" fill="#a78bfa"/>
+              <polygon points="16,12 4,12 16,30" fill="#7c3aed"/>
+              <polygon points="16,12 28,12 16,30" fill="#6d28d9"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <polygon points="16,2 28,12 16,30 4,12" fill="#8b5cf6"/>
+            <polygon points="16,2 4,12 16,12" fill="#c4b5fd"/>
+            <polygon points="16,2 28,12 16,12" fill="#a78bfa"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">I</span>Gem</h3>
+      <p class="card-concept">Faceted gemstone. Precious, polished, premium quality.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <polygon points="16,2 28,12 16,30 4,12" fill="#8b5cf6"/>
+          <polygon points="16,2 4,12 16,12" fill="#c4b5fd"/>
+          <polygon points="16,2 28,12 16,12" fill="#a78bfa"/>
+          <polygon points="16,12 4,12 16,30" fill="#7c3aed"/>
+          <polygon points="16,12 28,12 16,30" fill="#6d28d9"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <polygon points="16,2 28,12 16,30 4,12" fill="#7c3aed"/>
+          <polygon points="16,2 4,12 16,12" fill="#a78bfa"/>
+          <polygon points="16,2 28,12 16,12" fill="#8b5cf6"/>
+          <polygon points="16,12 4,12 16,30" fill="#6d28d9"/>
+          <polygon points="16,12 28,12 16,30" fill="#5b21b6"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- J: Stage -->
+    <div class="card" onclick="selectFavicon(this, 'stage')">
+      <div class="preview-row">
+        <div class="favicon-preview">
+          <div class="favicon-container">
+            <svg class="favicon-16" viewBox="0 0 32 32">
+              <rect x="2" y="2" width="28" height="28" rx="4" fill="#1e1b4b"/>
+              <path d="M2 6c0-2.2 1.8-4 4-4h3v28H6c-2.2 0-4-1.8-4-4V6z" fill="#7c2d12"/>
+              <path d="M23 2h3c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-3V2z" fill="#7c2d12"/>
+              <path d="M9 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+              <path d="M19 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+              <circle cx="16" cy="18" r="6" fill="#fbbf24"/>
+            </svg>
+            <span class="size-label">16</span>
+          </div>
+          <div class="favicon-container">
+            <svg class="favicon-32" viewBox="0 0 32 32">
+              <rect x="2" y="2" width="28" height="28" rx="4" fill="#1e1b4b"/>
+              <path d="M2 6c0-2.2 1.8-4 4-4h3v28H6c-2.2 0-4-1.8-4-4V6z" fill="#7c2d12"/>
+              <path d="M23 2h3c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-3V2z" fill="#7c2d12"/>
+              <path d="M9 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+              <path d="M19 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+              <circle cx="16" cy="18" r="6" fill="#fbbf24"/>
+            </svg>
+            <span class="size-label">32</span>
+          </div>
+        </div>
+        <div class="browser-mock">
+          <svg viewBox="0 0 32 32">
+            <rect x="2" y="2" width="28" height="28" rx="4" fill="#1e1b4b"/>
+            <path d="M2 6c0-2.2 1.8-4 4-4h3v28H6a4 4 0 01-4-4V6z" fill="#7c2d12"/>
+            <circle cx="16" cy="18" r="6" fill="#fbbf24"/>
+          </svg>
+          <span>Pageant | Image Studio</span>
+        </div>
+      </div>
+      <h3 class="card-title"><span class="card-letter">J</span>Stage</h3>
+      <p class="card-concept">Theater stage with curtains and spotlight. Showcase, presentation, drama.</p>
+      <div class="dark-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="2" width="28" height="28" rx="4" fill="#1e1b4b"/>
+          <path d="M2 6c0-2.2 1.8-4 4-4h3v28H6c-2.2 0-4-1.8-4-4V6z" fill="#7c2d12"/>
+          <path d="M23 2h3c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-3V2z" fill="#7c2d12"/>
+          <path d="M9 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+          <path d="M19 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#dc2626"/>
+          <circle cx="16" cy="18" r="6" fill="#fbbf24"/>
+        </svg>
+      </div>
+      <div class="light-preview">
+        <svg class="favicon-64" viewBox="0 0 32 32">
+          <rect x="2" y="2" width="28" height="28" rx="4" fill="#312e81"/>
+          <path d="M2 6c0-2.2 1.8-4 4-4h3v28H6c-2.2 0-4-1.8-4-4V6z" fill="#9a3412"/>
+          <path d="M23 2h3c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-3V2z" fill="#9a3412"/>
+          <path d="M9 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#ef4444"/>
+          <path d="M19 2h4c0 4-2 8-2 8s-2-4-2-8z" fill="#ef4444"/>
+          <circle cx="16" cy="18" r="6" fill="#f59e0b"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Click any card to preview it as the page favicon. The favicon will update in your browser tab.</p>
+  </footer>
+
+  <script>
+    const favicons = {
+      crown: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M4 24h24l-3-12-5 6-4-8-4 8-5-6-3 12z' fill='%23fbbf24'/><rect x='4' y='24' width='24' height='4' rx='1' fill='%23fbbf24'/><circle cx='8' cy='10' r='2' fill='%23fcd34d'/><circle cx='16' cy='6' r='2' fill='%23fcd34d'/><circle cx='24' cy='10' r='2' fill='%23fcd34d'/></svg>`,
+      frame: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='6' width='18' height='14' rx='2' fill='none' stroke='%23818cf8' stroke-width='2.5'/><rect x='12' y='12' width='18' height='14' rx='2' fill='%23818cf8'/><rect x='14' y='14' width='14' height='10' rx='1' fill='%23c7d2fe'/></svg>`,
+      spark: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M16 2l2 8 8-2-6 6 6 6-8-2-2 8-2-8-8 2 6-6-6-6 8 2 2-8z' fill='%23f472b6'/><circle cx='16' cy='16' r='4' fill='%23fdf2f8'/></svg>`,
+      monogram: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='6' fill='%23a855f7'/><path d='M10 8v16M10 8h8a6 6 0 010 12h-8' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round' fill='none'/></svg>`,
+      lens: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='13' fill='none' stroke='%230ea5e9' stroke-width='2'/><circle cx='16' cy='16' r='9' fill='none' stroke='%230ea5e9' stroke-width='1.5'/><circle cx='16' cy='16' r='5' fill='%230ea5e9'/><path d='M16 3v4M16 25v4M3 16h4M25 16h4' stroke='%230ea5e9' stroke-width='1.5'/></svg>`,
+      grid: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='3' y='3' width='12' height='12' rx='2' fill='%2310b981'/><rect x='17' y='3' width='12' height='12' rx='2' fill='%2334d399'/><rect x='3' y='17' width='12' height='12' rx='2' fill='%236ee7b7'/><rect x='17' y='17' width='12' height='12' rx='2' fill='%2310b981'/></svg>`,
+      wand: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><line x1='6' y1='26' x2='22' y2='10' stroke='%23f59e0b' stroke-width='3' stroke-linecap='round'/><circle cx='26' cy='6' r='2' fill='%23fcd34d'/><circle cx='8' cy='6' r='1.5' fill='%23fcd34d'/><circle cx='12' cy='10' r='1' fill='%23fcd34d'/><circle cx='28' cy='14' r='1.5' fill='%23fcd34d'/></svg>`,
+      ribbon: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='12' r='9' fill='%23ef4444'/><circle cx='16' cy='12' r='5' fill='%23fca5a5'/><path d='M12 20l-4 10 4-3 4 3V20' fill='%23dc2626'/><path d='M20 20l4 10-4-3-4 3V20' fill='%23dc2626'/></svg>`,
+      gem: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><polygon points='16,2 28,12 16,30 4,12' fill='%238b5cf6'/><polygon points='16,2 4,12 16,12' fill='%23c4b5fd'/><polygon points='16,2 28,12 16,12' fill='%23a78bfa'/><polygon points='16,12 4,12 16,30' fill='%237c3aed'/><polygon points='16,12 28,12 16,30' fill='%236d28d9'/></svg>`,
+      stage: `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='4' fill='%231e1b4b'/><path d='M2 6c0-2.2 1.8-4 4-4h3v28H6c-2.2 0-4-1.8-4-4V6z' fill='%237c2d12'/><path d='M23 2h3c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-3V2z' fill='%237c2d12'/><circle cx='16' cy='18' r='6' fill='%23fbbf24'/></svg>`
+    };
+
+    let selectedCard = null;
+
+    function selectFavicon(card, name) {
+      // Remove previous selection
+      if (selectedCard) {
+        selectedCard.classList.remove('selected');
+      }
+
+      // Add new selection
+      card.classList.add('selected');
+      selectedCard = card;
+
+      // Update favicon
+      const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+      link.type = 'image/svg+xml';
+      link.rel = 'icon';
+      link.href = `data:image/svg+xml,${encodeURIComponent(favicons[name].replace(/'/g, '"'))}`;
+      document.getElementsByTagName('head')[0].appendChild(link);
+    }
+  </script>
+</body>
+</html>

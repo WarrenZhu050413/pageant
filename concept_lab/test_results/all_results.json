@@ -1,0 +1,461 @@
+{
+  "get_axes": {
+    "endpoint": "GET /api/axes",
+    "description": "Returns list of known design axes with descriptions",
+    "input": "None (GET request)",
+    "response": {
+      "known_axes": [
+        "colors",
+        "composition",
+        "mood",
+        "layout",
+        "aesthetic",
+        "typeface_feel"
+      ],
+      "extended_axes": [
+        "lighting",
+        "texture",
+        "rhythm",
+        "depth",
+        "contrast",
+        "materiality",
+        "atmosphere"
+      ],
+      "description": {
+        "colors": "Color palette, temperature, saturation, contrast",
+        "composition": "Framing, balance, lines, depth, negative space",
+        "mood": "Emotional tone, atmosphere, narrative feeling",
+        "layout": "Structure, density, flow, hierarchy",
+        "aesthetic": "Style movement, era, approach (minimalist, art-deco, etc.)",
+        "typeface_feel": "Typography character if text is present",
+        "lighting": "Light direction, quality, contrast, shadow character",
+        "texture": "Surface quality, pattern, material feel"
+      }
+    },
+    "status": 200
+  },
+  "dimension_presets": {
+    "endpoint": "GET /api/dimension-presets",
+    "description": "Returns preset dimension ranges for gradient variations (saturation, warmth, contrast, etc.)",
+    "input": "None (GET request)",
+    "response": {
+      "presets": {
+        "saturation": {
+          "from": "extremely vibrant and saturated colors",
+          "to": "almost completely desaturated, near monochrome"
+        },
+        "warmth": {
+          "from": "very warm, golden, amber tones",
+          "to": "very cool, blue, icy tones"
+        },
+        "contrast": {
+          "from": "extremely high contrast, stark blacks and whites",
+          "to": "very low contrast, soft and subtle"
+        },
+        "abstraction": {
+          "from": "photorealistic, highly detailed",
+          "to": "completely abstract, pure shapes and colors"
+        },
+        "complexity": {
+          "from": "extremely detailed and complex",
+          "to": "ultra minimalist, bare essentials"
+        },
+        "mood_intensity": {
+          "from": "extremely dramatic and intense",
+          "to": "very calm and serene"
+        },
+        "vintage": {
+          "from": "modern, clean, contemporary",
+          "to": "heavily vintage, aged, retro film aesthetic"
+        },
+        "darkness": {
+          "from": "bright, high-key lighting",
+          "to": "dark, moody, low-key lighting"
+        }
+      },
+      "usage": "Use these as from_extreme and to_extreme values in /api/gradient-variations"
+    },
+    "status": 200
+  },
+  "analyze_dimensions": {
+    "endpoint": "POST /api/analyze-dimensions",
+    "description": "Analyzes an image and auto-suggests design dimensions to extract. Uses Gemini 2.0 Flash for visual analysis.",
+    "input_image": "/Users/wz/Desktop/Concepts/a93ca773-f513-412a-8f71-f971282b248c.jpg",
+    "input_image_base64": "/9j/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/2wBD...",
+    "response": {
+      "dimensions": [
+        {
+          "axis": "lighting",
+          "name": "Eerie Green Cast",
+          "description": "The entire scene is bathed in a sickly green light, creating an unsettling and unnatural atmosphere. This single-source colored light flattens the image and adds to the claustrophobic feeling of the interior space.",
+          "tags": [
+            "monochromatic",
+            "moody-dark",
+            "dramatic"
+          ],
+          "generation_prompt": "Create an abstract image using only shades of green. The light source should be singular and dominant, casting strong, unnatural shadows."
+        },
+        {
+          "axis": "composition",
+          "name": "Oblique Close-Up",
+          "description": "The image is framed with an extreme close-up, focusing tightly on the subject's face and upper body. The off-kilter angle adds to the sense of unease and disorientation, drawing the viewer uncomfortably close.",
+          "tags": [
+            "diagonal-lines",
+            "layered",
+            "intimate"
+          ],
+          "generation_prompt": "Compose an abstract image featuring strongly angled lines and overlapping shapes. The composition should feel unbalanced and intentionally claustrophobic."
+        },
+        {
+          "axis": "mood",
+          "name": "Intimate Disquiet",
+          "description": "The combination of the close proximity and the eerie lighting evokes a feeling of unease and discomfort. The subject's expression, combined with the strange environment, contributes to a sense of intimate disquiet.",
+          "tags": [
+            "mysterious",
+            "dramatic",
+            "intimate"
+          ],
+          "generation_prompt": "Generate an abstract composition that expresses a sense of unease and vulnerability. Use muted colors and ambiguous forms to create a feeling of intimate disturbance."
+        },
+        {
+          "axis": "texture",
+          "name": "Leopard Grain",
+          "description": "The leopard print top introduces a distinct visual texture to the image, contrasting with the smoother skin and the tiled floor. The pattern is somewhat blurred, contributing to the overall grainy aesthetic.",
+          "tags": [
+            "pattern",
+            "material-feel",
+            "nostalgic"
+          ],
+          "generation_prompt": "Create an abstract pattern reminiscent of animal print, but distorted and blurred. The texture should evoke a feeling of something slightly worn or faded."
+        },
+        {
+          "axis": "aesthetic",
+          "name": "Cinematic Grunge",
+          "description": "The image possesses a raw, unfiltered quality reminiscent of low-budget cinema or a music video. The harsh lighting, close framing, and unsettling atmosphere create a distinct 'grunge' aesthetic.",
+          "tags": [
+            "cinematic",
+            "moody-dark",
+            "bold"
+          ],
+          "generation_prompt": "Generate an abstract image that captures the essence of a raw, gritty cinematic style. Use strong contrasts, distorted elements, and a sense of unease to create a 'grunge' aesthetic."
+        }
+      ]
+    },
+    "status": 200
+  },
+  "extract_dimension": {
+    "endpoint": "POST /api/extract-dimension",
+    "description": "Extracts a specific design dimension (axis) from an image. User specifies which axis to analyze.",
+    "input_image": "/Users/wz/Desktop/Concepts/ba14b6c5-14b1-416e-8f90-9f51989d3ecf.jpg",
+    "input_axis": "mood",
+    "response": {
+      "axis": "mood",
+      "name": "Brooding Ocean Majesty",
+      "description": "The image evokes a mood of brooding majesty through its use of muted, cool tones and turbulent textures. The dark, stormy sky and crashing waves create a sense of awe and power, while the solitary rock formation adds an element of resilience and permanence. The overall effect is one of somber beauty and the sublime power of nature.",
+      "tags": [
+        "gloomy",
+        "turbulent",
+        "cool"
+      ],
+      "generation_prompt": "Create an abstract image featuring swirling, dark blues and grays to convey a sense of turbulence and impending storm. The texture should be rough and uneven, with hints of white foam, emphasizing the raw power of the ocean."
+    },
+    "status": 200
+  },
+  "gradient_variations": {
+    "endpoint": "POST /api/gradient-variations",
+    "description": "Generates prompt variations along a gradient dimension (e.g., saturated\u2192desaturated). Returns text prompts, not images. Two-phase workflow: preview prompts first.",
+    "input_image": "/Users/wz/Desktop/Concepts/a93ca773-f513-412a-8f71-f971282b248c.jpg",
+    "input_params": {
+      "base_prompt": "A moody portrait with dramatic lighting...",
+      "dimension": "saturation",
+      "from_extreme": "extremely vibrant and saturated colors",
+      "to_extreme": "almost completely desaturated, near monochrome",
+      "count": 5
+    },
+    "response": {
+      "gradient_axis": "saturation",
+      "from_extreme": "extremely vibrant and saturated colors",
+      "to_extreme": "almost completely desaturated, near monochrome",
+      "variations": [
+        {
+          "position": 0.0,
+          "label": "Hyper Saturated",
+          "description": "A portrait bathed in intensely vibrant colors. Neon signs cast a rainbow of light across the subject's face, highlighting every detail with unrealistically saturated hues, creating a dreamlike urban scene.",
+          "mood": "Energetic",
+          "design": {
+            "colors": [
+              "Neon",
+              "Vibrant",
+              "Iridescent"
+            ],
+            "composition": [
+              "Close-up",
+              "Dramatic Lighting"
+            ]
+          }
+        },
+        {
+          "position": 0.25,
+          "label": "Rich Colors",
+          "description": "A moody portrait in an urban setting, with saturated yet realistic colors. The subject is illuminated by streetlights, casting long shadows and emphasizing the rich reds, blues, and greens of the city night.",
+          "mood": "Intense",
+          "design": {
+            "colors": [
+              "Deep Red",
+              "Electric Blue",
+              "Lush Green"
+            ],
+            "composition": [
+              "Rule of Thirds",
+              "Urban Landscape"
+            ]
+          }
+        },
+        {
+          "position": 0.5,
+          "label": "Natural Saturation",
+          "description": "A portrait with natural, slightly muted colors creating a realistic urban atmosphere. Soft light filters through the buildings, giving the scene a balanced and natural feel, with subtle color variations that add depth.",
+          "mood": "Calm",
+          "design": {
+            "colors": [
+              "Earthy tones",
+              "Neutral accents"
+            ],
+            "composition": [
+              "Medium shot",
+              "Balanced"
+            ]
+          }
+        },
+        {
+          "position": 0.75,
+          "label": "Muted Tones",
+          "description": "A somber portrait in a desaturated urban environment. The colors are significantly toned down, creating a melancholic mood with faint hints of the original colors peeking through, almost like a faded memory.",
+          "mood": "Melancholic",
+          "design": {
+            "colors": [
+              "Grey",
+              "Beige",
+              "Faded Blue"
+            ],
+            "composition": [
+              "Gloomy",
+              "Subdued Lighting"
+            ]
+          }
+        },
+        {
+          "position": 1.0,
+          "label": "Near Monochrome",
+          "description": "An almost completely desaturated, near monochrome portrait set in a stark urban landscape. Only the faintest traces of color remain, focusing attention on textures, shadows, and the subject's expression, creating a sense of timeless isolation.",
+          "mood": "Desolate",
+          "design": {
+            "colors": [
+              "Greyscale",
+              "Sepia undertones"
+            ],
+            "composition": [
+              "High Contrast",
+              "Minimalist"
+            ]
+          }
+        }
+      ]
+    },
+    "status": 200
+  },
+  "more_like_this": {
+    "endpoint": "POST /api/more-like-this",
+    "description": "Analyzes an image and suggests creative directions to explore. Returns prompts for different variations (style, mood, composition, subject, narrative). Two-phase workflow.",
+    "input_image": "/Users/wz/Desktop/Concepts/3b1dbba4-2896-4dce-803c-0003e1f84a6e.jpg",
+    "input_params": {
+      "original_prompt": "Hands holding a glowing orb in darkness",
+      "count": 5
+    },
+    "response": {
+      "source_analysis": "The image is effective due to its simplicity, the contrast between the glowing orb and the dark background, and the mysterious, almost ethereal quality created by the unseen source of the orb's light and the disembodied hands holding it.",
+      "directions": [
+        {
+          "direction_type": "narrative",
+          "name": "Sci-Fi Artifact",
+          "description": "This direction explores transforming the orb into a powerful, otherworldly artifact discovered in a futuristic setting, adding a layer of science fiction and intrigue.",
+          "prompt": "A pair of robotic hands carefully holds a pulsating, crystalline orb within a sterile laboratory. The orb emits a soft, blue light, illuminating complex machinery and holographic displays in the background. Science fiction, advanced technology, discovery.",
+          "intensity": "moderate"
+        },
+        {
+          "direction_type": "mood",
+          "name": "Ominous Power",
+          "description": "This direction aims to create a darker, more ominous mood by emphasizing the power and potential danger associated with the orb. It explores themes of control and impending doom.",
+          "prompt": "Two skeletal hands clutch a dark, pulsating orb, casting long, distorted shadows on a blood-red wall. The orb emanates a low, guttural hum. Ominous, menacing, power, dark fantasy.",
+          "intensity": "moderate"
+        },
+        {
+          "direction_type": "color",
+          "name": "Vibrant Nebula",
+          "description": "This direction focuses on transforming the orb into a miniature nebula or galaxy, bursting with vibrant colors and cosmic energy. It brings a sense of wonder and scale.",
+          "prompt": "Hands cradle a swirling nebula contained within a glass sphere. The nebula is filled with vibrant colors of pink, purple, and blue, resembling a miniature galaxy. Cosmic, colorful, otherworldly, magical.",
+          "intensity": "moderate"
+        },
+        {
+          "direction_type": "subject",
+          "name": "Elemental Fire",
+          "description": "This direction reimagines the orb as a source of elemental fire, creating a dynamic and energetic image with flames and intense heat. It emphasizes the raw power of nature.",
+          "prompt": "Hands hold a ball of pure fire, flames licking at the fingers without burning them. The fire casts an orange glow on the surrounding area, illuminating swirling smoke and embers. Elemental fire, intense heat, power, dramatic.",
+          "intensity": "moderate"
+        },
+        {
+          "direction_type": "style",
+          "name": "Surreal Dreamscape",
+          "description": "This direction introduces a surreal and dreamlike quality to the image, creating an unsettling yet intriguing atmosphere. It explores the subconscious and the unusual.",
+          "prompt": "Hands emerge from rippling water, gently supporting a glowing, egg-shaped moon. A strange, distorted landscape stretches out behind them, filled with melting clocks and floating eyes. Surreal, dreamlike, unsettling, Salvador Dali.",
+          "intensity": "moderate"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "isolate_concepts_auto": {
+    "endpoint": "POST /api/isolate-concepts",
+    "description": "Full pipeline endpoint. Auto mode: Gemini suggests design dimensions. With generate_images=False, only returns analysis without generating concept images.",
+    "input_image": "/Users/wz/Desktop/Concepts/7403b592-5716-41b8-a349-e77a9104873b.jpg",
+    "input_params": {
+      "dimensions": null,
+      "count": 3,
+      "generate_images": false
+    },
+    "response": {
+      "mode": "auto_suggested",
+      "concepts": [
+        {
+          "dimension": {
+            "axis": "lighting",
+            "name": "Subtle Gradations",
+            "description": "The image features a delicate interplay of light and shadow, creating a smooth transition between the two. There are no harsh contrasts; instead, subtle gradations define the forms and textures, providing a soft and understated illumination.",
+            "tags": [
+              "soft",
+              "subtle",
+              "monochromatic"
+            ],
+            "generation_prompt": "Create an abstract image with smooth, gradual transitions between light and dark. The image should evoke a sense of understated illumination, avoiding any sharp contrasts or hard edges."
+          },
+          "image_base64": null,
+          "image_id": null
+        },
+        {
+          "dimension": {
+            "axis": "texture",
+            "name": "Woven Layers",
+            "description": "The image emphasizes the tactile quality of the materials, showcasing the interwoven nature of the fabric. The layered appearance creates a visual depth and invites the viewer to imagine the feel of the textured surface.",
+            "tags": [
+              "layered",
+              "material",
+              "tactile"
+            ],
+            "generation_prompt": "Generate an abstract image that focuses on woven textures and layered patterns. The resulting composition should give the impression of depth and invoke a tangible, material sensation."
+          },
+          "image_base64": null,
+          "image_id": null
+        },
+        {
+          "dimension": {
+            "axis": "composition",
+            "name": "Gestural Framing",
+            "description": "The composition relies on the gesture of the hand and arm to create a dynamic and engaging frame. The lines formed by the body guide the eye and establish a sense of movement and energy within the static image.",
+            "tags": [
+              "dynamic",
+              "diagonal-lines",
+              "gestural"
+            ],
+            "generation_prompt": "Create an abstract composition that uses strong, gestural lines to frame a central space. The lines should convey a sense of movement and energy, creating a visually dynamic and engaging image."
+          },
+          "image_base64": null,
+          "image_id": null
+        }
+      ]
+    },
+    "status": 200
+  },
+  "isolate_concepts_specified": {
+    "endpoint": "POST /api/isolate-concepts",
+    "description": "Full pipeline endpoint. User-specified mode: Extract specific axes provided by user. With generate_images=False, only returns analysis.",
+    "input_image": "/Users/wz/Desktop/Concepts/03e31479-45c8-40a8-954b-646feed6f3c0.jpg",
+    "input_params": {
+      "dimensions": [
+        "lighting",
+        "colors"
+      ],
+      "generate_images": false
+    },
+    "response": {
+      "mode": "user_specified",
+      "concepts": [
+        {
+          "dimension": {
+            "axis": "lighting",
+            "name": "Ethereal Softness",
+            "description": "The lighting features a subtle, diffused quality that softly illuminates the subject. This creates an ethereal, dreamlike atmosphere, with gentle gradations of light and shadow that lack harsh edges. The overall effect is calming and intimate, drawing the viewer into a world of delicate beauty.",
+            "tags": [
+              "soft",
+              "diffused",
+              "dreamlike"
+            ],
+            "generation_prompt": "Create an abstract composition using only gradients of light and shadow, emphasizing soft transitions and subtle contrasts. The goal is to evoke a sense of gentle illumination and ethereal softness, devoid of any hard lines or textures."
+          },
+          "image_base64": null,
+          "image_id": null
+        },
+        {
+          "dimension": {
+            "axis": "colors",
+            "name": "Monochromatic Contrast",
+            "description": "The image uses stark black and white to create a strong contrast. The absence of color emphasizes the interplay of light and shadow, heightening the dramatic effect. The high contrast adds depth and dimension to the image, creating a sense of intensity.",
+            "tags": [
+              "monochromatic",
+              "high-contrast",
+              "grayscale"
+            ],
+            "generation_prompt": "Generate an abstract image with bold transitions between stark black and white. Focus on creating areas of high contrast to emphasize the interplay of light and shadow, without any recognizable forms or figures. The image should evoke a sense of drama and intensity through its stark, contrasting tones."
+          },
+          "image_base64": null,
+          "image_id": null
+        }
+      ]
+    },
+    "status": 200
+  },
+  "generate_concept": {
+    "endpoint": "POST /api/generate-concept",
+    "description": "Generates a pure concept image for a specific dimension using Gemini 3 Pro Image Preview. Creates abstract visual representations of design concepts.",
+    "input_params": {
+      "dimension": {
+        "axis": "mood",
+        "name": "Ethereal Luminescence",
+        "description": "A soft, dreamy atmosphere with gentle glowing light that creates an otherworldly, mystical feeling. The light seems to emanate from within, creating halos and soft gradients.",
+        "tags": [
+          "mystical",
+          "soft-glow",
+          "dreamy"
+        ],
+        "generation_prompt": "Create an abstract image of soft, diffused light sources with gentle color gradients. Focus on ethereal glow effects, soft halos, and luminescent atmosphere. Use pastel blues and soft whites with subtle warmth."
+      },
+      "aspect_ratio": "1:1"
+    },
+    "response": {
+      "image_id": "concept-1aae367f.jpg",
+      "dimension": {
+        "axis": "mood",
+        "name": "Ethereal Luminescence",
+        "description": "A soft, dreamy atmosphere with gentle glowing light that creates an otherworldly, mystical feeling. The light seems to emanate from within, creating halos and soft gradients.",
+        "tags": [
+          "mystical",
+          "soft-glow",
+          "dreamy"
+        ],
+        "generation_prompt": "Create an abstract image of soft, diffused light sources with gentle color gradients. Focus on ethereal glow effects, soft halos, and luminescent atmosphere. Use pastel blues and soft whites with subtle warmth."
+      },
+      "image_base64": "/9j/4AAQSkZJRgABAQEBLAEsAAD/6xdmSlAAAQAAAAEAABdcanVtYgAAAB5qdW1kYzJwYQARABCAAACqADibcQNjMnBhAAAAFzZq..."
+    },
+    "generated_image_path": "/Users/wz/Desktop/zPersonalProjects/denken/pageant/concept_lab/test_results/concept-1aae367f.jpg",
+    "status": 200
+  }
+}

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Hexagon } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
@@ -30,12 +30,14 @@ export function PromptsTab() {
     id: string;
     title: string;
     count: number;
-    itemType: 'draft' | 'pending' | 'prompt';
+    itemType: 'draft' | 'pending' | 'prompt' | 'concept';
     created_at: string;
     prompt?: string;
-    category?: string;
     thumbnail?: string;
     variationCount?: number;
+    // Concept-specific fields
+    conceptAxis?: string;
+    sourceImageId?: string;
   };
 
   const allItems: PromptItem[] = [
@@ -58,6 +60,7 @@ export function PromptsTab() {
       created_at: new Date().toISOString(),
     })),
     // Sort actual prompts by created_at descending (newest first)
+    // Separate concepts from regular prompts
     ...prompts
       .slice()
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
@@ -65,15 +68,16 @@ export function PromptsTab() {
         id: p.id,
         title: p.title,
         prompt: p.prompt,
-        category: p.category,
         count: p.images.length,
-        itemType: 'prompt' as const,
+        itemType: p.is_concept ? ('concept' as const) : ('prompt' as const),
         created_at: p.created_at,
         thumbnail: p.images[0]?.image_path,
+        conceptAxis: p.concept_axis,
+        sourceImageId: p.source_image_id,
       })),
   ];
 
-  const selectableItems = allItems.filter((item) => item.itemType === 'prompt');
+  const selectableItems = allItems.filter((item) => item.itemType === 'prompt' || item.itemType === 'concept');
   const allSelected = selectableItems.length > 0 && selectedPromptIds.size === selectableItems.length;
 
   const handleToggleSelectionMode = () => {
@@ -166,10 +170,12 @@ export function PromptsTab() {
           const isDraft = item.itemType === 'draft';
           const isPending = item.itemType === 'pending';
           const isPrompt = item.itemType === 'prompt';
+          const isConcept = item.itemType === 'concept';
           const isActive = isDraft
             ? item.id === currentDraftId
             : item.id === currentPromptId;
           const isSelected = selectedPromptIds.has(item.id);
+          const isSelectable = isPrompt || isConcept;
 
           return (
             <motion.div
@@ -183,16 +189,19 @@ export function PromptsTab() {
                 isPending && 'shimmer cursor-wait',
                 isDraft && 'border border-dashed border-brass/40',
                 isDraft && isGeneratingVariations && item.variationCount === 0 && 'shimmer',
+                isConcept && 'border border-purple-500/30',
                 isActive && !isSelectionMode
                   ? isDraft
                     ? 'bg-brass/10 ring-1 ring-brass/40'
+                    : isConcept
+                    ? 'bg-purple-500/10 ring-1 ring-purple-500/40'
                     : 'bg-brass-muted ring-1 ring-brass/30'
                   : 'hover:bg-canvas-subtle',
                 isSelected && 'bg-brass-muted/50'
               )}
             >
-              {/* Checkbox (only in selection mode, only for prompts) */}
-              {isSelectionMode && isPrompt && (
+              {/* Checkbox (only in selection mode, for prompts and concepts) */}
+              {isSelectionMode && isSelectable && (
                 <button
                   onClick={() => togglePromptSelection(item.id)}
                   className="pl-2 py-2.5"
@@ -218,11 +227,11 @@ export function PromptsTab() {
               {/* Main content button */}
               <button
                 onClick={() => {
-                  if (isSelectionMode && isPrompt) {
+                  if (isSelectionMode && isSelectable) {
                     togglePromptSelection(item.id);
                   } else if (isDraft) {
                     setCurrentDraft(item.id);
-                  } else if (isPrompt) {
+                  } else if (isPrompt || isConcept) {
                     setCurrentDraft(null); // Clear any selected draft
                     setCurrentPrompt(item.id);
                   }
@@ -235,7 +244,8 @@ export function PromptsTab() {
                   <div
                     className={clsx(
                       'w-12 h-12 rounded-md flex-shrink-0 overflow-hidden',
-                      isDraft ? 'bg-brass/10 border border-dashed border-brass/30' : 'bg-canvas-muted',
+                      isDraft ? 'bg-brass/10 border border-dashed border-brass/30' :
+                      isConcept ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-canvas-muted',
                       !isSelectionMode && 'ml-2.5'
                     )}
                   >
@@ -247,6 +257,11 @@ export function PromptsTab() {
                         ) : (
                           <FileEdit size={16} className="text-brass" />
                         )}
+                      </div>
+                    ) : isConcept ? (
+                      // Concept: show hexagon icon
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Hexagon size={20} className="text-purple-500" />
                       </div>
                     ) : isPending ? (
                       // Show grid of placeholder slots for each image being generated
@@ -289,12 +304,14 @@ export function PromptsTab() {
                           'flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
                           isDraft
                             ? 'bg-brass/15 text-brass'
+                            : isConcept
+                            ? 'bg-purple-500/15 text-purple-600'
                             : isPending
                             ? 'bg-generating/15 text-generating'
                             : 'bg-canvas-muted text-ink-tertiary'
                         )}
                       >
-                        {isDraft ? 'Draft' : item.count}
+                        {isDraft ? 'Draft' : isConcept ? 'Concept' : item.count}
                       </span>
                     </div>
 
@@ -309,6 +326,8 @@ export function PromptsTab() {
                         ? isGeneratingVariations && item.variationCount === 0
                           ? 'Creating variations...'
                           : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
+                        : isConcept
+                        ? `${item.conceptAxis || 'design'} axis`
                         : isPending
                         ? 'Generating...'
                         : new Date(item.created_at).toLocaleDateString('en-US', {

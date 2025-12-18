@@ -70,6 +70,56 @@ State is organized into modular slices in `src/store/slices/`:
 - `navigationSlice` - current prompt/image, view modes
 - `librarySlice` - library items management
 
+## GitHub Issues Workflow
+
+All development tasks are tracked in GitHub Issues. This is the single source of truth.
+
+### Size Labels
+- `size:small` - Quick fixes, renames, single-file changes
+- `size:medium` - Multi-file features, moderate refactors
+- `size:large` - Architectural changes, major features
+
+### Working on Issues
+```bash
+gh issue list                     # See open issues
+gh issue view 123                 # Read issue details
+gh issue develop 123 --checkout   # Create branch and start work
+```
+
+### Completing Issues
+When you finish an issue, state:
+1. The issue number
+2. What was done (brief)
+3. The commit hash that resolves it
+
+Example:
+> Completed #5: Renamed 'Caption' to 'Annotation' across UI.
+> Commit: `abc1234`
+
+The commit message should include `Fixes #123` to auto-close the issue.
+
+### Creating Issues
+Claude can create issues when the user identifies bugs or features:
+```bash
+gh issue create --title "..." --label "bug,size:small" --body "..."
+```
+
+### Documenting Design Decisions
+GitHub Issues is the unified hub for all design decisions. Claude must document major plans and feature changes on GitHub:
+
+- **Existing issue**: If work stems from an existing issue, add comments there with design decisions, trade-offs considered, and implementation approach
+- **New work**: Create a new issue to track the feature/change and document decisions as the work progresses
+- **Plan files**: When creating detailed plans (e.g., in `.claude/plans/`), summarize key decisions in the related GitHub issue
+
+This ensures all design rationale is traceable and can be referenced later.
+
+### Quick Reference
+```bash
+gh issue list --label "size:small"    # Filter by size
+gh issue close 123                     # Close manually
+gh issue edit 123 --add-label "..."   # Add labels
+```
+
 ## Configuration
 
 Gemini API key location (checked in order):

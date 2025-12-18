@@ -3,8 +3,6 @@ import {
   FileText,
   FolderOpen,
   BookmarkIcon,
-  Star,
-  BarChart3,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
@@ -12,8 +10,6 @@ import type { LeftTab } from '../../types';
 import { PromptsTab } from './PromptsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { LibraryTab } from './LibraryTab';
-import { FavoritesTab } from './FavoritesTab';
-import { PreferencesTab } from './PreferencesTab';
 import { SessionsPanel } from './SessionsPanel';
 import { InfoSection } from './InfoSection';
 
@@ -21,8 +17,6 @@ const tabs = [
   { id: 'prompts', label: 'Prompts', icon: <FileText size={14} /> },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} /> },
   { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} /> },
-  { id: 'favorites', label: 'Favorites', icon: <Star size={14} /> },
-  { id: 'preferences', label: 'Style', icon: <BarChart3 size={14} /> },
 ];
 
 export function LeftSidebar() {
@@ -63,8 +57,6 @@ export function LeftSidebar() {
             {leftTab === 'prompts' && <PromptsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'library' && <LibraryTab />}
-            {leftTab === 'favorites' && <FavoritesTab />}
-            {leftTab === 'preferences' && <PreferencesTab />}
           </motion.div>
         </AnimatePresence>
       </div>

@@ -94,7 +94,6 @@ SAFETY_LEVEL_OPTIONS = ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE
 class GenerateRequest(BaseModel):
     prompt: str
     title: str = ""
-    category: str = "Custom"
     count: int = 4  # Number of images to generate in parallel
     input_image_id: str | None = None  # For single image-to-image (legacy)
     context_image_ids: list[str] = []  # Multiple context images
@@ -169,21 +168,21 @@ class PromptVariation(BaseModel):
     context_reasoning: str | None = None  # Why these images were chosen
 
 
-class CaptionSuggestionResponse(BaseModel):
-    """Suggested caption improvement for a context image."""
+class AnnotationSuggestionResponse(BaseModel):
+    """Suggested annotation polish for a context image."""
     image_id: str
-    original_caption: str | None = None
-    suggested_caption: str
+    original_annotation: str | None = None
+    suggested_annotation: str
     reason: str
 
 
 class GeneratePromptsResponse(BaseModel):
-    """Response with prompt variations and optional caption suggestions."""
+    """Response with prompt variations and optional annotation suggestions."""
     success: bool
     variations: list[PromptVariation] = []
     base_prompt: str = ""
     generated_title: str | None = None  # Title from model (generated or refined from user's)
-    caption_suggestions: list[CaptionSuggestionResponse] = []  # Suggested caption improvements
+    annotation_suggestions: list[AnnotationSuggestionResponse] = []  # Suggested annotation polish
     error: str | None = None
 
 
@@ -193,7 +192,6 @@ class GenerateFromPromptsRequest(BaseModel):
     prompts: list[dict]  # [{ text: str, mood?: str }]
     context_image_ids: list[str] = []
     session_id: str | None = None
-    category: str = "Custom"
     base_prompt: str | None = None  # Original prompt that generated variations
     # Image generation parameters (validated)
     image_size: ImageSizeType | None = None
@@ -220,6 +218,104 @@ class GenerateFromPromptsRequest(BaseModel):
         return v
 
 
+# === Polish Prompts (Prompt Iteration Workflow) ===
+class VariationToPolish(BaseModel):
+    """A variation to be polished with user annotations."""
+    id: str
+    text: str
+    user_notes: str | None = None
+    mood: str | None = None
+    design: dict[str, list[str]] = {}
+    emphasized_tags: list[str] = []
+
+
+class PolishPromptsRequest(BaseModel):
+    """Request for polishing/refining prompt variations."""
+    base_prompt: str
+    variations: list[VariationToPolish]
+    context_image_ids: list[str] = []
+
+
+class PolishedVariationResponse(BaseModel):
+    """A single polished variation result."""
+    id: str
+    text: str
+    changes_made: str | None = None
+
+
+class PolishPromptsResponse(BaseModel):
+    """Response with polished variations."""
+    success: bool
+    polished_variations: list[PolishedVariationResponse] = []
+    error: str | None = None
+
+
+# === Polish Annotations (Image Annotation Refinement) ===
+class PolishAnnotationsRequest(BaseModel):
+    """Request for polishing image annotations."""
+    image_ids: list[str]
+
+
+class PolishedAnnotationItem(BaseModel):
+    """A single polished annotation result."""
+    image_id: str
+    original_annotation: str
+    polished_annotation: str
+
+
+class PolishAnnotationsResponse(BaseModel):
+    """Response with polished annotations."""
+    success: bool
+    polished: list[PolishedAnnotationItem] = []
+    skipped: list[str] = []  # Image IDs skipped (empty annotations)
+    error: str | None = None
+
+
+# === Design Dimension Analysis ===
+class DesignDimension(BaseModel):
+    """Rich AI-analyzed design dimension metadata."""
+    axis: str              # e.g., "lighting", "mood", "colors"
+    name: str              # Evocative name, e.g., "Eerie Green Cast"
+    description: str       # 2-3 sentence analysis
+    tags: list[str]        # Design vocabulary tags
+    generation_prompt: str # Prompt for generating pure concept image
+    source: Literal["auto", "user"] = "auto"  # How it was created
+    confirmed: bool = False  # User confirmed this suggestion
+
+
+class AnalyzeDimensionsRequest(BaseModel):
+    """Request for analyzing design dimensions of an image."""
+    image_id: str
+    count: int = 5  # Number of dimensions to suggest
+
+
+class AnalyzeDimensionsResponse(BaseModel):
+    """Response with suggested design dimensions."""
+    success: bool
+    dimensions: list[DesignDimension] = []
+    error: str | None = None
+
+
+class GenerateConceptRequest(BaseModel):
+    """Request for generating a concept image from a dimension."""
+    image_id: str  # Source image for context
+    dimension: DesignDimension
+    aspect_ratio: AspectRatioType = "1:1"
+
+
+class GenerateConceptResponse(BaseModel):
+    """Response with generated concept image."""
+    success: bool
+    prompt_id: str | None = None  # The new concept prompt
+    images: list[dict] = []
+    error: str | None = None
+
+
+class UpdateDimensionsRequest(BaseModel):
+    """Request for updating design dimensions on an image."""
+    dimensions: dict[str, DesignDimension]  # axis -> dimension
+
+
 # === Sessions ===
 class SessionRequest(BaseModel):
     name: str
@@ -242,14 +338,6 @@ class ToggleFavoriteRequest(BaseModel):
     image_id: str
 
 
-# === NEW: Templates (Prompt Library) ===
-class TemplateRequest(BaseModel):
-    name: str
-    prompt: str
-    category: str = "Custom"
-    tags: list[str] = []
-
-
 # === NEW: Batch Operations ===
 class BatchDeleteRequest(BaseModel):
     image_ids: list[str]
@@ -263,7 +351,7 @@ class BatchFavoriteRequest(BaseModel):
 # === Image Notes ===
 class ImageNotesRequest(BaseModel):
     notes: str = ""
-    caption: str = ""
+    annotation: str = ""
 
 
 # === Collections (Multi-Image Context) ===
@@ -395,9 +483,22 @@ def _flatten_design(design: dict) -> list[str]:
     return tags
 
 
+def _sanitize_filename(text: str, max_length: int = 40) -> str:
+    """Sanitize text for use in filename - remove special characters and limit length."""
+    import re
+    # Remove special characters, keep alphanumeric and spaces
+    sanitized = re.sub(r'[^\w\s-]', '', text)
+    # Replace spaces with hyphens and collapse multiple hyphens
+    sanitized = re.sub(r'[\s_]+', '-', sanitized)
+    sanitized = re.sub(r'-+', '-', sanitized)
+    # Remove leading/trailing hyphens and limit length
+    return sanitized.strip('-')[:max_length]
+
+
 async def _generate_single_image(
     prompt: str,
     index: int,
+    title: str = "image",
     context_images: list[tuple[bytes, str, str | None]] | None = None,
     image_size: str | None = None,
     aspect_ratio: str | None = None,
@@ -424,8 +525,11 @@ async def _generate_single_image(
         if not result.images:
             return {"success": False, "error": "No image generated by model"}
 
-        # Generate unique ID
-        image_id = f"img-{uuid.uuid4().hex[:8]}"
+        # Generate timestamp-based filename: yyyy-mm-dd-hh-mm-ss-title-number.ext
+        now = datetime.now()
+        timestamp = now.strftime("%Y-%m-%d-%H-%M-%S")
+        sanitized_title = _sanitize_filename(title)
+        image_id = f"{timestamp}-{sanitized_title}-{index + 1}"
 
         # Save image
         img_data = result.images[0]
@@ -441,7 +545,7 @@ async def _generate_single_image(
             "index": index,
             "image_path": img_filename,
             "mime_type": img_data["mime_type"],
-            "generated_at": datetime.now().isoformat(),
+            "generated_at": now.isoformat(),
             "varied_prompt": prompt,  # Store the actual prompt used for this image
         }
     except Exception as e:
@@ -462,39 +566,66 @@ def _find_image_by_id(metadata: dict, image_id: str) -> tuple[dict | None, Path 
     return None, None
 
 
-def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None]]:
-    """Load multiple context images. Returns list of (bytes, mime_type, caption) tuples."""
+def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None, dict | None]]:
+    """Load multiple context images with preference data.
+
+    Returns list of (bytes, mime_type, annotation, liked_axes) tuples.
+    liked_axes is a dict of axis -> list[str] for user-liked design tags.
+    """
     context_images = []
     for img_id in image_ids:
         img_data, img_path = _find_image_by_id(metadata, img_id)
         if img_data and img_path:
-            # Only send caption to API (notes are user workspace only)
-            caption = img_data.get("caption", "") or ""
-            context_desc = caption.strip() if caption else None
+            # Only send annotation to API (notes are user workspace only)
+            # Support both old "caption" field and new "annotation" field
+            annotation = img_data.get("annotation") or img_data.get("caption", "") or ""
+            context_desc = annotation.strip() if annotation else None
+
+            # Extract liked_axes preferences
+            liked_axes = img_data.get("liked_axes", {}) or None
+            if liked_axes and not any(liked_axes.values()):
+                liked_axes = None  # Don't include empty liked_axes
 
             context_images.append((
                 img_path.read_bytes(),
                 img_data.get("mime_type", "image/png"),
                 context_desc,
+                liked_axes,
             ))
     return context_images
 
 
-def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple[str, bytes, str, str | None]]:
+def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple[str, bytes, str, str | None, dict | None]]:
     """Load context images with IDs for per-variation assignment.
 
-    Returns list of (image_id, bytes, mime_type, caption) tuples.
+    Returns list of (image_id, bytes, mime_type, annotation, confirmed_dimensions) tuples.
+    confirmed_dimensions is a dict of axis -> DesignDimension for dimensions with confirmed=True.
     """
     pool = []
     for img_id in image_ids:
         img_data, img_path = _find_image_by_id(metadata, img_id)
         if img_data and img_path:
-            caption = img_data.get("caption", "") or ""
+            # Support both old "caption" field and new "annotation" field
+            annotation = img_data.get("annotation") or img_data.get("caption", "") or ""
+
+            # Extract confirmed design dimensions
+            confirmed_dims = None
+            design_dimensions = img_data.get("design_dimensions")
+            if design_dimensions:
+                confirmed_dims = {
+                    axis: dim
+                    for axis, dim in design_dimensions.items()
+                    if dim.get("confirmed", False)
+                }
+                if not confirmed_dims:
+                    confirmed_dims = None
+
             pool.append((
                 img_id,
                 img_path.read_bytes(),
                 img_data.get("mime_type", "image/png"),
-                caption.strip() if caption else None,
+                annotation.strip() if annotation else None,
+                confirmed_dims,
             ))
     return pool
 
@@ -502,6 +633,102 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
 # ============================================================
 # TWO-PHASE GENERATION: Prompt Variations → Image Generation
 # ============================================================
+
+@app.get("/api/generate-prompts/stream")
+async def generate_prompt_variations_stream(
+    prompt: str,
+    count: int = 4,
+    title: str | None = None,
+    context_image_ids: str | None = None,  # Comma-separated IDs
+):
+    """Stream prompt variation generation via Server-Sent Events.
+
+    Streams progress updates as chunks arrive, then sends the final parsed result.
+    Events:
+    - {"type": "chunk", "text": "..."} - Partial JSON text
+    - {"type": "complete", "variations": [...], ...} - Final parsed result
+    - {"type": "error", "error": "..."} - Error message
+    """
+    count = min(max(1, count), 10)
+
+    # Parse context_image_ids from comma-separated string
+    image_ids = []
+    if context_image_ids:
+        image_ids = [id.strip() for id in context_image_ids.split(",") if id.strip()]
+
+    logger.info(f"[SSE] Generate prompts stream: count={count}, prompt='{prompt[:50]}...', context_images={len(image_ids)}")
+
+    # Load context images as a pool with IDs
+    metadata = load_metadata()
+    context_image_pool = None
+    if image_ids:
+        context_image_pool = _load_context_image_pool(metadata, image_ids)
+        if context_image_pool:
+            logger.info(f"[SSE] Loaded {len(context_image_pool)} context image(s)")
+
+    async def event_generator():
+        try:
+            async for event in gemini.generate_prompt_variations_stream(
+                base_prompt=prompt,
+                count=count,
+                context_image_pool=context_image_pool,
+                title=title,
+            ):
+                if event["type"] == "chunk":
+                    # Stream partial text
+                    yield f"data: {json.dumps(event)}\n\n"
+                elif event["type"] == "complete":
+                    # Convert to response format
+                    variations = []
+                    for scene in event["scenes"][:count]:
+                        variations.append({
+                            "id": f"var-{uuid.uuid4().hex[:8]}",
+                            "text": scene["description"],
+                            "mood": scene["mood"],
+                            "type": scene["type"],
+                            "design": scene.get("design", {}),
+                            "recommended_context_ids": scene.get("recommended_context_ids", []),
+                            "context_reasoning": scene.get("context_reasoning"),
+                        })
+
+                    # Convert annotation suggestions
+                    annotation_suggestions = []
+                    if event.get("annotation_suggestions"):
+                        annotation_map = {img_id: ann for img_id, _, _, ann, _ in (context_image_pool or [])}
+                        for sug in event["annotation_suggestions"]:
+                            annotation_suggestions.append({
+                                "image_id": sug["image_id"],
+                                "original_annotation": annotation_map.get(sug["image_id"]) or sug.get("original_annotation"),
+                                "suggested_annotation": sug["suggested_annotation"],
+                                "reason": sug["reason"],
+                            })
+
+                    response = {
+                        "type": "complete",
+                        "success": True,
+                        "variations": variations,
+                        "base_prompt": prompt,
+                        "generated_title": event["title"],
+                        "annotation_suggestions": annotation_suggestions,
+                    }
+                    yield f"data: {json.dumps(response)}\n\n"
+                elif event["type"] == "error":
+                    yield f"data: {json.dumps({'type': 'error', 'success': False, 'error': event['error']})}\n\n"
+
+        except Exception as e:
+            logger.error(f"[SSE] Stream error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'success': False, 'error': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # Disable nginx buffering
+        },
+    )
+
 
 @app.post("/api/generate-prompts", response_model=GeneratePromptsResponse)
 async def generate_prompt_variations(req: GeneratePromptsRequest):
@@ -511,7 +738,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     Returns text variations that the user can review, edit, and select
     before committing to image generation.
 
-    If context_image_ids are provided, the images and their captions are
+    If context_image_ids are provided, the images and their annotations are
     passed to the model. The model assigns specific images to each variation
     via recommended_context_ids for targeted image generation.
     """
@@ -525,15 +752,15 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     if req.context_image_ids:
         context_image_pool = _load_context_image_pool(metadata, req.context_image_ids)
         if context_image_pool:
-            pool_summary = [(img_id, caption[:30] if caption else "(no caption)") for img_id, _, _, caption in context_image_pool]
+            pool_summary = [(img_id, ann[:30] if ann else "(no annotation)") for img_id, _, _, ann, _ in context_image_pool]
             logger.info(f"[CONTEXT TRACE] Phase 1 - Loaded {len(context_image_pool)} context image(s) as pool:")
-            for img_id, caption_preview in pool_summary:
-                logger.info(f"  - {img_id}: {caption_preview}...")
+            for img_id, ann_preview in pool_summary:
+                logger.info(f"  - {img_id}: {ann_preview}...")
 
     try:
         # Use structured output for guaranteed JSON response
         logger.info(f"Generating {count} prompt variations (structured output)...")
-        generated_title, scene_variations, caption_suggestions = await gemini.generate_prompt_variations(
+        generated_title, scene_variations, annotation_suggestions = await gemini.generate_prompt_variations(
             base_prompt=req.prompt,
             count=count,
             context_image_pool=context_image_pool,
@@ -564,16 +791,16 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
                 context_reasoning=scene.context_reasoning,
             ))
 
-        # Convert caption suggestions if present
-        caption_suggestion_responses = []
-        if caption_suggestions:
-            # Build a map of image_id -> original caption from the pool
-            caption_map = {img_id: caption for img_id, _, _, caption in (context_image_pool or [])}
-            for sug in caption_suggestions:
-                caption_suggestion_responses.append(CaptionSuggestionResponse(
+        # Convert annotation suggestions if present
+        annotation_suggestion_responses = []
+        if annotation_suggestions:
+            # Build a map of image_id -> original annotation from the pool
+            annotation_map = {img_id: ann for img_id, _, _, ann, _ in (context_image_pool or [])}
+            for sug in annotation_suggestions:
+                annotation_suggestion_responses.append(AnnotationSuggestionResponse(
                     image_id=sug.image_id,
-                    original_caption=caption_map.get(sug.image_id) or sug.original_caption,
-                    suggested_caption=sug.suggested_caption,
+                    original_annotation=annotation_map.get(sug.image_id) or sug.original_annotation,
+                    suggested_annotation=sug.suggested_annotation,
                     reason=sug.reason,
                 ))
 
@@ -589,7 +816,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
             variations=variations,
             base_prompt=req.prompt,
             generated_title=generated_title,
-            caption_suggestions=caption_suggestion_responses,
+            annotation_suggestions=annotation_suggestion_responses,
         )
 
     except Exception as e:
@@ -619,7 +846,7 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
 
     metadata = load_metadata()
 
-    # Build a map of image_id -> (bytes, mime_type, caption) for per-variation lookup
+    # Build a map of image_id -> (bytes, mime_type, annotation) for per-variation lookup
     context_image_map: dict[str, tuple[bytes, str, str | None]] = {}
     all_context_ids = set(req.context_image_ids)
     # Also collect any per-prompt recommended_context_ids
@@ -631,11 +858,12 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         if img_id not in context_image_map:
             img_data, img_path = _find_image_by_id(metadata, img_id)
             if img_data and img_path:
-                caption = img_data.get("caption", "") or ""
+                # Support both old "caption" field and new "annotation" field
+                annotation = img_data.get("annotation") or img_data.get("caption", "") or ""
                 context_image_map[img_id] = (
                     img_path.read_bytes(),
                     img_data.get("mime_type", "image/png"),
-                    caption.strip() if caption else None,
+                    annotation.strip() if annotation else None,
                 )
 
     # Global fallback context images
@@ -666,14 +894,15 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
             ]
             logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: using {len(variation_context)} per-variation context: {per_var_ids}")
         else:
-            variation_context = global_context_images
-            if variation_context:
-                logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: using {len(variation_context)} GLOBAL context (no per-variation)")
+            # No per-variation context assigned - use no context (not global fallback)
+            variation_context = None
+            logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: no per-variation context assigned, using 0 context images")
 
         tasks.append(
             _generate_single_image(
                 prompt_data.get("text", ""),
                 i,
+                title=req.title,
                 context_images=variation_context,
                 image_size=req.image_size,
                 aspect_ratio=req.aspect_ratio,
@@ -718,7 +947,6 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         "id": prompt_id,
         "prompt": combined_prompt,
         "title": req.title or "Untitled",
-        "category": req.category,
         "context_image_ids": req.context_image_ids,
         "session_id": req.session_id,
         "created_at": datetime.now().isoformat(),
@@ -738,6 +966,161 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         images=images,
         errors=errors,
     )
+
+
+@app.post("/api/polish-prompts", response_model=PolishPromptsResponse)
+async def polish_prompt_variations(req: PolishPromptsRequest):
+    """Polish/refine prompt variations with user feedback.
+
+    Takes variations with user notes and emphasized tags, and uses AI
+    to rewrite them into clean, detailed image generation prompts.
+    This is part of the prompt iteration workflow.
+    """
+    if not req.variations:
+        return PolishPromptsResponse(success=False, error="No variations provided")
+
+    logger.info(f"Polish prompts request: {len(req.variations)} variations, context_images={len(req.context_image_ids)}")
+
+    # Load context images if provided
+    metadata = load_metadata()
+    context_images = None
+    if req.context_image_ids:
+        context_images = _load_context_images(metadata, req.context_image_ids)
+        if context_images:
+            logger.info(f"Loaded {len(context_images)} context images for polish")
+
+    try:
+        # Convert request variations to dict format for gemini service
+        variations_to_polish = [
+            {
+                "id": v.id,
+                "text": v.text,
+                "user_notes": v.user_notes,
+                "mood": v.mood,
+                "design": v.design,
+                "emphasized_tags": v.emphasized_tags,
+            }
+            for v in req.variations
+        ]
+
+        # Call gemini service to polish
+        polished = await gemini.polish_prompts(
+            base_prompt=req.base_prompt,
+            variations=variations_to_polish,
+            context_images=context_images,
+        )
+
+        # Convert to response model
+        polished_variations = [
+            PolishedVariationResponse(
+                id=p.id,
+                text=p.text,
+                changes_made=p.changes_made,
+            )
+            for p in polished
+        ]
+
+        logger.info(f"Successfully polished {len(polished_variations)} variations")
+
+        return PolishPromptsResponse(
+            success=True,
+            polished_variations=polished_variations,
+        )
+
+    except Exception as e:
+        logger.error(f"Polish prompts failed: {e}")
+        return PolishPromptsResponse(
+            success=False,
+            error=str(e),
+        )
+
+
+@app.post("/api/polish-annotations", response_model=PolishAnnotationsResponse)
+async def polish_image_annotations(req: PolishAnnotationsRequest):
+    """Polish/refine image annotations for better AI context.
+
+    - Skips images with empty annotations (respects user choice not to annotate)
+    - Refines existing text to be more precise and evocative
+    - Preserves user's intent while improving clarity
+    - Uses fast text model for quick turnaround
+    """
+    if not req.image_ids:
+        return PolishAnnotationsResponse(success=False, error="No image IDs provided")
+
+    logger.info(f"Polish annotations request: {len(req.image_ids)} images")
+
+    metadata = load_metadata()
+
+    # Collect annotations to polish (skip empty)
+    to_polish = []
+    skipped = []
+
+    for image_id in req.image_ids:
+        img_data, img_path = _find_image_by_id(metadata, image_id)
+        if not img_data:
+            skipped.append(image_id)
+            continue
+
+        # Support both old "caption" field and new "annotation" field
+        annotation = (img_data.get("annotation") or img_data.get("caption", "") or "").strip()
+        if not annotation:
+            skipped.append(image_id)
+            continue
+
+        to_polish.append({
+            "image_id": image_id,
+            "annotation": annotation,
+            "image_path": img_path,
+        })
+
+    if not to_polish:
+        return PolishAnnotationsResponse(
+            success=True,
+            polished=[],
+            skipped=skipped,
+        )
+
+    try:
+        # Polish annotations using gemini service
+        polished_results = await gemini.polish_annotations(to_polish)
+
+        # Update metadata with polished annotations
+        for item in polished_results:
+            for prompt in metadata.get("prompts", []):
+                for img in prompt.get("images", []):
+                    if img["id"] == item.image_id:
+                        img["annotation"] = item.polished_annotation
+                        # Remove old "caption" field if present (migration)
+                        img.pop("caption", None)
+                        break
+
+        save_metadata(metadata)
+
+        # Convert to response format
+        polished_response = [
+            PolishedAnnotationItem(
+                image_id=item.image_id,
+                original_annotation=item.original_annotation,
+                polished_annotation=item.polished_annotation,
+            )
+            for item in polished_results
+        ]
+
+        logger.info(f"Successfully polished {len(polished_response)} annotations, skipped {len(skipped)}")
+
+        return PolishAnnotationsResponse(
+            success=True,
+            polished=polished_response,
+            skipped=skipped,
+        )
+
+    except Exception as e:
+        logger.error(f"Polish annotations failed: {e}")
+        return PolishAnnotationsResponse(
+            success=False,
+            error=str(e),
+            skipped=skipped,
+        )
 
 
 # ============================================================
@@ -807,10 +1190,12 @@ async def generate_images(req: GenerateRequest):
         return PromptResponse(success=False, errors=[f"Failed to generate variations: {str(e)}"])
 
     # === Step 2: Generate images from varied prompts in parallel ===
+    title = req.title or "Untitled"
     tasks = [
         _generate_single_image(
             var["description"],
             i,
+            title=title,
             context_images=context_images,
             image_size=req.image_size,
             aspect_ratio=req.aspect_ratio,
@@ -852,7 +1237,6 @@ async def generate_images(req: GenerateRequest):
         "id": prompt_id,
         "prompt": req.prompt,
         "title": req.title or "Untitled",
-        "category": req.category,
         "input_image_id": req.input_image_id,  # Legacy single image
         "context_image_ids": context_image_ids,  # All context images used
         "collection_id": req.collection_id,  # Collection used as context
@@ -981,23 +1365,25 @@ async def delete_image(image_id: str):
 
 @app.patch("/api/images/{image_id}/notes")
 async def update_image_notes(image_id: str, req: ImageNotesRequest):
-    """Update notes and/or caption for an image."""
+    """Update notes and/or annotation for an image."""
     metadata = load_metadata()
 
     for prompt in metadata.get("prompts", []):
         for img in prompt.get("images", []):
             if img["id"] == image_id:
-                # Update notes and caption
+                # Update notes and annotation
                 if req.notes is not None:
                     img["notes"] = req.notes
-                if req.caption is not None:
-                    img["caption"] = req.caption
+                if req.annotation is not None:
+                    img["annotation"] = req.annotation
+                    # Remove old "caption" field if present (migration)
+                    img.pop("caption", None)
 
                 save_metadata(metadata)
                 return {
                     "id": image_id,
                     "notes": img.get("notes", ""),
-                    "caption": img.get("caption", ""),
+                    "annotation": img.get("annotation") or img.get("caption", ""),
                 }
 
     raise HTTPException(status_code=404, detail="Image not found")
@@ -1007,7 +1393,6 @@ async def update_image_notes(image_id: str, req: ImageNotesRequest):
 async def upload_images(
     files: list[UploadFile] = File(...),
     title: str = Form("Uploaded Images"),
-    category: str = Form("Custom"),
 ):
     """Upload custom images to create a new prompt."""
     if not files:
@@ -1046,7 +1431,6 @@ async def upload_images(
         "id": prompt_id,
         "title": title,
         "prompt": f"Uploaded {len(images)} image(s)",
-        "category": category,
         "created_at": datetime.now().isoformat(),
         "images": images,
     }
@@ -1116,7 +1500,6 @@ async def list_images():
                 **img,
                 "prompt": prompt["prompt"],
                 "title": prompt["title"],
-                "category": prompt["category"],
                 "use_for": "User-generated image",
                 "prompt_id": prompt["id"],
             })
@@ -1124,67 +1507,7 @@ async def list_images():
 
 
 # ============================================================
-# FEATURE 1: Prompt Library (Templates)
-# ============================================================
-
-@app.get("/api/templates")
-async def list_templates():
-    """List all prompt templates."""
-    metadata = load_metadata()
-    return {"templates": metadata.get("templates", [])}
-
-
-@app.post("/api/templates")
-async def create_template(req: TemplateRequest):
-    """Create a new prompt template."""
-    metadata = load_metadata()
-    if "templates" not in metadata:
-        metadata["templates"] = []
-
-    template_id = f"tpl-{uuid.uuid4().hex[:8]}"
-    template = {
-        "id": template_id,
-        "name": req.name,
-        "prompt": req.prompt,
-        "category": req.category,
-        "tags": req.tags,
-        "created_at": datetime.now().isoformat(),
-        "use_count": 0,
-    }
-    metadata["templates"].append(template)
-    save_metadata(metadata)
-    logger.info(f"Created template: {template_id} - {req.name}")
-    return {"success": True, "template": template}
-
-
-@app.delete("/api/templates/{template_id}")
-async def delete_template(template_id: str):
-    """Delete a prompt template."""
-    metadata = load_metadata()
-    templates = metadata.get("templates", [])
-    for i, tpl in enumerate(templates):
-        if tpl["id"] == template_id:
-            templates.pop(i)
-            save_metadata(metadata)
-            return {"success": True}
-    raise HTTPException(status_code=404, detail="Template not found")
-
-
-@app.post("/api/templates/{template_id}/use")
-async def use_template(template_id: str):
-    """Increment use count for a template."""
-    metadata = load_metadata()
-    for tpl in metadata.get("templates", []):
-        if tpl["id"] == template_id:
-            tpl["use_count"] = tpl.get("use_count", 0) + 1
-            tpl["last_used"] = datetime.now().isoformat()
-            save_metadata(metadata)
-            return {"success": True, "template": tpl}
-    raise HTTPException(status_code=404, detail="Template not found")
-
-
-# ============================================================
-# FEATURE 1b: Design Library (Fragments, Presets, Templates)
+# Design Library (Fragments, Presets, Templates)
 # ============================================================
 
 class LibraryItemRequest(BaseModel):
@@ -1196,6 +1519,13 @@ class LibraryItemRequest(BaseModel):
     prompt: str | None = None  # For templates
     category: str = ""
     tags: list[str] = []
+
+
+class ExtractDesignTokenRequest(BaseModel):
+    """Request for extracting a design token from an image."""
+    image_id: str
+    annotation: str | None = None  # Override image's annotation
+    liked_tags: list[str] | None = None  # Override image's liked_axes
 
 
 @app.get("/api/library")
@@ -1268,6 +1598,91 @@ async def use_library_item(item_id: str):
     raise HTTPException(status_code=404, detail="Library item not found")
 
 
+@app.post("/api/extract-design-token")
+async def extract_design_token(req: ExtractDesignTokenRequest):
+    """Extract a reusable design token from an image.
+
+    Uses the user's annotation and liked tags to generate a condensed prompt
+    fragment that captures what they appreciate about the image.
+    """
+    metadata = load_metadata()
+
+    # Find the image and its parent prompt
+    img_data = None
+    prompt_id = None
+    img_path = None
+
+    for prompt_data in metadata.get("prompts", []):
+        for img in prompt_data.get("images", []):
+            if img["id"] == req.image_id:
+                img_data = img
+                prompt_id = prompt_data["id"]
+                img_path = IMAGES_DIR / img["image_path"]
+                break
+        if img_data:
+            break
+
+    if not img_data:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Get annotation: explicit > from image
+    annotation = req.annotation
+    if annotation is None:
+        annotation = img_data.get("annotation") or img_data.get("caption", "")
+
+    # Get liked_tags: explicit > flattened from liked_axes
+    liked_tags = req.liked_tags
+    if liked_tags is None:
+        liked_axes = img_data.get("liked_axes", {})
+        liked_tags = []
+        for axis, tags in liked_axes.items():
+            liked_tags.extend(tags)
+
+    # Extract design token using Gemini
+    try:
+        image_bytes = img_path.read_bytes()
+        mime_type = img_data.get("mime_type", "image/png")
+
+        extraction = await gemini.extract_design_token(
+            image_bytes=image_bytes,
+            image_mime_type=mime_type,
+            annotation=annotation,
+            liked_tags=liked_tags,
+        )
+
+        # Create library item
+        if "library" not in metadata:
+            metadata["library"] = []
+
+        item_id = f"lib-{uuid.uuid4().hex[:8]}"
+        item = {
+            "id": item_id,
+            "type": "design-token",
+            "name": extraction.name,
+            "text": extraction.text,
+            "style_tags": extraction.style_tags,
+            "category": extraction.category,
+            "source_image_id": req.image_id,
+            "source_prompt_id": prompt_id,
+            "extracted_from": {
+                "annotation": annotation if annotation else None,
+                "liked_tags": liked_tags if liked_tags else None,
+            },
+            "created_at": datetime.now().isoformat(),
+            "use_count": 0,
+        }
+
+        metadata["library"].append(item)
+        save_metadata(metadata)
+        logger.info(f"Extracted design token: {item_id} - {extraction.name}")
+
+        return {"success": True, "item": item}
+
+    except Exception as e:
+        logger.error(f"Design token extraction failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
 # ============================================================
 # FEATURE 2: Export & Share
 # ============================================================
@@ -1330,7 +1745,6 @@ async def export_gallery_html():
                     "image_path": img["image_path"],
                     "title": prompt["title"],
                     "prompt": prompt["prompt"],
-                    "category": prompt["category"],
                 })
 
     # Generate HTML
@@ -1467,9 +1881,10 @@ async def generate_more_like_this(image_id: str, count: int = 4):
     if not img_path.exists():
         raise HTTPException(status_code=404, detail="Image file not found")
 
-    # Only send caption to API (notes are user workspace only)
-    caption = source_img.get("caption", "") or ""
-    context_desc = caption.strip() if caption else None
+    # Only send annotation to API (notes are user workspace only)
+    # Support both old "caption" field and new "annotation" field
+    annotation = source_img.get("annotation") or source_img.get("caption", "") or ""
+    context_desc = annotation.strip() if annotation else None
 
     context_images = [(
         img_path.read_bytes(),
@@ -1509,10 +1924,12 @@ async def generate_more_like_this(image_id: str, count: int = 4):
     settings = metadata.get("settings", {})
 
     # === Step 2: Generate images from varied prompts in parallel ===
+    iteration_title = f"Variations of {source_prompt['title']}"
     tasks = [
         _generate_single_image(
             var["description"],
             i,
+            title=iteration_title,
             context_images=context_images,
             image_size=settings.get("image_size"),
             aspect_ratio=settings.get("aspect_ratio"),
@@ -1554,7 +1971,6 @@ async def generate_more_like_this(image_id: str, count: int = 4):
         "id": prompt_id,
         "prompt": base_variation_prompt,  # Use base prompt, not system prompt
         "title": f"Variations of {source_prompt['title']}",
-        "category": source_prompt["category"],
         "input_image_id": image_id,
         "parent_prompt_id": source_prompt["id"],
         "created_at": datetime.now().isoformat(),
@@ -1661,10 +2077,12 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
     settings = metadata.get("settings", {})
 
     # Generate new images
+    regen_title = target_prompt.get("title", "Untitled")
     tasks = [
         _generate_single_image(
             target_prompt["prompt"],
             i,
+            title=regen_title,
             context_images=context_images,
             image_size=settings.get("image_size"),
             aspect_ratio=settings.get("aspect_ratio"),
@@ -2095,10 +2513,6 @@ async def toggle_axis_like(image_id: str, req: LikeAxisRequest):
 
     liked_axes is now a dict of string arrays: { axis: ["tag1", "tag2"] }
     """
-    valid_axes = ["typeface", "colors", "layout", "mood", "composition", "style"]
-    if req.axis not in valid_axes:
-        raise HTTPException(status_code=400, detail=f"Invalid axis. Must be one of: {valid_axes}")
-
     metadata = load_metadata()
 
     for prompt in metadata.get("prompts", []):
@@ -2129,6 +2543,152 @@ async def toggle_axis_like(image_id: str, req: LikeAxisRequest):
     raise HTTPException(status_code=404, detail="Image not found")
 
 
+# === Design Dimension Analysis ===
+
+@app.post("/api/analyze-dimensions", response_model=AnalyzeDimensionsResponse)
+async def analyze_dimensions(req: AnalyzeDimensionsRequest):
+    """Analyze an image and suggest design dimensions.
+
+    Uses fast text model (gemini-3-flash-preview) to analyze the image
+    and suggest distinctive design dimensions that could be used as
+    generation context or for concept image creation.
+    """
+    # Find the image and load its bytes
+    metadata = load_metadata()
+    image_bytes = None
+    image_path = None
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == req.image_id:
+                image_path = IMAGES_DIR / img["image_path"]
+                break
+        if image_path:
+            break
+
+    if not image_path or not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    image_bytes = image_path.read_bytes()
+
+    try:
+        dimensions_raw = await gemini.analyze_dimensions(image_bytes, count=req.count)
+
+        # Convert to DesignDimension models with default source/confirmed
+        dimensions = [
+            DesignDimension(
+                axis=d.get("axis", ""),
+                name=d.get("name", ""),
+                description=d.get("description", ""),
+                tags=d.get("tags", []),
+                generation_prompt=d.get("generation_prompt", ""),
+                source="auto",
+                confirmed=False,
+            )
+            for d in dimensions_raw
+        ]
+
+        return AnalyzeDimensionsResponse(success=True, dimensions=dimensions)
+    except Exception as e:
+        logger.error(f"Dimension analysis failed: {e}")
+        return AnalyzeDimensionsResponse(success=False, error=str(e))
+
+
+@app.post("/api/generate-concept", response_model=GenerateConceptResponse)
+async def generate_concept(req: GenerateConceptRequest):
+    """Generate a concept image for a design dimension.
+
+    Creates an abstract image that purely embodies the given design dimension,
+    without recognizable objects or scenes. The concept image can be used as
+    a design reference or mood sample.
+    """
+    try:
+        # Generate the concept image
+        result = await gemini.generate_concept_image(
+            dimension=req.dimension.model_dump(),
+            aspect_ratio=req.aspect_ratio,
+        )
+
+        if not result.images:
+            return GenerateConceptResponse(success=False, error="No image generated")
+
+        # Save the image and create a prompt entry
+        generated_at = datetime.now().isoformat()
+        image_id = str(uuid.uuid4())
+        prompt_id = str(uuid.uuid4())
+
+        # Save image file
+        image_data = result.images[0]
+        image_bytes = base64.b64decode(image_data["base64"])
+        filename = f"{image_id}.jpg"
+        image_path = IMAGES_DIR / filename
+        image_path.write_bytes(image_bytes)
+
+        # Create image entry
+        image_entry = {
+            "id": image_id,
+            "image_path": filename,
+            "mime_type": image_data.get("mime_type", "image/jpeg"),
+            "generated_at": generated_at,
+            "varied_prompt": req.dimension.generation_prompt,
+        }
+
+        # Create concept prompt entry
+        prompt_entry = {
+            "id": prompt_id,
+            "prompt": req.dimension.generation_prompt,
+            "title": f"Concept: {req.dimension.name}",
+            "created_at": generated_at,
+            "images": [image_entry],
+            "is_concept": True,
+            "concept_axis": req.dimension.axis,
+            "source_image_id": req.image_id,
+        }
+
+        # Save to metadata
+        metadata = load_metadata()
+        if "prompts" not in metadata:
+            metadata["prompts"] = []
+        metadata["prompts"].insert(0, prompt_entry)
+        save_metadata(metadata)
+
+        logger.info(f"Generated concept '{req.dimension.name}' ({req.dimension.axis})")
+        return GenerateConceptResponse(
+            success=True,
+            prompt_id=prompt_id,
+            images=[image_entry],
+        )
+    except Exception as e:
+        logger.error(f"Concept generation failed: {e}")
+        return GenerateConceptResponse(success=False, error=str(e))
+
+
+@app.patch("/api/images/{image_id}/dimensions")
+async def update_dimensions(image_id: str, req: UpdateDimensionsRequest):
+    """Update design dimensions for an image.
+
+    Used to:
+    - Confirm auto-suggested dimensions
+    - Edit dimension metadata
+    - Add user-created dimensions
+    """
+    metadata = load_metadata()
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == image_id:
+                # Convert Pydantic models to dicts for JSON storage
+                img["design_dimensions"] = {
+                    axis: dim.model_dump()
+                    for axis, dim in req.dimensions.items()
+                }
+                save_metadata(metadata)
+                logger.info(f"Updated design dimensions for {image_id}")
+                return {"id": image_id, "design_dimensions": img["design_dimensions"]}
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
 @app.get("/api/preferences")
 async def get_design_preferences():
     """Get aggregated design preferences across all rated images.
@@ -2138,15 +2698,8 @@ async def get_design_preferences():
     """
     metadata = load_metadata()
 
-    # Initialize preference counters
-    preferences = {
-        "typeface": {},
-        "colors": {},
-        "layout": {},
-        "mood": {},
-        "composition": {},
-        "style": {},
-    }
+    # Dynamically collect preferences from liked_axes
+    preferences = {}
     total_rated = 0
 
     # Aggregate preferences from all images
@@ -2159,12 +2712,14 @@ async def get_design_preferences():
             for axis, tags in liked_axes.items():
                 if isinstance(tags, list) and len(tags) > 0:
                     has_likes = True
+                    # Dynamically create axis entry if needed
+                    if axis not in preferences:
+                        preferences[axis] = {}
                     # Count each liked tag
                     for tag in tags:
-                        if axis in preferences:
-                            if tag not in preferences[axis]:
-                                preferences[axis][tag] = 0
-                            preferences[axis][tag] += 1
+                        if tag not in preferences[axis]:
+                            preferences[axis][tag] = 0
+                        preferences[axis][tag] += 1
 
             if has_likes:
                 total_rated += 1
@@ -2419,6 +2974,15 @@ async def update_settings(req: SettingsRequest):
     save_metadata(metadata)
     logger.info("Updated settings")
     return {"success": True}
+
+
+@app.get("/api/settings/defaults")
+async def get_default_settings():
+    """Get the default system prompts from the prompt files."""
+    return {
+        "variation_prompt": config.load_variation_prompt(),
+        "iteration_prompt": config.load_iteration_prompt(),
+    }
 
 
 # Serve static files

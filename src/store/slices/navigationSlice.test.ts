@@ -60,8 +60,8 @@ describe('navigationSlice', () => {
 
   describe('setLeftTab', () => {
     it('updates leftTab', () => {
-      slice.setLeftTab('favorites')
-      expect(slice.leftTab).toBe('favorites')
+      slice.setLeftTab('collections')
+      expect(slice.leftTab).toBe('collections')
     })
   })
 

@@ -12,6 +12,9 @@ from pathlib import Path
 # =============================================================================
 DEFAULT_TEXT_MODEL = "gemini-3-pro-preview"
 DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview"
+DEFAULT_FAST_TEXT_MODEL = (
+    "gemini-3-flash-preview"  # Fast model for analysis and polish operations
+)
 
 # =============================================================================
 # Paths
@@ -20,6 +23,7 @@ BACKEND_DIR = Path(__file__).parent
 PROMPTS_DIR = BACKEND_DIR / "prompts"
 GENERATED_IMAGES_DIR = BACKEND_DIR.parent / "generated_images"
 METADATA_FILE = BACKEND_DIR.parent / "metadata.json"
+
 
 # =============================================================================
 # API Key Loading
@@ -58,6 +62,7 @@ def get_gemini_api_key() -> str:
     raise ValueError(
         "Gemini API key not found. Set GEMINI_API_KEY env var or create ~/.gemini/apikey.txt"
     )
+
 
 # =============================================================================
 # Prompt Loading

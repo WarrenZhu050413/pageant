@@ -1,6 +1,5 @@
 import type {
   Prompt,
-  Template,
   Collection,
   Story,
   Settings,
@@ -11,11 +10,19 @@ import type {
   LikedAxes,
   DesignPreferences,
   DesignAxis,
+  DesignDimension,
   LibraryItem,
   LibraryItemType,
   GeneratePromptsRequest,
   GeneratePromptsResponse,
   GenerateFromPromptsRequest,
+  PolishPromptsRequest,
+  PolishPromptsResponse,
+  PolishAnnotationsResponse,
+  AnalyzeDimensionsResponse,
+  GenerateConceptResponse,
+  ExtractDesignTokenRequest,
+  ExtractDesignTokenResponse,
 } from '../types';
 import {
   request,
@@ -55,6 +62,73 @@ export async function generatePromptVariations(
   });
 }
 
+// Streaming prompt generation via Server-Sent Events
+export interface StreamEvent {
+  type: 'chunk' | 'complete' | 'error';
+  text?: string;  // For chunk events
+  success?: boolean;
+  variations?: GeneratePromptsResponse['variations'];
+  base_prompt?: string;
+  generated_title?: string;
+  annotation_suggestions?: GeneratePromptsResponse['annotation_suggestions'];
+  error?: string;
+}
+
+export async function* generatePromptVariationsStream(
+  data: GeneratePromptsRequest
+): AsyncGenerator<StreamEvent> {
+  const params = new URLSearchParams({
+    prompt: data.prompt,
+    count: String(data.count || 4),
+  });
+  if (data.title) params.append('title', data.title);
+  if (data.context_image_ids?.length) {
+    params.append('context_image_ids', data.context_image_ids.join(','));
+  }
+
+  const response = await fetch(`/api/generate-prompts/stream?${params}`);
+
+  if (!response.ok) {
+    yield { type: 'error', error: `HTTP ${response.status}` };
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    yield { type: 'error', error: 'No response body' };
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events from buffer
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';  // Keep incomplete line in buffer
+
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const event = JSON.parse(line.slice(6)) as StreamEvent;
+            yield event;
+          } catch {
+            // Skip malformed JSON
+          }
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 export async function generateFromPrompts(
   data: GenerateFromPromptsRequest
 ): Promise<GenerateResponse> {
@@ -64,15 +138,34 @@ export async function generateFromPrompts(
   });
 }
 
+export async function polishPrompts(
+  data: PolishPromptsRequest
+): Promise<PolishPromptsResponse> {
+  return request<PolishPromptsResponse>('/polish-prompts', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
 // Images
 export async function updateImageNotes(
   imageId: string,
   notes: string,
-  caption?: string
+  annotation?: string
 ): Promise<void> {
   await request(`/images/${imageId}/notes`, {
     method: 'PATCH',
-    body: JSON.stringify({ notes, caption }),
+    body: JSON.stringify({ notes, annotation }),
+  });
+}
+
+// Polish Annotations
+export async function polishAnnotations(
+  imageIds: string[]
+): Promise<PolishAnnotationsResponse> {
+  return request<PolishAnnotationsResponse>('/polish-annotations', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
   });
 }
 
@@ -115,26 +208,6 @@ export async function batchDeletePrompts(
   });
 }
 
-// Templates
-export const fetchTemplates = makeListFetcher<Template>('/templates', 'templates');
-export const deleteTemplate = makeDeleteFetcher('/templates');
-
-export async function createTemplate(data: {
-  name: string;
-  prompt: string;
-  category: string;
-  tags: string[];
-}): Promise<Template> {
-  return request<Template>('/templates', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function useTemplate(id: string): Promise<void> {
-  await request(`/templates/${id}/use`, { method: 'POST' });
-}
-
 // Design Library
 export const fetchLibraryItems = makeListFetcher<LibraryItem>('/library', 'items');
 export const deleteLibraryItem = makeDeleteFetcher('/library');
@@ -159,6 +232,16 @@ export async function createLibraryItem(data: {
 export async function useLibraryItem(id: string): Promise<LibraryItem> {
   const response = await request<{ item: LibraryItem }>(`/library/${id}/use`, { method: 'POST' });
   return response.item;
+}
+
+// Design Token Extraction
+export async function extractDesignToken(
+  data: ExtractDesignTokenRequest
+): Promise<ExtractDesignTokenResponse> {
+  return request<ExtractDesignTokenResponse>('/extract-design-token', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
 }
 
 // Collections
@@ -240,6 +323,13 @@ export const deleteStory = makeDeleteFetcher('/stories');
 // Settings
 export const fetchSettings = makeItemFetcher<Settings>('/settings');
 
+export async function fetchDefaultSettings(): Promise<{
+  variation_prompt: string;
+  iteration_prompt: string;
+}> {
+  return request<{ variation_prompt: string; iteration_prompt: string }>('/settings/defaults');
+}
+
 export async function updateSettings(settings: {
   variation_prompt: string;
   iteration_prompt?: string;
@@ -320,6 +410,55 @@ export async function resetDesignPreferences(): Promise<{
   cleared_count: number;
 }> {
   return request('/preferences/reset', { method: 'POST' });
+}
+
+// Design Dimension Analysis
+export async function analyzeDimensions(
+  imageId: string,
+  count: number = 5
+): Promise<AnalyzeDimensionsResponse> {
+  return request<AnalyzeDimensionsResponse>('/analyze-dimensions', {
+    method: 'POST',
+    body: JSON.stringify({ image_id: imageId, count }),
+  });
+}
+
+export async function generateConcept(
+  imageId: string,
+  dimension: DesignDimension,
+  aspectRatio: string = '1:1'
+): Promise<GenerateConceptResponse> {
+  return request<GenerateConceptResponse>('/generate-concept', {
+    method: 'POST',
+    body: JSON.stringify({
+      image_id: imageId,
+      dimension,
+      aspect_ratio: aspectRatio,
+    }),
+  });
+}
+
+export async function updateImageDimensions(
+  imageId: string,
+  dimensions: Record<string, DesignDimension>
+): Promise<{ id: string; design_dimensions: Record<string, DesignDimension> }> {
+  return request(`/images/${imageId}/dimensions`, {
+    method: 'PATCH',
+    body: JSON.stringify({ dimensions }),
+  });
+}
+
+export async function confirmDimension(
+  imageId: string,
+  axis: string,
+  dimensions: Record<string, DesignDimension>
+): Promise<{ id: string; design_dimensions: Record<string, DesignDimension> }> {
+  // Update the specific dimension to set confirmed: true
+  const updated = { ...dimensions };
+  if (updated[axis]) {
+    updated[axis] = { ...updated[axis], confirmed: true };
+  }
+  return updateImageDimensions(imageId, updated);
 }
 
 // Sessions

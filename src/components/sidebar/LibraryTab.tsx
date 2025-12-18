@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Trash2, Type, Palette, FileText, ChevronDown } from 'lucide-react';
+import { Plus, Trash2, Type, Palette, FileText, ChevronDown, Bookmark } from 'lucide-react';
 import { useStore } from '../../store';
 import { Button, Badge, Dialog, Input, Textarea } from '../ui';
 import type { LibraryItem, LibraryItemType } from '../../types';
@@ -9,6 +9,7 @@ const TYPE_CONFIG: Record<LibraryItemType, { label: string; icon: React.ReactNod
   fragment: { label: 'Fragment', icon: <Type size={12} />, color: 'text-accent' },
   preset: { label: 'Preset', icon: <Palette size={12} />, color: 'text-brass' },
   template: { label: 'Template', icon: <FileText size={12} />, color: 'text-ink-secondary' },
+  'design-token': { label: 'Token', icon: <Bookmark size={12} />, color: 'text-success' },
 };
 
 interface LibraryItemCardProps {
@@ -21,9 +22,13 @@ function LibraryItemCard({ item, onInsert, onDelete }: LibraryItemCardProps) {
   const config = TYPE_CONFIG[item.type];
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Get the insertable content
-  const content = item.type === 'fragment' ? item.text : item.type === 'template' ? item.prompt : null;
-  const styleTags = item.type === 'preset' ? item.style_tags : null;
+  // Get the insertable content - design-tokens also have text
+  const content = item.type === 'fragment' || item.type === 'design-token'
+    ? item.text
+    : item.type === 'template'
+      ? item.prompt
+      : null;
+  const styleTags = item.type === 'preset' || item.type === 'design-token' ? item.style_tags : null;
 
   return (
     <div className="group border border-border rounded-lg p-3 hover:border-border-strong transition-colors">
@@ -121,6 +126,7 @@ export function LibraryTab() {
       fragments: filtered.filter((i) => i.type === 'fragment'),
       presets: filtered.filter((i) => i.type === 'preset'),
       templates: filtered.filter((i) => i.type === 'template'),
+      designTokens: filtered.filter((i) => i.type === 'design-token'),
     };
   }, [libraryItems, filter]);
 
@@ -128,7 +134,8 @@ export function LibraryTab() {
     await useLibraryItem(item.id);
 
     // Dispatch event with the content to insert
-    const insertContent = item.type === 'fragment'
+    // design-token and fragment both use text field
+    const insertContent = item.type === 'fragment' || item.type === 'design-token'
       ? item.text
       : item.type === 'template'
         ? item.prompt
@@ -192,7 +199,7 @@ export function LibraryTab() {
 
       {/* Filter tabs */}
       <div className="flex gap-1 p-1 rounded-lg bg-canvas-subtle">
-        {(['all', 'fragment', 'preset', 'template'] as const).map((type) => (
+        {(['all', 'fragment', 'preset', 'template', 'design-token'] as const).map((type) => (
           <button
             key={type}
             onClick={() => setFilter(type)}
@@ -219,7 +226,7 @@ export function LibraryTab() {
       ) : (
         <div className="space-y-4">
           {/* Fragments */}
-          {groupedItems.fragments.length > 0 && filter !== 'preset' && filter !== 'template' && (
+          {groupedItems.fragments.length > 0 && filter !== 'preset' && filter !== 'template' && filter !== 'design-token' && (
             <section>
               {filter === 'all' && (
                 <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
@@ -240,7 +247,7 @@ export function LibraryTab() {
           )}
 
           {/* Presets */}
-          {groupedItems.presets.length > 0 && filter !== 'fragment' && filter !== 'template' && (
+          {groupedItems.presets.length > 0 && filter !== 'fragment' && filter !== 'template' && filter !== 'design-token' && (
             <section>
               {filter === 'all' && (
                 <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
@@ -261,7 +268,7 @@ export function LibraryTab() {
           )}
 
           {/* Templates */}
-          {groupedItems.templates.length > 0 && filter !== 'fragment' && filter !== 'preset' && (
+          {groupedItems.templates.length > 0 && filter !== 'fragment' && filter !== 'preset' && filter !== 'design-token' && (
             <section>
               {filter === 'all' && (
                 <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
@@ -270,6 +277,27 @@ export function LibraryTab() {
               )}
               <div className="space-y-2">
                 {groupedItems.templates.map((item) => (
+                  <LibraryItemCard
+                    key={item.id}
+                    item={item}
+                    onInsert={handleInsert}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* Design Tokens */}
+          {groupedItems.designTokens.length > 0 && filter !== 'fragment' && filter !== 'preset' && filter !== 'template' && (
+            <section>
+              {filter === 'all' && (
+                <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
+                  Design Tokens
+                </h4>
+              )}
+              <div className="space-y-2">
+                {groupedItems.designTokens.map((item) => (
                   <LibraryItemCard
                     key={item.id}
                     item={item}

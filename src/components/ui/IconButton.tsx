@@ -52,10 +52,10 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
           {button}
           <div
             className={clsx(
-              'absolute top-full left-0 mt-2 px-2 py-1',
-              'text-xs text-surface bg-ink rounded',
+              'absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1',
+              'text-xs text-surface bg-ink rounded shadow-lg',
               'opacity-0 group-hover:opacity-100 pointer-events-none',
-              'transition-opacity duration-150 whitespace-nowrap z-50'
+              'transition-opacity duration-150 whitespace-nowrap z-[100]'
             )}
           >
             {tooltip}

@@ -1,4 +1,4 @@
-"""Tests for image notes/caption functionality.
+"""Tests for image notes/annotation functionality.
 
 TDD: Write these tests FIRST, then implement the endpoint.
 """
@@ -7,15 +7,15 @@ import pytest
 
 
 def test_update_image_notes(client, sample_image_id):
-    """PATCH /api/images/{id}/notes updates notes and caption."""
+    """PATCH /api/images/{id}/notes updates notes and annotation."""
     response = client.patch(
         f"/api/images/{sample_image_id}/notes",
-        json={"notes": "First buzz cut attempt", "caption": "Before the change"},
+        json={"notes": "First buzz cut attempt", "annotation": "Before the change"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["notes"] == "First buzz cut attempt"
-    assert data["caption"] == "Before the change"
+    assert data["annotation"] == "Before the change"
 
 
 def test_update_notes_only(client, sample_image_id):
@@ -28,14 +28,14 @@ def test_update_notes_only(client, sample_image_id):
     assert response.json()["notes"] == "Just a note"
 
 
-def test_update_caption_only(client, sample_image_id):
-    """PATCH /api/images/{id}/notes can update just caption."""
+def test_update_annotation_only(client, sample_image_id):
+    """PATCH /api/images/{id}/notes can update just annotation."""
     response = client.patch(
         f"/api/images/{sample_image_id}/notes",
-        json={"caption": "Short caption"},
+        json={"annotation": "Short annotation"},
     )
     assert response.status_code == 200
-    assert response.json()["caption"] == "Short caption"
+    assert response.json()["annotation"] == "Short annotation"
 
 
 def test_notes_returned_in_prompts_list(client, sample_image_id):
@@ -67,7 +67,7 @@ def test_notes_persist_after_reload(client, sample_image_id, reload_metadata):
     # Set notes
     client.patch(
         f"/api/images/{sample_image_id}/notes",
-        json={"notes": "Persistent note", "caption": "Persistent caption"},
+        json={"notes": "Persistent note", "annotation": "Persistent annotation"},
     )
 
     # Simulate reload by calling reload_metadata
@@ -81,7 +81,7 @@ def test_notes_persist_after_reload(client, sample_image_id, reload_metadata):
         for img in prompt.get("images", []):
             if img.get("id") == sample_image_id:
                 assert img.get("notes") == "Persistent note"
-                assert img.get("caption") == "Persistent caption"
+                assert img.get("annotation") == "Persistent annotation"
                 return
 
     pytest.fail(f"Image {sample_image_id} not found after reload")
@@ -96,19 +96,19 @@ def test_update_nonexistent_image_returns_404(client):
     assert response.status_code == 404
 
 
-def test_empty_notes_and_caption(client, sample_image_id):
+def test_empty_notes_and_annotation(client, sample_image_id):
     """PATCH /api/images/{id}/notes allows empty strings."""
     # First set some content
     client.patch(
         f"/api/images/{sample_image_id}/notes",
-        json={"notes": "Some note", "caption": "Some caption"},
+        json={"notes": "Some note", "annotation": "Some annotation"},
     )
 
     # Then clear it
     response = client.patch(
         f"/api/images/{sample_image_id}/notes",
-        json={"notes": "", "caption": ""},
+        json={"notes": "", "annotation": ""},
     )
     assert response.status_code == 200
     assert response.json()["notes"] == ""
-    assert response.json()["caption"] == ""
+    assert response.json()["annotation"] == ""

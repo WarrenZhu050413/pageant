@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Save, Check, Info, Loader2, Sun, Moon, Monitor } from 'lucide-react';
+import { Save, Check, Info, Loader2, Sun, Moon, Monitor, RotateCcw } from 'lucide-react';
 import { useStore } from '../../store';
 import { useTheme, type ThemePreference } from '../../hooks';
 import { Button, Textarea, Badge, Input } from '../ui';
+import { fetchDefaultSettings } from '../../api';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS } from '../../types';
 
 // Price per image for display
@@ -106,6 +107,24 @@ export function SettingsTab() {
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleResetVariation = async () => {
+    try {
+      const defaults = await fetchDefaultSettings();
+      setVariationPrompt(defaults.variation_prompt);
+    } catch (error) {
+      console.error('Failed to fetch default prompts:', error);
+    }
+  };
+
+  const handleResetIteration = async () => {
+    try {
+      const defaults = await fetchDefaultSettings();
+      setIterationPrompt(defaults.iteration_prompt);
+    } catch (error) {
+      console.error('Failed to fetch default prompts:', error);
     }
   };
 
@@ -389,6 +408,14 @@ export function SettingsTab() {
               Controls how image variations are generated
             </p>
           </div>
+          <button
+            onClick={handleResetVariation}
+            className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink-secondary transition-colors"
+            title="Reset to default"
+          >
+            <RotateCcw size={12} />
+            Reset
+          </button>
         </div>
 
         <Textarea
@@ -431,6 +458,14 @@ export function SettingsTab() {
               Controls how image-to-image variations are generated
             </p>
           </div>
+          <button
+            onClick={handleResetIteration}
+            className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink-secondary transition-colors"
+            title="Reset to default"
+          >
+            <RotateCcw size={12} />
+            Reset
+          </button>
         </div>
 
         <Textarea

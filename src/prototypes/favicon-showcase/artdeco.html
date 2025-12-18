@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pageant Art Deco Sparks - 30 Variations</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: #0a0a0a;
+      min-height: 100vh;
+      padding: 32px;
+      color: #fff;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 2rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #fff;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 32px;
+      font-size: 0.95rem;
+      letter-spacing: 0.05em;
+    }
+
+    .filters {
+      display: flex;
+      justify-content: center;
+      gap: 8px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+
+    .filter-btn {
+      padding: 8px 16px;
+      border: 1px solid #333;
+      background: transparent;
+      color: #888;
+      border-radius: 0;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .filter-btn:hover, .filter-btn.active {
+      border-color: #d4af37;
+      color: #d4af37;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 16px;
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: #111;
+      border-radius: 0;
+      padding: 16px;
+      border: 1px solid #222;
+      transition: all 0.2s ease;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .card:hover {
+      border-color: #444;
+      transform: translateY(-2px);
+    }
+
+    .card.selected {
+      border-color: #d4af37;
+      background: #1a1a1a;
+    }
+
+    .favicon-large {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 12px;
+    }
+
+    .sizes {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .favicon-32 { width: 32px; height: 32px; }
+    .favicon-16 { width: 16px; height: 16px; }
+
+    .card-label {
+      font-size: 0.75rem;
+      color: #666;
+      text-align: center;
+    }
+
+    .card-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: #fff;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .browser-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #1a1a1a;
+      padding: 12px 16px;
+      border-radius: 0;
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 1px solid #333;
+      z-index: 100;
+    }
+
+    .browser-bar svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .browser-bar span {
+      color: #888;
+      font-size: 0.85rem;
+    }
+
+    .browser-bar .selected-name {
+      color: #d4af37;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    footer {
+      text-align: center;
+      margin-top: 32px;
+      padding-bottom: 80px;
+      color: #444;
+      font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Art Deco Sparks</h1>
+  <p class="subtitle">30 geometric sunbursts, chevrons & stepped rays. Monochromatic. High saturation.</p>
+
+  <div class="filters">
+    <button class="filter-btn active" onclick="filterBy('all')">All</button>
+    <button class="filter-btn" onclick="filterBy('gold')">Gold</button>
+    <button class="filter-btn" onclick="filterBy('rose')">Rose</button>
+    <button class="filter-btn" onclick="filterBy('jade')">Jade</button>
+    <button class="filter-btn" onclick="filterBy('sapphire')">Sapphire</button>
+    <button class="filter-btn" onclick="filterBy('silver')">Silver</button>
+  </div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="browser-bar" id="browserBar" style="display: none;">
+    <div id="previewIcon"></div>
+    <span>Pageant |</span>
+    <span class="selected-name" id="selectedName">-</span>
+  </div>
+
+  <footer>Click any spark to set it as your favicon. Art Deco motifs: sunbursts, chevrons, stepped forms.</footer>
+
+  <script>
+    const sparks = [
+      // GOLD FAMILY (1-6)
+      {
+        id: 1,
+        name: "Gatsby",
+        color: "gold",
+        desc: "Classic sunburst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="5" fill="#d4af37"/>
+          <path d="M16 0L17 10L16 5L15 10Z" fill="#d4af37"/>
+          <path d="M16 32L17 22L16 27L15 22Z" fill="#d4af37"/>
+          <path d="M0 16L10 17L5 16L10 15Z" fill="#d4af37"/>
+          <path d="M32 16L22 17L27 16L22 15Z" fill="#d4af37"/>
+          <path d="M4.7 4.7L11 13L7 9L13 11Z" fill="#d4af37"/>
+          <path d="M27.3 27.3L21 19L25 23L19 21Z" fill="#d4af37"/>
+          <path d="M4.7 27.3L11 19L7 23L13 21Z" fill="#d4af37"/>
+          <path d="M27.3 4.7L21 13L25 9L19 11Z" fill="#d4af37"/>
+        </svg>`
+      },
+      {
+        id: 2,
+        name: "Empire",
+        color: "gold",
+        desc: "Stepped rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="15" y="0" width="2" height="32" fill="#d4af37"/>
+          <rect x="0" y="15" width="32" height="2" fill="#d4af37"/>
+          <rect x="14" y="4" width="4" height="24" fill="#d4af37"/>
+          <rect x="4" y="14" width="24" height="4" fill="#d4af37"/>
+          <rect x="13" y="8" width="6" height="16" fill="#d4af37"/>
+          <rect x="8" y="13" width="16" height="6" fill="#d4af37"/>
+          <rect x="12" y="12" width="8" height="8" fill="#ffd700"/>
+        </svg>`
+      },
+      {
+        id: 3,
+        name: "Chrysler",
+        color: "gold",
+        desc: "Fan burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 28L16 16L4 2Z" fill="#d4af37" opacity="0.6"/>
+          <path d="M16 28L16 16L10 0Z" fill="#d4af37" opacity="0.7"/>
+          <path d="M16 28L16 16L16 0Z" fill="#d4af37" opacity="0.8"/>
+          <path d="M16 28L16 16L22 0Z" fill="#d4af37" opacity="0.9"/>
+          <path d="M16 28L16 16L28 2Z" fill="#d4af37"/>
+          <circle cx="16" cy="28" r="3" fill="#ffd700"/>
+        </svg>`
+      },
+      {
+        id: 4,
+        name: "Deco",
+        color: "gold",
+        desc: "Chevron stack",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L28 14L16 10L4 14Z" fill="#d4af37"/>
+          <path d="M16 8L26 17L16 14L6 17Z" fill="#c9a227"/>
+          <path d="M16 14L24 21L16 18L8 21Z" fill="#b8960f"/>
+          <path d="M16 20L22 26L16 24L10 26Z" fill="#d4af37"/>
+          <rect x="14" y="24" width="4" height="6" fill="#ffd700"/>
+        </svg>`
+      },
+      {
+        id: 5,
+        name: "Paramount",
+        color: "gold",
+        desc: "Mountain rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="16,2 19,16 16,12 13,16" fill="#d4af37"/>
+          <polygon points="16,2 24,18 16,10 8,18" fill="#c9a227"/>
+          <polygon points="16,2 30,22 16,8 2,22" fill="#b8960f"/>
+          <polygon points="16,2 32,28 16,4 0,28" fill="#d4af37" opacity="0.5"/>
+          <circle cx="16" cy="4" r="2" fill="#ffd700"/>
+        </svg>`
+      },
+      {
+        id: 6,
+        name: "Luxor",
+        color: "gold",
+        desc: "Egyptian burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 4L18 16H14Z" fill="#d4af37"/>
+          <path d="M16 28L18 16H14Z" fill="#d4af37"/>
+          <path d="M4 16L16 14V18Z" fill="#d4af37"/>
+          <path d="M28 16L16 14V18Z" fill="#d4af37"/>
+          <path d="M7 7L15 15L13 17Z" fill="#d4af37"/>
+          <path d="M25 7L17 15L19 17Z" fill="#d4af37"/>
+          <path d="M7 25L15 17L13 15Z" fill="#d4af37"/>
+          <path d="M25 25L17 17L19 15Z" fill="#d4af37"/>
+          <rect x="13" y="13" width="6" height="6" fill="#ffd700"/>
+        </svg>`
+      },
+
+      // ROSE FAMILY (7-12)
+      {
+        id: 7,
+        name: "Flapper",
+        color: "rose",
+        desc: "Fan plumes",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 30L2 4L16 14Z" fill="#ff1493" opacity="0.5"/>
+          <path d="M16 30L7 2L16 12Z" fill="#ff1493" opacity="0.65"/>
+          <path d="M16 30L12 0L16 10Z" fill="#ff1493" opacity="0.8"/>
+          <path d="M16 30L16 0L16 10Z" fill="#ff1493" opacity="0.9"/>
+          <path d="M16 30L20 0L16 10Z" fill="#ff1493" opacity="0.8"/>
+          <path d="M16 30L25 2L16 12Z" fill="#ff1493" opacity="0.65"/>
+          <path d="M16 30L30 4L16 14Z" fill="#ff1493" opacity="0.5"/>
+          <circle cx="16" cy="30" r="2" fill="#ff69b4"/>
+        </svg>`
+      },
+      {
+        id: 8,
+        name: "Rouge",
+        color: "rose",
+        desc: "Diamond rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0L20 12L32 16L20 20L16 32L12 20L0 16L12 12Z" fill="#ff1493"/>
+          <path d="M16 6L18 13L25 16L18 19L16 26L14 19L7 16L14 13Z" fill="#ff69b4"/>
+          <rect x="13" y="13" width="6" height="6" transform="rotate(45 16 16)" fill="#ffb6c1"/>
+        </svg>`
+      },
+      {
+        id: 9,
+        name: "Cabaret",
+        color: "rose",
+        desc: "Stage lights",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="15" y="2" width="2" height="10" fill="#ff1493"/>
+          <rect x="15" y="20" width="2" height="10" fill="#ff1493"/>
+          <rect x="2" y="15" width="10" height="2" fill="#ff1493"/>
+          <rect x="20" y="15" width="10" height="2" fill="#ff1493"/>
+          <path d="M5 5L13 13" stroke="#ff1493" stroke-width="2"/>
+          <path d="M27 5L19 13" stroke="#ff1493" stroke-width="2"/>
+          <path d="M5 27L13 19" stroke="#ff1493" stroke-width="2"/>
+          <path d="M27 27L19 19" stroke="#ff1493" stroke-width="2"/>
+          <rect x="12" y="12" width="8" height="8" fill="#ff69b4"/>
+        </svg>`
+      },
+      {
+        id: 10,
+        name: "Garbo",
+        color: "rose",
+        desc: "Tiered arch",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M2 30L16 4L30 30" fill="none" stroke="#ff1493" stroke-width="2"/>
+          <path d="M6 26L16 8L26 26" fill="none" stroke="#ff1493" stroke-width="2"/>
+          <path d="M10 22L16 12L22 22" fill="none" stroke="#ff1493" stroke-width="2"/>
+          <circle cx="16" cy="16" r="3" fill="#ff69b4"/>
+        </svg>`
+      },
+      {
+        id: 11,
+        name: "Bijou",
+        color: "rose",
+        desc: "Jewel burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="16,0 18,14 32,16 18,18 16,32 14,18 0,16 14,14" fill="#ff1493"/>
+          <polygon points="16,4 17,14 28,16 17,18 16,28 15,18 4,16 15,14" fill="#ff69b4"/>
+          <polygon points="16,8 16.5,14.5 24,16 16.5,17.5 16,24 15.5,17.5 8,16 15.5,14.5" fill="#ffb6c1"/>
+        </svg>`
+      },
+      {
+        id: 12,
+        name: "Diva",
+        color: "rose",
+        desc: "Crown rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M4 28L8 12L16 20L24 12L28 28Z" fill="#ff1493"/>
+          <path d="M8 12L16 4L24 12" fill="none" stroke="#ff1493" stroke-width="2"/>
+          <circle cx="8" cy="12" r="2" fill="#ff69b4"/>
+          <circle cx="16" cy="4" r="2" fill="#ff69b4"/>
+          <circle cx="24" cy="12" r="2" fill="#ff69b4"/>
+          <rect x="6" y="26" width="20" height="3" fill="#ffb6c1"/>
+        </svg>`
+      },
+
+      // JADE FAMILY (13-18)
+      {
+        id: 13,
+        name: "Shanghai",
+        color: "jade",
+        desc: "Eastern burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L17.5 14L29 10L19 16L29 22L17.5 18L16 30L14.5 18L3 22L13 16L3 10L14.5 14Z" fill="#00ff7f"/>
+          <circle cx="16" cy="16" r="4" fill="#00fa9a"/>
+        </svg>`
+      },
+      {
+        id: 14,
+        name: "Jade",
+        color: "jade",
+        desc: "Carved rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="14" y="2" width="4" height="28" fill="#00ff7f"/>
+          <rect x="2" y="14" width="28" height="4" fill="#00ff7f"/>
+          <rect x="13" y="6" width="6" height="20" fill="#00fa9a"/>
+          <rect x="6" y="13" width="20" height="6" fill="#00fa9a"/>
+          <rect x="12" y="10" width="8" height="12" fill="#3cb371"/>
+          <rect x="10" y="12" width="12" height="8" fill="#3cb371"/>
+          <rect x="13" y="13" width="6" height="6" fill="#98fb98"/>
+        </svg>`
+      },
+      {
+        id: 15,
+        name: "Bamboo",
+        color: "jade",
+        desc: "Segmented rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="15" y="2" width="2" height="6" fill="#00ff7f"/>
+          <rect x="15" y="10" width="2" height="4" fill="#00ff7f"/>
+          <rect x="15" y="18" width="2" height="4" fill="#00ff7f"/>
+          <rect x="15" y="24" width="2" height="6" fill="#00ff7f"/>
+          <rect x="2" y="15" width="6" height="2" fill="#00ff7f"/>
+          <rect x="10" y="15" width="4" height="2" fill="#00ff7f"/>
+          <rect x="18" y="15" width="4" height="2" fill="#00ff7f"/>
+          <rect x="24" y="15" width="6" height="2" fill="#00ff7f"/>
+          <rect x="14" y="14" width="4" height="4" fill="#98fb98"/>
+        </svg>`
+      },
+      {
+        id: 16,
+        name: "Lotus",
+        color: "jade",
+        desc: "Petal fan",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 28C16 28 6 20 6 14C6 8 16 4 16 4" fill="#00ff7f" opacity="0.4"/>
+          <path d="M16 28C16 28 26 20 26 14C26 8 16 4 16 4" fill="#00ff7f" opacity="0.4"/>
+          <path d="M16 26C16 26 9 19 9 14C9 9 16 6 16 6" fill="#00ff7f" opacity="0.6"/>
+          <path d="M16 26C16 26 23 19 23 14C23 9 16 6 16 6" fill="#00ff7f" opacity="0.6"/>
+          <path d="M16 24C16 24 12 18 12 14C12 10 16 8 16 8" fill="#00ff7f" opacity="0.8"/>
+          <path d="M16 24C16 24 20 18 20 14C20 10 16 8 16 8" fill="#00ff7f" opacity="0.8"/>
+          <ellipse cx="16" cy="16" rx="2" ry="8" fill="#98fb98"/>
+        </svg>`
+      },
+      {
+        id: 17,
+        name: "Ming",
+        color: "jade",
+        desc: "Imperial burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L18 14L30 16L18 18L16 30L14 18L2 16L14 14Z" fill="#00ff7f"/>
+          <path d="M8 8L14 14L8 14Z" fill="#00ff7f"/>
+          <path d="M24 8L18 14L24 14Z" fill="#00ff7f"/>
+          <path d="M8 24L14 18L8 18Z" fill="#00ff7f"/>
+          <path d="M24 24L18 18L24 18Z" fill="#00ff7f"/>
+          <circle cx="16" cy="16" r="3" fill="#98fb98"/>
+        </svg>`
+      },
+      {
+        id: 18,
+        name: "Pagoda",
+        color: "jade",
+        desc: "Tiered tower",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M8 30H24L22 26H10Z" fill="#00ff7f"/>
+          <path d="M10 26H22L20 22H12Z" fill="#00fa9a"/>
+          <path d="M12 22H20L18 18H14Z" fill="#3cb371"/>
+          <path d="M14 18H18L16 14Z" fill="#00ff7f"/>
+          <path d="M16 14L16 4" stroke="#00ff7f" stroke-width="2"/>
+          <path d="M16 4L12 8M16 4L20 8" stroke="#00ff7f" stroke-width="1.5"/>
+        </svg>`
+      },
+
+      // SAPPHIRE FAMILY (19-24)
+      {
+        id: 19,
+        name: "Cobalt",
+        color: "sapphire",
+        desc: "Crystal rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0L20 14L32 12L20 16L32 20L20 18L16 32L12 18L0 20L12 16L0 12L12 14Z" fill="#0066ff"/>
+          <polygon points="16,10 20,16 16,22 12,16" fill="#3399ff"/>
+        </svg>`
+      },
+      {
+        id: 20,
+        name: "Azure",
+        color: "sapphire",
+        desc: "Concentric",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="1" width="30" height="30" fill="none" stroke="#0066ff" stroke-width="1"/>
+          <rect x="5" y="5" width="22" height="22" fill="none" stroke="#0066ff" stroke-width="1.5"/>
+          <rect x="9" y="9" width="14" height="14" fill="none" stroke="#0066ff" stroke-width="2"/>
+          <rect x="12" y="12" width="8" height="8" fill="#0066ff"/>
+          <path d="M16 1V9M16 23V31M1 16H9M23 16H31" stroke="#0066ff" stroke-width="1.5"/>
+        </svg>`
+      },
+      {
+        id: 21,
+        name: "Ritz",
+        color: "sapphire",
+        desc: "Hotel burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2V30" stroke="#0066ff" stroke-width="3"/>
+          <path d="M2 16H30" stroke="#0066ff" stroke-width="3"/>
+          <path d="M6 6L26 26" stroke="#0066ff" stroke-width="2"/>
+          <path d="M26 6L6 26" stroke="#0066ff" stroke-width="2"/>
+          <path d="M16 6L16 10M16 22L16 26M6 16H10M22 16H26" stroke="#0066ff" stroke-width="2"/>
+          <rect x="12" y="12" width="8" height="8" fill="#3399ff"/>
+        </svg>`
+      },
+      {
+        id: 22,
+        name: "Savoy",
+        color: "sapphire",
+        desc: "Fountain",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 30L4 18L16 22Z" fill="#0066ff" opacity="0.6"/>
+          <path d="M16 30L28 18L16 22Z" fill="#0066ff" opacity="0.6"/>
+          <path d="M16 22L8 12L16 16Z" fill="#0066ff" opacity="0.8"/>
+          <path d="M16 22L24 12L16 16Z" fill="#0066ff" opacity="0.8"/>
+          <path d="M16 16L12 6L16 10Z" fill="#0066ff"/>
+          <path d="M16 16L20 6L16 10Z" fill="#0066ff"/>
+          <path d="M16 10V2" stroke="#0066ff" stroke-width="2"/>
+          <circle cx="16" cy="2" r="1.5" fill="#3399ff"/>
+        </svg>`
+      },
+      {
+        id: 23,
+        name: "Plaza",
+        color: "sapphire",
+        desc: "Marquee",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <polygon points="16,2 28,10 28,22 16,30 4,22 4,10" fill="none" stroke="#0066ff" stroke-width="2"/>
+          <polygon points="16,6 24,12 24,20 16,26 8,20 8,12" fill="none" stroke="#0066ff" stroke-width="1.5"/>
+          <polygon points="16,10 20,14 20,18 16,22 12,18 12,14" fill="#0066ff"/>
+          <path d="M16 2V6M28 10L24 12M28 22L24 20M16 30V26M4 22L8 20M4 10L8 12" stroke="#0066ff" stroke-width="1"/>
+        </svg>`
+      },
+      {
+        id: 24,
+        name: "Waldorf",
+        color: "sapphire",
+        desc: "Grand burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0L17 12L24 4L19 13L32 14L20 16L32 18L19 19L24 28L17 20L16 32L15 20L8 28L13 19L0 18L12 16L0 14L13 13L8 4L15 12Z" fill="#0066ff"/>
+          <circle cx="16" cy="16" r="4" fill="#3399ff"/>
+        </svg>`
+      },
+
+      // SILVER FAMILY (25-30)
+      {
+        id: 25,
+        name: "Chrome",
+        color: "silver",
+        desc: "Machine age",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="14" fill="none" stroke="#c0c0c0" stroke-width="1"/>
+          <circle cx="16" cy="16" r="10" fill="none" stroke="#c0c0c0" stroke-width="1.5"/>
+          <circle cx="16" cy="16" r="6" fill="none" stroke="#c0c0c0" stroke-width="2"/>
+          <circle cx="16" cy="16" r="3" fill="#e8e8e8"/>
+          <path d="M16 2V6M16 26V30M2 16H6M26 16H30" stroke="#c0c0c0" stroke-width="2"/>
+          <path d="M6 6L9 9M26 6L23 9M6 26L9 23M26 26L23 23" stroke="#c0c0c0" stroke-width="1.5"/>
+        </svg>`
+      },
+      {
+        id: 26,
+        name: "Steel",
+        color: "silver",
+        desc: "Industrial",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <rect x="14" y="0" width="4" height="32" fill="#c0c0c0"/>
+          <rect x="0" y="14" width="32" height="4" fill="#c0c0c0"/>
+          <rect x="13" y="4" width="6" height="24" fill="#d8d8d8"/>
+          <rect x="4" y="13" width="24" height="6" fill="#d8d8d8"/>
+          <rect x="12" y="8" width="8" height="16" fill="#e8e8e8"/>
+          <rect x="8" y="12" width="16" height="8" fill="#e8e8e8"/>
+        </svg>`
+      },
+      {
+        id: 27,
+        name: "Mercury",
+        color: "silver",
+        desc: "Liquid metal",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2C16 2 20 10 16 16C12 22 16 30 16 30" stroke="#c0c0c0" stroke-width="2" fill="none"/>
+          <path d="M2 16C2 16 10 12 16 16C22 20 30 16 30 16" stroke="#c0c0c0" stroke-width="2" fill="none"/>
+          <circle cx="16" cy="2" r="2" fill="#e8e8e8"/>
+          <circle cx="16" cy="30" r="2" fill="#e8e8e8"/>
+          <circle cx="2" cy="16" r="2" fill="#e8e8e8"/>
+          <circle cx="30" cy="16" r="2" fill="#e8e8e8"/>
+          <circle cx="16" cy="16" r="4" fill="#c0c0c0"/>
+        </svg>`
+      },
+      {
+        id: 28,
+        name: "Platinum",
+        color: "silver",
+        desc: "Precious rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 0L18 14L32 16L18 18L16 32L14 18L0 16L14 14Z" fill="#c0c0c0"/>
+          <path d="M16 4L17 14.5L28 16L17 17.5L16 28L15 17.5L4 16L15 14.5Z" fill="#d8d8d8"/>
+          <path d="M16 8L16.5 15L24 16L16.5 17L16 24L15.5 17L8 16L15.5 15Z" fill="#e8e8e8"/>
+          <circle cx="16" cy="16" r="2" fill="#ffffff"/>
+        </svg>`
+      },
+      {
+        id: 29,
+        name: "Nickel",
+        color: "silver",
+        desc: "Coin burst",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="14" fill="#c0c0c0"/>
+          <circle cx="16" cy="16" r="12" fill="#d8d8d8"/>
+          <path d="M16 4L17 14L28 14L18 16L28 18L17 18L16 28L15 18L4 18L14 16L4 14L15 14Z" fill="#a8a8a8"/>
+          <circle cx="16" cy="16" r="4" fill="#e8e8e8"/>
+        </svg>`
+      },
+      {
+        id: 30,
+        name: "Pewter",
+        color: "silver",
+        desc: "Antique rays",
+        svg: `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+          <path d="M16 2L19 13L30 10L20 16L30 22L19 19L16 30L13 19L2 22L12 16L2 10L13 13Z" fill="#a8a8a8"/>
+          <path d="M16 6L18 13.5L26 12L19 16L26 20L18 18.5L16 26L14 18.5L6 20L13 16L6 12L14 13.5Z" fill="#c0c0c0"/>
+          <circle cx="16" cy="16" r="4" fill="#d8d8d8"/>
+          <circle cx="16" cy="16" r="2" fill="#e8e8e8"/>
+        </svg>`
+      }
+    ];
+
+    const grid = document.getElementById('grid');
+    const browserBar = document.getElementById('browserBar');
+    const previewIcon = document.getElementById('previewIcon');
+    const selectedNameEl = document.getElementById('selectedName');
+    let selectedCard = null;
+
+    function renderGrid(filter = 'all') {
+      grid.innerHTML = '';
+      const filtered = filter === 'all' ? sparks : sparks.filter(s => s.color === filter);
+
+      filtered.forEach(spark => {
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.dataset.color = spark.color;
+        card.innerHTML = `
+          <div class="favicon-large">${spark.svg}</div>
+          <div class="sizes">
+            <div class="favicon-32">${spark.svg}</div>
+            <div class="favicon-16">${spark.svg}</div>
+          </div>
+          <div class="card-name">${spark.id}. ${spark.name}</div>
+          <div class="card-label">${spark.desc}</div>
+        `;
+        card.onclick = () => selectFavicon(card, spark);
+        grid.appendChild(card);
+      });
+    }
+
+    function selectFavicon(card, spark) {
+      if (selectedCard) selectedCard.classList.remove('selected');
+      card.classList.add('selected');
+      selectedCard = card;
+
+      browserBar.style.display = 'flex';
+      previewIcon.innerHTML = `<div style="width:16px;height:16px">${spark.svg}</div>`;
+      selectedNameEl.textContent = spark.name;
+
+      const svgData = encodeURIComponent(spark.svg.replace(/\n/g, '').replace(/\s+/g, ' '));
+      const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+      link.type = 'image/svg+xml';
+      link.rel = 'icon';
+      link.href = `data:image/svg+xml,${svgData}`;
+      document.head.appendChild(link);
+    }
+
+    function filterBy(color) {
+      document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+      renderGrid(color);
+    }
+
+    renderGrid();
+  </script>
+</body>
+</html>

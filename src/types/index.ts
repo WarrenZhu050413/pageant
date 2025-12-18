@@ -94,6 +94,18 @@ export type LikedAxes = Record<string, string[]>;
 // EXTENSIBLE: Accepts any axis key
 export type DesignPreferences = Record<string, Record<string, number>>;
 
+// DesignDimension - Rich AI-analyzed design dimension metadata
+// Used for structured context in generation and concept image creation
+export interface DesignDimension {
+  axis: string;              // e.g., "lighting", "mood", "colors"
+  name: string;              // Evocative name, e.g., "Eerie Green Cast"
+  description: string;       // 2-3 sentence analysis of how this dimension manifests
+  tags: string[];            // Design vocabulary tags, e.g., ["moody-dark", "atmospheric"]
+  generation_prompt: string; // Prompt for generating pure concept image
+  source: 'auto' | 'user';   // How it was created
+  confirmed: boolean;        // User confirmed this suggestion
+}
+
 export interface ImageData {
   id: string;
   image_path: string;
@@ -103,18 +115,19 @@ export interface ImageData {
   mood?: string;
   variation_type?: string;
   notes?: string;
-  caption?: string;
-  // Design axis system - EXTENSIBLE
-  design_tags?: string[];  // Flattened list of all tags
-  annotations?: Record<string, string[]>;  // Tags grouped by axis, e.g. { colors: ["warm", "vibrant"], style: ["minimalist"] }
-  liked_axes?: LikedAxes;
+  annotation?: string;  // User annotation for AI context (free text)
+  // Design dimension system - Rich AI analysis per axis
+  design_dimensions?: Record<string, DesignDimension>;  // axis -> dimension with tags, description, etc.
+  liked_axes?: LikedAxes;  // User's liked tags per axis
+  // Legacy fields (deprecated, will be migrated to design_dimensions)
+  design_tags?: string[];  // @deprecated - use design_dimensions[axis].tags
+  annotations?: Record<string, string[]>;  // @deprecated - use design_dimensions
 }
 
 export interface Prompt {
   id: string;
   prompt: string;
   title: string;
-  category: string;
   created_at: string;
   images: ImageData[];
   // Reference images used for generation
@@ -126,6 +139,10 @@ export interface Prompt {
   _count?: number;
   // The original base prompt that generated variations for this prompt
   basePrompt?: string;
+  // Concept image metadata
+  is_concept?: boolean;      // True if this is a concept image (design token)
+  concept_axis?: string;     // Which axis this concept represents (e.g., "lighting")
+  source_image_id?: string;  // Image ID the concept was derived from
 }
 
 // Draft prompt - ungenerated variations ready for editing
@@ -138,23 +155,15 @@ export interface DraftPrompt {
   // Image params to use when generating
   imageParams?: ImageGenerationParams;
   contextImageIds?: string[];
-  // Caption suggestions from AI (global, not per-variation)
-  captionSuggestions?: CaptionSuggestion[];
+  // Annotation suggestions from AI (global, not per-variation)
+  annotationSuggestions?: AnnotationSuggestion[];
+  // Per-draft generation state - allows concurrent generations
+  isGenerating?: boolean;
 }
 
-export interface Template {
-  id: string;
-  name: string;
-  prompt: string;
-  category: string;
-  tags: string[];
-  use_count: number;
-  last_used?: string;
-  created_at: string;
-}
 
 // Design Library - unified system for saving design building blocks
-export type LibraryItemType = 'fragment' | 'preset' | 'template';
+export type LibraryItemType = 'fragment' | 'preset' | 'template' | 'design-token';
 
 export interface LibraryItem {
   id: string;
@@ -177,6 +186,14 @@ export interface LibraryItem {
   // Common: categorization
   category?: string;
   tags?: string[];
+
+  // For design-token: source references
+  source_image_id?: string;
+  source_prompt_id?: string;
+  extracted_from?: {
+    annotation?: string;
+    liked_tags?: string[];
+  };
 }
 
 export interface Collection {
@@ -245,7 +262,6 @@ export interface Session {
 export interface GenerateRequest extends ImageGenerationParams {
   prompt: string;
   title?: string; // Optional - will be auto-generated if not provided
-  category?: string;
   count?: number;
   input_image_id?: string;
   context_image_ids?: string[];
@@ -270,12 +286,16 @@ export interface PromptVariation {
   // Per-variation context image assignment
   recommended_context_ids?: string[];  // Image IDs to use for THIS variation
   context_reasoning?: string;  // Why these images were chosen
+  // User iteration annotations
+  userNotes?: string;  // User's guidance/comments for AI rewrite
+  isEdited?: boolean;  // Track if user modified the text
+  emphasizedTags?: string[];  // Tags user wants to emphasize (clicked ♥)
 }
 
-export interface CaptionSuggestion {
+export interface AnnotationSuggestion {
   image_id: string;
-  original_caption?: string;
-  suggested_caption: string;
+  original_annotation?: string;
+  suggested_annotation: string;
   reason: string;
 }
 
@@ -291,7 +311,7 @@ export interface GeneratePromptsResponse {
   variations: PromptVariation[];
   base_prompt: string;
   generated_title?: string; // Title from model (generated or refined from user's)
-  caption_suggestions?: CaptionSuggestion[];  // Suggested caption improvements
+  annotation_suggestions?: AnnotationSuggestion[];  // Suggested annotation polish
   error?: string;
 }
 
@@ -305,8 +325,95 @@ export interface GenerateFromPromptsRequest extends ImageGenerationParams {
   }[];
   context_image_ids?: string[];
   session_id?: string;
-  category?: string;
   base_prompt?: string;  // Original prompt that generated variations
+}
+
+// Polish prompts API types
+export interface VariationToPolish {
+  id: string;
+  text: string;
+  user_notes?: string;
+  mood?: string;
+  design?: Record<string, string[]>;
+  emphasized_tags?: string[];
+}
+
+export interface PolishPromptsRequest {
+  base_prompt: string;
+  variations: VariationToPolish[];
+  context_image_ids?: string[];
+}
+
+export interface PolishedVariation {
+  id: string;
+  text: string;
+  changes_made?: string;
+}
+
+export interface PolishPromptsResponse {
+  success: boolean;
+  polished_variations: PolishedVariation[];
+  error?: string;
+}
+
+// Polish Annotations API types
+export interface PolishAnnotationsRequest {
+  image_ids: string[];
+}
+
+export interface PolishedAnnotation {
+  image_id: string;
+  original_annotation: string;
+  polished_annotation: string;
+}
+
+export interface PolishAnnotationsResponse {
+  success: boolean;
+  polished: PolishedAnnotation[];
+  skipped: string[];
+  error?: string;
+}
+
+// Design Dimension Analysis API types
+export interface AnalyzeDimensionsRequest {
+  image_id: string;
+  count?: number;  // Number of dimensions to suggest (default 5)
+}
+
+export interface AnalyzeDimensionsResponse {
+  success: boolean;
+  dimensions: DesignDimension[];
+  error?: string;
+}
+
+export interface GenerateConceptRequest {
+  image_id: string;
+  dimension: DesignDimension;
+  aspect_ratio?: string;
+}
+
+export interface GenerateConceptResponse {
+  success: boolean;
+  prompt_id: string;  // The new concept prompt
+  images: ImageData[];
+  error?: string;
+}
+
+export interface UpdateDimensionsRequest {
+  dimensions: Record<string, DesignDimension>;
+}
+
+// Design Token Extraction API types
+export interface ExtractDesignTokenRequest {
+  image_id: string;
+  annotation?: string;  // Override image's annotation
+  liked_tags?: string[];  // Override image's liked_axes
+}
+
+export interface ExtractDesignTokenResponse {
+  success: boolean;
+  item?: LibraryItem;
+  error?: string;
 }
 
 export interface UploadResponse {
@@ -317,7 +424,7 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid';
-export type LeftTab = 'prompts' | 'collections' | 'library' | 'favorites' | 'preferences';
+export type LeftTab = 'prompts' | 'collections' | 'library';
 export type RightTab = 'info' | 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select';
 
@@ -332,7 +439,6 @@ export interface AppState {
   // Data
   prompts: Prompt[];
   favorites: string[];
-  templates: Template[];
   collections: Collection[];
   stories: Story[];
   settings: Settings | null;

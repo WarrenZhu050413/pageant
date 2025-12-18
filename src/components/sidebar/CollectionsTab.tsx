@@ -1,14 +1,27 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { FolderOpen, Trash2 } from 'lucide-react';
+import { FolderOpen, Trash2, Star } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, IconButton } from '../ui';
 import { Dialog } from '../ui/Dialog';
 
+const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
+
 export function CollectionsTab() {
-  const collections = useStore((s) => s.collections);
+  const rawCollections = useStore((s) => s.collections);
+
+  // Sort collections: Favorites always first, then by creation date
+  const collections = useMemo(() => {
+    return [...rawCollections].sort((a, b) => {
+      // Favorites always first
+      if (a.name === FAVORITES_COLLECTION_NAME) return -1;
+      if (b.name === FAVORITES_COLLECTION_NAME) return 1;
+      // Then by creation date (newest first)
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [rawCollections]);
   const prompts = useStore((s) => s.prompts);
   const deleteCollection = useStore((s) => s.deleteCollection);
   const addContextImages = useStore((s) => s.addContextImages);
@@ -51,6 +64,7 @@ export function CollectionsTab() {
           .filter(Boolean);
 
         const isActive = collection.id === currentCollectionId;
+        const isFavorites = collection.name === FAVORITES_COLLECTION_NAME;
 
         return (
           <motion.div
@@ -88,7 +102,11 @@ export function CollectionsTab() {
                   ))
                 ) : (
                   <div className="col-span-2 row-span-2 flex items-center justify-center">
-                    <FolderOpen size={16} className="text-ink-muted" />
+                    {isFavorites ? (
+                      <Star size={16} className="text-amber-500" />
+                    ) : (
+                      <FolderOpen size={16} className="text-ink-muted" />
+                    )}
                   </div>
                 )}
               </div>
@@ -126,17 +144,20 @@ export function CollectionsTab() {
                   >
                     Add to Context
                   </Button>
-                  <IconButton
-                    size="sm"
-                    variant="danger"
-                    tooltip="Delete"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setDeleteId(collection.id);
-                    }}
-                  >
-                    <Trash2 size={14} />
-                  </IconButton>
+                  {/* Don't allow deleting the Favorites collection */}
+                  {!isFavorites && (
+                    <IconButton
+                      size="sm"
+                      variant="danger"
+                      tooltip="Delete"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteId(collection.id);
+                      }}
+                    >
+                      <Trash2 size={14} />
+                    </IconButton>
+                  )}
                 </div>
               </div>
             </div>

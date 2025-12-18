@@ -4,12 +4,10 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wand2,
   X,
-  Star,
   FolderOpen,
   Image as ImageIcon,
   Upload,
   FolderUp,
-  Loader2,
   Sparkles,
   ChevronDown,
   Zap,
@@ -20,10 +18,8 @@ import { getImageUrl } from '../../api';
 import { Button, Input, Textarea } from '../ui';
 import { PromptPreviewModal } from '../modals/PromptPreviewModal';
 import { ImagePickerModal } from '../modals/ImagePickerModal';
-import type { Template, ImageSize, AspectRatio, SafetyLevel } from '../../types';
+import type { ImageSize, AspectRatio, SafetyLevel } from '../../types';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from '../../types';
-
-type ImagePickerSource = 'favorites' | 'collection';
 
 // Price per image for display
 const SIZE_PRICES: Record<string, string> = {
@@ -36,10 +32,9 @@ export function GenerateTab() {
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
   const [count, setCount] = useState(4);
-  const [usePreferences, setUsePreferences] = useState(true);
   const [showDropdown, setShowDropdown] = useState(false);
+  const [selectedConceptIds, setSelectedConceptIds] = useState<string[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
-  const [imagePickerSource, setImagePickerSource] = useState<ImagePickerSource>('favorites');
 
   // Advanced options state (per-request overrides)
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -53,24 +48,37 @@ export function GenerateTab() {
   const clearContextImages = useStore((s) => s.clearContextImages);
   const setContextImages = useStore((s) => s.setContextImages);
   const isGenerating = useStore((s) => s.isGenerating);
-  const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
   const generate = useStore((s) => s.generate);
   const generateVariations = useStore((s) => s.generateVariations);
   const uploadImages = useStore((s) => s.uploadImages);
   const prompts = useStore((s) => s.prompts);
   const selectedIds = useStore((s) => s.selectedIds);
-  const favorites = useStore((s) => s.favorites);
   const collections = useStore((s) => s.collections);
   const getCurrentImage = useStore((s) => s.getCurrentImage);
-  const designPreferences = useStore((s) => s.designPreferences);
-  const fetchDesignPreferences = useStore((s) => s.fetchDesignPreferences);
+  const libraryItems = useStore((s) => s.libraryItems);
+  const settings = useStore((s) => s.settings);
+
+  // Get design concepts from library
+  const concepts = libraryItems.filter((item) => item.type === 'design-token');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Fetch preferences on mount
+  // Initialize Advanced Options from saved settings
   useEffect(() => {
-    fetchDesignPreferences();
-  }, [fetchDesignPreferences]);
+    if (settings?.image_size) setImageSize(settings.image_size);
+  }, [settings?.image_size]);
+
+  useEffect(() => {
+    if (settings?.aspect_ratio) setAspectRatio(settings.aspect_ratio);
+  }, [settings?.aspect_ratio]);
+
+  useEffect(() => {
+    if (settings?.seed != null) setSeed(settings.seed.toString());
+  }, [settings?.seed]);
+
+  useEffect(() => {
+    if (settings?.safety_level) setSafetyLevel(settings.safety_level);
+  }, [settings?.safety_level]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -105,33 +113,23 @@ export function GenerateTab() {
     return () => window.removeEventListener('library-insert', handleLibraryInsert as EventListener);
   }, []);
 
-  // Build preference summary string
-  const getPreferenceSummary = () => {
-    if (!designPreferences) return '';
-
-    const summaryParts: string[] = [];
-    const axes = ['mood', 'typeface', 'colors', 'layout', 'style', 'composition'] as const;
-
-    for (const axis of axes) {
-      const prefs = designPreferences[axis] || {};
-      const entries = Object.entries(prefs);
-      if (entries.length === 0) continue;
-
-      const total = entries.reduce((sum, [, count]) => sum + count, 0);
-      const sorted = entries.sort((a, b) => b[1] - a[1]);
-
-      if (sorted.length > 0) {
-        const topPercentage = Math.round((sorted[0][1] / total) * 100);
-        if (topPercentage >= 40) {
-          summaryParts.push(sorted[0][0]);
-        }
-      }
-    }
-
-    return summaryParts.join(', ');
+  // Toggle concept selection
+  const toggleConcept = (id: string) => {
+    setSelectedConceptIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
   };
 
-  const preferenceSummary = getPreferenceSummary();
+  // Get style tags from selected concepts
+  const getSelectedConceptTags = () => {
+    const selected = concepts.filter((c) => selectedConceptIds.includes(c.id));
+    const allTags: string[] = [];
+    selected.forEach((concept) => {
+      if (concept.style_tags) allTags.push(...concept.style_tags);
+      if (concept.text) allTags.push(concept.text);
+    });
+    return [...new Set(allTags)];
+  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -147,21 +145,12 @@ export function GenerateTab() {
     })
     .filter(Boolean);
 
-  // Handle template usage
-  useEffect(() => {
-    const handler = (e: CustomEvent<Template>) => {
-      setPrompt(e.detail.prompt);
-      setTitle(e.detail.name);
-    };
-    document.addEventListener('use-template', handler as EventListener);
-    return () => document.removeEventListener('use-template', handler as EventListener);
-  }, []);
-
-  // Build final prompt with preferences
+  // Build final prompt with selected concepts
   const buildFinalPrompt = () => {
     let finalPrompt = prompt.trim();
-    if (usePreferences && preferenceSummary) {
-      finalPrompt = `${finalPrompt}\n\nStyle preferences: ${preferenceSummary}`;
+    const conceptTags = getSelectedConceptTags();
+    if (conceptTags.length > 0) {
+      finalPrompt = `${finalPrompt}\n\nDesign concepts: ${conceptTags.join(', ')}`;
     }
     return finalPrompt;
   };
@@ -185,16 +174,17 @@ export function GenerateTab() {
       ...buildImageParams(),
     });
 
-    // Clear form after submitting
+    // Clear form after submitting, reset advanced options to settings defaults
     setTitle('');
     setPrompt('');
     setCount(4);
     setShowDropdown(false);
-    // Reset advanced options
-    setImageSize('');
-    setAspectRatio('');
-    setSeed('');
-    setSafetyLevel('');
+    setSelectedConceptIds([]);
+    // Reset advanced options to settings values (not empty)
+    setImageSize(settings?.image_size || '');
+    setAspectRatio(settings?.aspect_ratio || '');
+    setSeed(settings?.seed != null ? settings.seed.toString() : '');
+    setSafetyLevel(settings?.safety_level || '');
     setShowAdvanced(false);
   };
 
@@ -209,22 +199,23 @@ export function GenerateTab() {
       ...buildImageParams(),
     });
 
-    // Clear form after submitting
+    // Clear form after submitting, reset advanced options to settings defaults
     setTitle('');
     setPrompt('');
     setCount(4);
     setShowDropdown(false);
-    // Reset advanced options
-    setImageSize('');
-    setAspectRatio('');
-    setSeed('');
-    setSafetyLevel('');
+    setSelectedConceptIds([]);
+    // Reset advanced options to settings values (not empty)
+    setImageSize(settings?.image_size || '');
+    setAspectRatio(settings?.aspect_ratio || '');
+    setSeed(settings?.seed != null ? settings.seed.toString() : '');
+    setSafetyLevel(settings?.safety_level || '');
     setShowAdvanced(false);
   };
 
   // Only prompt is required - title is auto-generated if not provided
-  // Note: Allow multiple generations to run concurrently (only block during variations preview)
-  const isDisabled = isGeneratingVariations || !prompt.trim();
+  // Allow concurrent prompt generations - only check if prompt is empty
+  const isDisabled = !prompt.trim();
 
   const handleAddFromSelection = () => {
     // Append selected images to existing context (avoid duplicates)
@@ -239,8 +230,7 @@ export function GenerateTab() {
     }
   };
 
-  const handleOpenImagePicker = (source: ImagePickerSource) => {
-    setImagePickerSource(source);
+  const handleOpenImagePicker = () => {
     setShowImagePicker(true);
   };
 
@@ -292,41 +282,46 @@ export function GenerateTab() {
         </div>
       </div>
 
-      {/* Style Preferences Toggle */}
-      {preferenceSummary && (
+      {/* Design Concepts Picker */}
+      {concepts.length > 0 && (
         <div className="space-y-2">
-          <label
-            className={clsx(
-              'flex items-center gap-2 p-3 rounded-lg cursor-pointer',
-              'border transition-colors',
-              usePreferences
-                ? 'border-brass bg-brass-muted/30'
-                : 'border-border bg-canvas-subtle hover:bg-canvas-muted'
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
+              Design Concepts
+            </label>
+            {selectedConceptIds.length > 0 && (
+              <button
+                onClick={() => setSelectedConceptIds([])}
+                className="text-xs text-ink-muted hover:text-error transition-colors"
+              >
+                Clear
+              </button>
             )}
-          >
-            <input
-              type="checkbox"
-              checked={usePreferences}
-              onChange={(e) => setUsePreferences(e.target.checked)}
-              className="sr-only"
-            />
-            <div
-              className={clsx(
-                'w-4 h-4 rounded flex items-center justify-center',
-                usePreferences ? 'bg-brass text-surface' : 'bg-canvas-muted'
-              )}
-            >
-              {usePreferences && <Sparkles size={10} />}
-            </div>
-            <div className="flex-1">
-              <div className="text-xs font-medium text-ink">
-                Include style preferences
-              </div>
-              <div className="text-[0.65rem] text-ink-muted">
-                {preferenceSummary}
-              </div>
-            </div>
-          </label>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {concepts.map((concept) => (
+              <button
+                key={concept.id}
+                onClick={() => toggleConcept(concept.id)}
+                className={clsx(
+                  'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
+                  selectedConceptIds.includes(concept.id)
+                    ? 'bg-brass text-surface'
+                    : 'bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle'
+                )}
+              >
+                <span className="flex items-center gap-1.5">
+                  <Sparkles size={10} />
+                  {concept.name}
+                </span>
+              </button>
+            ))}
+          </div>
+          {selectedConceptIds.length > 0 && (
+            <p className="text-[0.65rem] text-ink-muted">
+              {getSelectedConceptTags().join(', ')}
+            </p>
+          )}
         </div>
       )}
 
@@ -394,17 +389,8 @@ export function GenerateTab() {
           <Button
             size="sm"
             variant="secondary"
-            leftIcon={<Star size={14} />}
-            onClick={() => handleOpenImagePicker('favorites')}
-            disabled={favorites.length === 0}
-          >
-            From Favorites
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
             leftIcon={<FolderOpen size={14} />}
-            onClick={() => handleOpenImagePicker('collection')}
+            onClick={handleOpenImagePicker}
             disabled={collections.length === 0}
           >
             From Collection
@@ -444,7 +430,13 @@ export function GenerateTab() {
           <span className="flex items-center gap-2">
             <Settings2 size={14} />
             Advanced Options
-            {(imageSize || aspectRatio || seed || safetyLevel) && (
+            {/* Show "Modified" only if values differ from settings defaults */}
+            {(
+              (imageSize && imageSize !== (settings?.image_size || '')) ||
+              (aspectRatio && aspectRatio !== (settings?.aspect_ratio || '')) ||
+              (seed && seed !== (settings?.seed != null ? settings.seed.toString() : '')) ||
+              (safetyLevel && safetyLevel !== (settings?.safety_level || ''))
+            ) && (
               <span className="px-1.5 py-0.5 bg-brass-muted text-brass-dark rounded text-[0.625rem]">
                 Modified
               </span>
@@ -569,24 +561,16 @@ export function GenerateTab() {
       {/* Generate Button with Dropdown */}
       <div className="relative" ref={dropdownRef}>
         <div className="flex">
-          {/* Main button - Generate Variations */}
+          {/* Main button - Generate Prompts (allows concurrent generations) */}
           <Button
             variant="brass"
             size="lg"
-            leftIcon={
-              isGeneratingVariations ? (
-                <Loader2 size={18} className="animate-spin" />
-              ) : (
-                <Wand2 size={18} />
-              )
-            }
+            leftIcon={<Wand2 size={18} />}
             onClick={handleGenerateVariations}
             disabled={isDisabled}
             className="flex-1 rounded-r-none"
           >
-            {isGeneratingVariations
-              ? 'Getting Variations...'
-              : 'Generate Variations'}
+            Generate Prompts
           </Button>
 
           {/* Dropdown toggle */}
@@ -626,7 +610,7 @@ export function GenerateTab() {
               >
                 <Wand2 size={16} className="text-brass" />
                 <div>
-                  <div className="text-sm font-medium text-ink">Generate Variations</div>
+                  <div className="text-sm font-medium text-ink">Generate Prompts</div>
                   <div className="text-xs text-ink-muted">
                     Preview and edit prompts before generating images
                   </div>
@@ -644,7 +628,7 @@ export function GenerateTab() {
               >
                 <Zap size={16} className="text-ink-secondary" />
                 <div>
-                  <div className="text-sm font-medium text-ink">Direct Generate</div>
+                  <div className="text-sm font-medium text-ink">Generate Images</div>
                   <div className="text-xs text-ink-muted">
                     Skip preview, generate images immediately
                   </div>
@@ -661,7 +645,6 @@ export function GenerateTab() {
       {/* Image Picker Modal */}
       <ImagePickerModal
         isOpen={showImagePicker}
-        source={imagePickerSource}
         onClose={() => setShowImagePicker(false)}
         onConfirm={handleImagePickerConfirm}
       />

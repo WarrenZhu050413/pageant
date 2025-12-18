@@ -46,22 +46,72 @@ class SceneVariation(BaseModel):
     )
 
 
-class CaptionSuggestion(BaseModel):
-    """Suggested caption improvement for a context image."""
-    image_id: str = Field(description="The ID of the image needing a better caption")
-    original_caption: str | None = Field(default=None, description="The current caption")
-    suggested_caption: str = Field(description="A better caption for generation context")
-    reason: str = Field(description="Why this caption is more suitable")
+class AnnotationSuggestion(BaseModel):
+    """Suggested annotation polish for a context image."""
+    image_id: str = Field(description="The ID of the image needing annotation polish")
+    original_annotation: str | None = Field(default=None, description="The current annotation")
+    suggested_annotation: str = Field(description="A polished annotation for generation context")
+    reason: str = Field(description="Why this annotation is more suitable")
 
 
 class SceneVariationsResponse(BaseModel):
     """Response containing multiple scene variations with context assignments."""
     title: str = Field(description="A short, creative title for this generation (2-5 words)")
     scenes: list[SceneVariation] = Field(description="List of scene variations")
-    caption_suggestions: list[CaptionSuggestion] | None = Field(
+    annotation_suggestions: list[AnnotationSuggestion] | None = Field(
         default=None,
-        description="Suggested caption improvements for context images with inadequate descriptions"
+        description="Suggested annotation polish for context images with inadequate descriptions"
     )
+
+
+# Model for Design Token Extraction
+class DesignTokenExtraction(BaseModel):
+    """Extracted design token from an image."""
+    name: str = Field(description="Short, evocative name (2-4 words)")
+    text: str = Field(description="Prompt fragment capturing the essence (1-2 sentences)")
+    style_tags: list[str] = Field(description="3-6 style tags for categorization")
+    category: str = Field(default="extracted", description="Category: lighting, mood, composition, color, texture, or mixed")
+
+
+# Models for Polish Prompts feature
+class PolishedVariation(BaseModel):
+    """A single polished variation result."""
+    id: str = Field(description="The variation ID to match back")
+    text: str = Field(description="The polished prompt text")
+    changes_made: str | None = Field(default=None, description="Brief summary of what was changed")
+
+
+class PolishPromptsResponse(BaseModel):
+    """Response containing polished variations."""
+    polished_variations: list[PolishedVariation] = Field(description="List of polished variations")
+
+
+# Models for Polish Annotations feature
+class PolishedAnnotationItem(BaseModel):
+    """A single polished annotation result."""
+    image_id: str = Field(description="The image ID")
+    original_annotation: str = Field(description="The original annotation text")
+    polished_annotation: str = Field(description="The refined annotation text")
+
+
+class PolishAnnotationsResponse(BaseModel):
+    """Response containing polished annotations."""
+    items: list[PolishedAnnotationItem] = Field(description="Polished annotations")
+
+
+# Models for Design Dimension Analysis
+class DesignDimensionOutput(BaseModel):
+    """A single design dimension extracted from an image (for structured output)."""
+    axis: str = Field(description="Design axis category like 'lighting', 'mood', 'colors'")
+    name: str = Field(description="Evocative 2-4 word name like 'Eerie Green Cast'")
+    description: str = Field(description="2-3 sentence analysis of how this dimension manifests")
+    tags: list[str] = Field(description="2-3 design vocabulary tags")
+    generation_prompt: str = Field(description="Prompt for generating pure concept image")
+
+
+class DimensionAnalysisResponse(BaseModel):
+    """Response containing design dimension analysis."""
+    dimensions: list[DesignDimensionOutput] = Field(description="List of design dimensions")
 
 
 def _detect_image_mime_type(data: bytes) -> str:
@@ -115,15 +165,25 @@ class GeminiService:
         # - 'backend.config' when running as package (uvicorn backend.server:app)
         # - 'config' when running directly or in tests
         try:
-            from backend.config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
+            from backend.config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_FAST_TEXT_MODEL, get_gemini_api_key
         except ImportError:
-            from config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, get_gemini_api_key
+            from config import DEFAULT_TEXT_MODEL, DEFAULT_IMAGE_MODEL, DEFAULT_FAST_TEXT_MODEL, get_gemini_api_key
 
         self.DEFAULT_TEXT_MODEL = DEFAULT_TEXT_MODEL
         self.DEFAULT_IMAGE_MODEL = DEFAULT_IMAGE_MODEL
+        self.DEFAULT_FAST_TEXT_MODEL = DEFAULT_FAST_TEXT_MODEL
 
         self.api_key = api_key or get_gemini_api_key()
-        self.client = genai.Client(api_key=self.api_key)
+
+        # Configure HTTP options with extended timeout and retry for image generation
+        # Image generation can take longer and may hit rate limits
+        http_options = types.HttpOptions(
+            timeout=120000,  # 120 seconds (image gen can be slow)
+            retry_options=types.HttpRetryOptions(
+                attempts=3,  # Retry failed requests up to 3 times
+            ),
+        )
+        self.client = genai.Client(api_key=self.api_key, http_options=http_options)
 
     async def generate_image(
         self,
@@ -404,15 +464,159 @@ class GeminiService:
             usage=usage,
         )
 
+    async def generate_prompt_variations_stream(
+        self,
+        base_prompt: str,
+        count: int,
+        context_images: list[tuple[bytes, str, str | None]] | None = None,
+        context_image_pool: list[tuple[str, bytes, str, str | None, dict | None]] | None = None,
+        title: str | None = None,
+        prompt_template: str | None = None,
+    ):
+        """Stream prompt variation generation with progress updates.
+
+        Yields dicts with either:
+        - {"type": "chunk", "text": "partial text..."}
+        - {"type": "complete", "title": str, "scenes": [...], "annotation_suggestions": [...]}
+        - {"type": "error", "error": str}
+        """
+        model_name = self.DEFAULT_TEXT_MODEL
+        start_time = time.time()
+
+        # Support both old and new API
+        has_pool = context_image_pool is not None and len(context_image_pool) > 0
+        has_legacy = context_images is not None and len(context_images) > 0
+        num_images = len(context_image_pool) if has_pool else (len(context_images) if has_legacy else 0)
+
+        title_info = f", title='{title}'" if title else ", no title"
+        logger.info(f"[STREAMING] Generating {count} structured prompt variations for: {base_prompt[:100]}... (with {num_images} context images{title_info})")
+
+        # Load prompt template from file if not provided
+        if prompt_template is None:
+            prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
+            prompt_file = os.path.join(prompts_dir, "variation_structured.txt")
+            with open(prompt_file, "r") as f:
+                prompt_template = f.read()
+
+        # Build title context
+        title_context = ""
+        if title:
+            title_context = f'USER-PROVIDED TITLE: "{title}"\nUse this title as context for your variations. You may refine it or use it as-is for the output title.'
+
+        # Build context assignment section if image pool is provided
+        context_assignment_section = ""
+        if has_pool:
+            context_assignment_section = f"""
+CONTEXT IMAGE POOL:
+You have access to {len(context_image_pool)} reference images (shown below with their IDs and captions).
+
+For EACH variation you generate:
+1. Select which images from the pool would be most helpful as generation context
+2. Consider: Does the image's mood, style, composition, or color palette align with THIS variation?
+3. Assign 0-3 images per variation via the recommended_context_ids field
+4. Explain your reasoning in context_reasoning
+
+Different variations may use different images - match context to each variation's specific needs.
+
+If any image's caption is inadequate for generation context, suggest improvements in caption_suggestions.
+"""
+        elif has_legacy:
+            context_assignment_section = "\n\nCONTEXT IMAGES:\nThe following reference images have been provided by the user. Use them to understand the visual direction, style, mood, and subject matter the user is interested in.\n"
+
+        # Format the prompt with all placeholders
+        format_values = {
+            "base_prompt": base_prompt,
+            "count": count,
+            "title_context": title_context,
+            "context_assignment_section": context_assignment_section,
+        }
+        class SafeDict(dict):
+            def __missing__(self, key):
+                return ""
+        prompt = prompt_template.format_map(SafeDict(format_values))
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=SceneVariationsResponse,
+        )
+
+        # Build interleaved contents with images
+        if has_pool:
+            contents = []
+            contents.append(prompt)
+            for img_id, img_bytes, mime_type, caption, confirmed_dims in context_image_pool:
+                contents.append(f"\n\nImage ID: {img_id}")
+                contents.append(f"Annotation: {caption or '(none)'}")
+                # Include confirmed design dimensions if available
+                if confirmed_dims:
+                    dims_text = []
+                    for axis, dim in confirmed_dims.items():
+                        dim_name = dim.get("name", "")
+                        dim_desc = dim.get("description", "")
+                        dim_tags = dim.get("tags", [])
+                        tags_str = ", ".join(dim_tags) if dim_tags else ""
+                        dims_text.append(f"  - {axis}: \"{dim_name}\" - {dim_desc} [tags: {tags_str}]")
+                    if dims_text:
+                        contents.append(f"Design Qualities:\n" + "\n".join(dims_text))
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+        elif has_legacy:
+            contents = []
+            contents.append(prompt)
+            for i, (img_bytes, mime_type, caption) in enumerate(context_images):
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                if caption:
+                    contents.append(f"Reference {i+1} caption: {caption}")
+                else:
+                    contents.append(f"Reference {i+1}: (no caption provided)")
+        else:
+            contents = prompt
+
+        try:
+            # Use streaming API - await the method first, then async iterate
+            accumulated_text = ""
+            stream = await self.client.aio.models.generate_content_stream(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+            async for chunk in stream:
+                # Extract text from chunk
+                if chunk.candidates:
+                    for candidate in chunk.candidates:
+                        if candidate.content and candidate.content.parts:
+                            for part in candidate.content.parts:
+                                if hasattr(part, "text") and part.text:
+                                    accumulated_text += part.text
+                                    yield {"type": "chunk", "text": part.text}
+
+            elapsed = time.time() - start_time
+
+            # Parse the complete structured response
+            result = SceneVariationsResponse.model_validate_json(accumulated_text)
+
+            logger.info(f"[STREAMING] Completed: title='{result.title}', {len(result.scenes)} scenes in {elapsed:.1f}s")
+
+            yield {
+                "type": "complete",
+                "title": result.title,
+                "scenes": [scene.model_dump() for scene in result.scenes],
+                "annotation_suggestions": [s.model_dump() for s in result.annotation_suggestions] if result.annotation_suggestions else None,
+            }
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[STREAMING] Failed after {elapsed:.1f}s: {e}")
+            yield {"type": "error", "error": str(e)}
+
     async def generate_prompt_variations(
         self,
         base_prompt: str,
         count: int,
         context_images: list[tuple[bytes, str, str | None]] | None = None,
-        context_image_pool: list[tuple[str, bytes, str, str | None]] | None = None,
+        context_image_pool: list[tuple[str, bytes, str, str | None, dict | None]] | None = None,
         title: str | None = None,
         prompt_template: str | None = None,
-    ) -> tuple[str, list[SceneVariation], list[CaptionSuggestion] | None]:
+    ) -> tuple[str, list[SceneVariation], list[AnnotationSuggestion] | None]:
         """Generate varied prompt descriptions using structured JSON output.
 
         Uses Gemini's structured output feature to guarantee valid JSON responses.
@@ -422,9 +626,10 @@ class GeminiService:
             count: Number of variations to generate
             context_images: DEPRECATED - use context_image_pool instead.
                            Optional list of (image_bytes, mime_type, caption) tuples.
-            context_image_pool: Optional list of (image_id, image_bytes, mime_type, caption) tuples.
+            context_image_pool: Optional list of (image_id, image_bytes, mime_type, caption, confirmed_dims) tuples.
                                When provided, model assigns specific images to each variation
-                               via recommended_context_ids field.
+                               via recommended_context_ids field. confirmed_dims contains design
+                               dimensions with confirmed=True.
             title: Optional user-provided title. If provided, used as context for variations.
                    Model always returns a title (generated or refined from user's).
             prompt_template: Optional custom prompt template with {base_prompt}, {count},
@@ -432,7 +637,7 @@ class GeminiService:
                            If not provided, loads from prompts/variation_structured.txt
 
         Returns:
-            Tuple of (title, list of SceneVariation objects, optional caption suggestions)
+            Tuple of (title, list of SceneVariation objects, optional annotation suggestions)
         """
         model_name = self.DEFAULT_TEXT_MODEL
         start_time = time.time()
@@ -478,13 +683,18 @@ If any image's caption is inadequate for generation context, suggest improvement
             # Legacy mode: just show context images without per-variation assignment
             context_assignment_section = "\n\nCONTEXT IMAGES:\nThe following reference images have been provided by the user. Use them to understand the visual direction, style, mood, and subject matter the user is interested in.\n"
 
-        # Format the prompt with all placeholders
-        prompt = prompt_template.format(
-            base_prompt=base_prompt,
-            count=count,
-            title_context=title_context,
-            context_assignment_section=context_assignment_section
-        )
+        # Format the prompt with all placeholders (use format_map to handle missing keys gracefully)
+        format_values = {
+            "base_prompt": base_prompt,
+            "count": count,
+            "title_context": title_context,
+            "context_assignment_section": context_assignment_section,
+        }
+        # Use a defaultdict-like approach: missing keys return empty string
+        class SafeDict(dict):
+            def __missing__(self, key):
+                return ""
+        prompt = prompt_template.format_map(SafeDict(format_values))
 
         config = types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -495,10 +705,21 @@ If any image's caption is inadequate for generation context, suggest improvement
         if has_pool:
             contents = []
             contents.append(prompt)
-            # Add each image with its ID and caption
-            for img_id, img_bytes, mime_type, caption in context_image_pool:
+            # Add each image with its ID, caption, and design dimensions
+            for img_id, img_bytes, mime_type, caption, confirmed_dims in context_image_pool:
                 contents.append(f"\n\nImage ID: {img_id}")
-                contents.append(f"Caption: {caption or '(none)'}")
+                contents.append(f"Annotation: {caption or '(none)'}")
+                # Include confirmed design dimensions if available
+                if confirmed_dims:
+                    dims_text = []
+                    for axis, dim in confirmed_dims.items():
+                        dim_name = dim.get("name", "")
+                        dim_desc = dim.get("description", "")
+                        dim_tags = dim.get("tags", [])
+                        tags_str = ", ".join(dim_tags) if dim_tags else ""
+                        dims_text.append(f"  - {axis}: \"{dim_name}\" - {dim_desc} [tags: {tags_str}]")
+                    if dims_text:
+                        contents.append(f"Design Qualities:\n" + "\n".join(dims_text))
                 contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
         elif has_legacy:
             # Legacy mode
@@ -530,11 +751,189 @@ If any image's caption is inadequate for generation context, suggest improvement
                 context_ids = scene.recommended_context_ids if scene.recommended_context_ids else []
                 logger.debug(f"Scene {i+1}: type={scene.type}, mood={scene.mood}, context_ids={context_ids}, desc={scene.description[:50]}...")
 
-            return result.title, result.scenes, result.caption_suggestions
+            return result.title, result.scenes, result.annotation_suggestions
 
         except Exception as e:
             elapsed = time.time() - start_time
             logger.error(f"Structured variation generation failed after {elapsed:.1f}s: {e}")
+            raise
+
+    async def polish_prompts(
+        self,
+        base_prompt: str,
+        variations: list[dict],
+        context_images: list[tuple[bytes, str, str | None]] | None = None,
+    ) -> list[PolishedVariation]:
+        """Polish and refine prompt variations based on user notes and emphasized tags.
+
+        Args:
+            base_prompt: The original user prompt
+            variations: List of variations with id, text, user_notes, mood, design, emphasized_tags
+            context_images: Optional list of (bytes, mime_type, caption) for visual context
+
+        Returns:
+            List of PolishedVariation with refined prompt text
+        """
+        start_time = time.time()
+        model_name = self.DEFAULT_FAST_TEXT_MODEL
+
+        logger.info(f"Polishing {len(variations)} variations using {model_name}")
+
+        # Load prompt template
+        prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
+        prompt_file = os.path.join(prompts_dir, "polish_prompts.txt")
+        with open(prompt_file, "r") as f:
+            prompt_template = f.read()
+
+        # Build variations section
+        variations_section = "VARIATIONS TO POLISH:\n"
+        for v in variations:
+            variations_section += f"\n---\nVariation ID: {v['id']}\n"
+            variations_section += f"Current text: {v['text']}\n"
+            if v.get('user_notes'):
+                variations_section += f"User notes: {v['user_notes']}\n"
+            if v.get('mood'):
+                variations_section += f"Mood: {v['mood']}\n"
+            if v.get('emphasized_tags'):
+                variations_section += f"EMPHASIZED TAGS (lean into these): {', '.join(v['emphasized_tags'])}\n"
+            if v.get('design'):
+                design_str = ", ".join(
+                    f"{axis}: {', '.join(tags)}"
+                    for axis, tags in v['design'].items()
+                    if tags
+                )
+                if design_str:
+                    variations_section += f"Design tags: {design_str}\n"
+
+        # Format prompt
+        prompt = prompt_template.format(
+            base_prompt=base_prompt,
+            variations_section=variations_section,
+        )
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=PolishPromptsResponse,
+        )
+
+        # Build contents with optional context images
+        if context_images:
+            contents = []
+            contents.append(prompt)
+            for img_bytes, mime_type, caption in context_images:
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                if caption:
+                    contents.append(f"Context image caption: {caption}")
+        else:
+            contents = prompt
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+
+            elapsed = time.time() - start_time
+            result = PolishPromptsResponse.model_validate_json(response.text)
+
+            logger.info(f"Polished {len(result.polished_variations)} variations in {elapsed:.1f}s")
+            return result.polished_variations
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Polish prompts failed after {elapsed:.1f}s: {e}")
+            raise
+
+    async def polish_annotations(
+        self,
+        annotations: list[dict],  # [{ image_id, annotation, image_path }]
+    ) -> list[PolishedAnnotationItem]:
+        """Polish image annotations for better AI context.
+
+        Refines existing annotations to be more precise and evocative
+        while preserving the user's original intent. Uses fast text model.
+
+        Args:
+            annotations: List of dicts with image_id, annotation, and optional image_path
+
+        Returns:
+            List of PolishedAnnotationItem with refined annotations
+        """
+        model_name = self.DEFAULT_FAST_TEXT_MODEL
+        start_time = time.time()
+
+        logger.info(f"Polishing {len(annotations)} annotations using {model_name}")
+
+        # Build prompt for polishing
+        prompt = """You are refining image annotations for AI image generation context.
+
+TASK: Polish each annotation to be more precise and evocative while preserving the user's intent.
+
+RULES:
+1. PRESERVE the user's original meaning, emotional tone, and key observations
+2. ADD clarity and specificity where helpful (visual elements, textures, moods)
+3. FIX grammar and make the text flow naturally
+4. KEEP the user's voice - if they wrote poetically, keep it poetic
+5. DO NOT add new concepts not implied by the original
+6. Keep annotations concise (1-3 sentences max)
+
+EXAMPLES:
+Original: "Love the surreal mirror feeling, texture is amazing here"
+Polished: "Surreal mirror-like quality with rich, tactile texture. Hand reaching from foreground creates dreamscape atmosphere."
+
+Original: "cool moody vibe, dark"
+Polished: "Moody, atmospheric darkness with evocative shadows."
+
+Original: "I like how the hand grips here, very tense"
+Polished: "Tense grip with dramatic lighting emphasizing the tension in the fingers."
+
+ANNOTATIONS TO POLISH:
+"""
+
+        for item in annotations:
+            prompt += f"\n---\nImage ID: {item['image_id']}\nOriginal: {item['annotation']}\n"
+
+        prompt += "\n\nReturn polished versions for each annotation, preserving the user's intent."
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=PolishAnnotationsResponse,
+        )
+
+        # Build contents - include images for visual context if available
+        contents = [prompt]
+        for item in annotations:
+            if item.get('image_path'):
+                try:
+                    img_bytes = item['image_path'].read_bytes()
+                    mime_type = _detect_image_mime_type(img_bytes)
+                    contents.append(f"\nImage {item['image_id']}:")
+                    contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+                except Exception as e:
+                    logger.warning(f"Could not load image {item['image_id']}: {e}")
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+
+            elapsed = time.time() - start_time
+            result = PolishAnnotationsResponse.model_validate_json(response.text)
+
+            # Add original annotations to the results
+            annotation_map = {item['image_id']: item['annotation'] for item in annotations}
+            for polished_item in result.items:
+                polished_item.original_annotation = annotation_map.get(polished_item.image_id, "")
+
+            logger.info(f"Polished {len(result.items)} annotations in {elapsed:.1f}s")
+            return result.items
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Polish annotations failed after {elapsed:.1f}s: {e}")
             raise
 
     async def annotate_design_dimensions(
@@ -673,3 +1072,194 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
         except json.JSONDecodeError as e:
             print(f"[WARN] Failed to parse annotation JSON: {e}")
             return DesignAnnotation(axes={}, raw_response=text)
+
+    async def analyze_dimensions(
+        self,
+        image_bytes: bytes,
+        count: int = 5,
+    ) -> list[dict]:
+        """Analyze an image and suggest design dimensions.
+
+        Args:
+            image_bytes: Image data as bytes
+            count: Number of dimensions to suggest (default 5)
+
+        Returns:
+            List of design dimension dicts with keys:
+            - axis: Design axis category
+            - name: Evocative name
+            - description: Detailed analysis
+            - tags: Design vocabulary tags
+            - generation_prompt: Prompt for concept generation
+        """
+        # Load prompt template
+        try:
+            from backend.config import load_prompt
+        except ImportError:
+            from config import load_prompt
+
+        prompt_template = load_prompt("dimension_analysis")
+        prompt = prompt_template.format(count=count)
+
+        # Detect MIME type
+        mime_type = _detect_image_mime_type(image_bytes)
+
+        start_time = time.time()
+        print(f"[→] Analyzing {count} design dimensions...")
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.DEFAULT_FAST_TEXT_MODEL,
+                contents=[
+                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                    types.Part.from_text(text=prompt),
+                ],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=DimensionAnalysisResponse,
+                    temperature=0.7,
+                ),
+            )
+        except Exception as e:
+            elapsed = time.time() - start_time
+            print(f"[ERROR] Dimension analysis failed after {elapsed:.1f}s: {e}")
+            raise
+
+        elapsed = time.time() - start_time
+        print(f"[OK] Analyzed dimensions in {elapsed:.1f}s")
+
+        # Extract text response
+        text = ""
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            text += part.text
+
+        # Parse JSON response
+        try:
+            data = json.loads(text)
+            dimensions = data.get("dimensions", [])
+            return dimensions
+        except json.JSONDecodeError as e:
+            print(f"[WARN] Failed to parse dimension analysis JSON: {e}")
+            return []
+
+    async def generate_concept_image(
+        self,
+        dimension: dict,
+        aspect_ratio: str = "1:1",
+    ) -> ImageResult:
+        """Generate a pure concept image for a design dimension.
+
+        Args:
+            dimension: Design dimension dict with name, axis, description, generation_prompt
+            aspect_ratio: Output aspect ratio
+
+        Returns:
+            ImageResult with generated concept image
+        """
+        # Load prompt template
+        try:
+            from backend.config import load_prompt
+        except ImportError:
+            from config import load_prompt
+
+        prompt_template = load_prompt("concept_generation")
+        prompt = prompt_template.format(
+            dimension_name=dimension.get("name", ""),
+            axis=dimension.get("axis", ""),
+            description=dimension.get("description", ""),
+            generation_prompt=dimension.get("generation_prompt", ""),
+        )
+
+        start_time = time.time()
+        print(f"[→] Generating concept image for '{dimension.get('name', 'unknown')}'...")
+
+        # Use the same image generation path as regular images
+        return await self.generate_image(
+            prompt=prompt,
+            aspect_ratio=aspect_ratio,
+        )
+
+    async def extract_design_token(
+        self,
+        image_bytes: bytes,
+        image_mime_type: str,
+        annotation: str | None = None,
+        liked_tags: list[str] | None = None,
+    ) -> DesignTokenExtraction:
+        """Extract a reusable design token from an image based on user preferences.
+
+        Uses the user's annotation and liked tags to understand what they appreciate
+        about the image, then generates a condensed prompt fragment for the Design Library.
+
+        Args:
+            image_bytes: Raw image bytes
+            image_mime_type: MIME type of the image
+            annotation: User's annotation describing what they like about the image
+            liked_tags: List of design tags the user has liked on this image
+
+        Returns:
+            DesignTokenExtraction with name, text (prompt fragment), style_tags, and category
+        """
+        model_name = self.DEFAULT_FAST_TEXT_MODEL
+        start_time = time.time()
+
+        logger.info(f"Extracting design token using {model_name}")
+
+        # Build context from annotation and liked tags
+        user_context = ""
+        if annotation:
+            user_context += f"USER'S ANNOTATION: {annotation}\n"
+        if liked_tags:
+            user_context += f"LIKED DESIGN TAGS: {', '.join(liked_tags)}\n"
+
+        prompt = f"""Analyze this image and extract a reusable design token (prompt fragment).
+
+{user_context}
+
+TASK: Based on the image and what the user appreciates about it, create a condensed prompt fragment
+that captures the essence of the visual style, mood, or technique. This fragment will be used to
+guide future image generation.
+
+RULES:
+1. The 'name' should be short and evocative (2-4 words), like "Golden Hour Warmth" or "Moody Noir"
+2. The 'text' should be a 1-2 sentence prompt fragment describing the visual qualities
+3. Include 3-6 'style_tags' for categorization and searchability
+4. Set 'category' to one of: lighting, mood, composition, color, texture, or mixed
+
+Focus on extracting the specific visual qualities the user seems to appreciate based on their
+annotation and liked tags. If no explicit preferences are given, analyze the image's most
+distinctive and reusable visual characteristics."""
+
+        config = types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=DesignTokenExtraction,
+        )
+
+        contents = [
+            types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type),
+            prompt,
+        ]
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+
+            elapsed = time.time() - start_time
+
+            # Parse the structured response
+            result = DesignTokenExtraction.model_validate_json(response.text)
+
+            logger.info(f"Extracted design token '{result.name}' in {elapsed:.1f}s")
+            return result
+
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"Design token extraction failed after {elapsed:.1f}s: {e}")
+            raise

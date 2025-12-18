@@ -14,7 +14,10 @@ import {
   X,
   Image,
   Check,
-  AlertCircle,
+  Sparkles,
+  MessageSquare,
+  Heart,
+  Pencil,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -33,14 +36,24 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const addMoreDraftVariations = useStore((s) => s.addMoreDraftVariations);
   const generateFromDraft = useStore((s) => s.generateFromDraft);
   const deleteDraft = useStore((s) => s.deleteDraft);
-  const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
-  const isGenerating = useStore((s) => s.isGenerating);
+  const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
   const prompts = useStore((s) => s.prompts);
+  const streamingText = useStore((s) => s.streamingText);
+
+  // Check if THIS draft is generating images
+  const isGeneratingImages = generatingImageDraftIds.has(draft.id);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
+  // Polish workflow actions
+  const updateDraftVariationNotes = useStore((s) => s.updateDraftVariationNotes);
+  const toggleDraftVariationTag = useStore((s) => s.toggleDraftVariationTag);
+  const polishDraftVariation = useStore((s) => s.polishDraftVariation);
+  const polishDraftVariations = useStore((s) => s.polishDraftVariations);
 
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [appliedCaptions, setAppliedCaptions] = useState<Set<string>>(new Set());
+  const [appliedAnnotations, setAppliedAnnotations] = useState<Set<string>>(new Set());
+  const [polishingIds, setPolishingIds] = useState<Set<string>>(new Set());
+  const [isPolishingAll, setIsPolishingAll] = useState(false);
 
   // Build a map of image ID to image data for quick lookup
   const imageMap = useMemo(() => {
@@ -55,12 +68,12 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
   const findImageById = useCallback((id: string) => imageMap.get(id), [imageMap]);
 
-  // Apply a caption suggestion
-  const handleApplyCaption = async (imageId: string, suggestedCaption: string) => {
+  // Apply an annotation suggestion
+  const handleApplyAnnotation = async (imageId: string, suggestedAnnotation: string) => {
     const img = findImageById(imageId);
-    // updateImageNotes takes (imageId, notes, caption) - keep existing notes, update caption
-    await updateImageNotes(imageId, img?.notes || '', suggestedCaption);
-    setAppliedCaptions((prev) => new Set(prev).add(imageId));
+    // updateImageNotes takes (imageId, notes, annotation) - keep existing notes, update annotation
+    await updateImageNotes(imageId, img?.notes || '', suggestedAnnotation);
+    setAppliedAnnotations((prev) => new Set(prev).add(imageId));
   };
 
   const handleRegenerate = async (variationId: string) => {
@@ -96,6 +109,35 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
     deleteDraft(draft.id);
   };
 
+  // Polish single variation
+  const handlePolishVariation = async (variationId: string) => {
+    setPolishingIds((prev) => new Set(prev).add(variationId));
+    try {
+      await polishDraftVariation(draft.id, variationId);
+    } finally {
+      setPolishingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(variationId);
+        return next;
+      });
+    }
+  };
+
+  // Polish all variations
+  const handlePolishAll = async () => {
+    setIsPolishingAll(true);
+    try {
+      await polishDraftVariations(draft.id);
+    } finally {
+      setIsPolishingAll(false);
+    }
+  };
+
+  // Check if any variation has notes or emphasized tags
+  const hasAnnotations = draft.variations.some(
+    (v) => (v.userNotes && v.userNotes.trim()) || (v.emphasizedTags && v.emphasizedTags.length > 0)
+  );
+
   return (
     <div className="flex flex-col h-full bg-canvas">
       {/* Header */}
@@ -130,16 +172,16 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
             variant="brass"
             size="sm"
             leftIcon={
-              isGenerating ? (
+              isGeneratingImages ? (
                 <Loader2 size={14} className="animate-spin" />
               ) : (
                 <Wand2 size={14} />
               )
             }
             onClick={handleGenerate}
-            disabled={draft.variations.length === 0 || isGenerating || isGeneratingVariations}
+            disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating}
           >
-            {isGenerating ? 'Generating...' : 'Generate Images'}
+            {isGeneratingImages ? 'Generating...' : 'Generate Images'}
           </Button>
         </div>
       </header>
@@ -155,10 +197,19 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
       {/* Variations list - scrollable */}
       <div className="flex-1 overflow-y-auto p-4">
         {/* Loading state when initially generating */}
-        {isGeneratingVariations && draft.variations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-ink-tertiary">
+        {draft.isGenerating && draft.variations.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-8 text-ink-tertiary">
             <Loader2 className="w-8 h-8 animate-spin mb-3" />
-            <p className="text-sm">Generating prompt variations...</p>
+            <p className="text-sm mb-3">Generating prompt variations...</p>
+            {/* Show streaming text as it arrives */}
+            {streamingText && (
+              <div className="w-full max-w-2xl px-4">
+                <div className="w-full bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary overflow-hidden max-h-32 overflow-y-auto">
+                  <span className="opacity-50">Receiving:</span>
+                  <pre className="w-full min-w-0 whitespace-pre-wrap break-words mt-1">{streamingText.slice(-500)}</pre>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -167,7 +218,10 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
           <AnimatePresence>
             {draft.variations.map((variation, index) => {
               const isRegenerating = regeneratingIds.has(variation.id);
+              const isPolishing = polishingIds.has(variation.id);
               const isExpanded = expandedIds.has(variation.id);
+              const hasNotes = variation.userNotes && variation.userNotes.trim();
+              const hasEmphasizedTags = variation.emphasizedTags && variation.emphasizedTags.length > 0;
 
               return (
                 <motion.div
@@ -180,7 +234,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                     'border border-border rounded-lg',
                     'bg-surface hover:bg-canvas-muted/30',
                     'transition-colors',
-                    isRegenerating && 'opacity-60'
+                    (isRegenerating || isPolishing) && 'opacity-60'
                   )}
                 >
                   {/* Card header */}
@@ -199,12 +253,37 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                           {variation.type}
                         </Badge>
                       )}
+                      {/* Edited indicator */}
+                      {variation.isEdited && (
+                        <Badge variant="outline" size="sm" className="text-amber-600 border-amber-300 bg-amber-50">
+                          <Pencil size={10} className="mr-0.5" />
+                          edited
+                        </Badge>
+                      )}
                     </div>
 
                     <div className="flex-1" />
 
                     {/* Actions */}
                     <div className="flex items-center gap-1 shrink-0">
+                      {/* Polish button */}
+                      <button
+                        onClick={() => handlePolishVariation(variation.id)}
+                        disabled={isPolishing || isRegenerating || (!hasNotes && !hasEmphasizedTags)}
+                        className={clsx(
+                          'p-1.5 rounded-md transition-colors disabled:opacity-30',
+                          hasNotes || hasEmphasizedTags
+                            ? 'text-brass hover:text-brass hover:bg-brass/10'
+                            : 'text-ink-tertiary hover:text-ink hover:bg-canvas-muted'
+                        )}
+                        title={hasNotes || hasEmphasizedTags ? 'Polish with notes/tags' : 'Add notes or emphasize tags to enable polish'}
+                      >
+                        {isPolishing ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={14} />
+                        )}
+                      </button>
                       <button
                         onClick={() => toggleExpand(variation.id)}
                         className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
@@ -214,7 +293,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                       </button>
                       <button
                         onClick={() => handleRegenerate(variation.id)}
-                        disabled={isRegenerating}
+                        disabled={isRegenerating || isPolishing}
                         className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors disabled:opacity-50"
                         title="Regenerate"
                       >
@@ -263,42 +342,139 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                     )}
                   </div>
 
-                  {/* Per-variation context images */}
+                  {/* Notes field - always visible */}
+                  <div className="px-3 pb-2">
+                    <div className="flex items-start gap-2">
+                      <MessageSquare size={12} className="text-ink-tertiary mt-1.5 shrink-0" />
+                      <textarea
+                        value={variation.userNotes || ''}
+                        onChange={(e) => updateDraftVariationNotes(draft.id, variation.id, e.target.value)}
+                        className={clsx(
+                          'flex-1 min-h-[40px] p-2 rounded-md text-xs',
+                          'bg-canvas-muted/50 text-ink-secondary',
+                          'border border-transparent focus:border-brass/50 focus:bg-canvas focus:outline-none',
+                          'resize-y placeholder:text-ink-muted',
+                          'transition-colors'
+                        )}
+                        placeholder="Add notes for AI refinement (e.g., 'make it warmer', 'add dramatic lighting')..."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Design tags - clickable to emphasize */}
+                  {variation.design && Object.keys(variation.design).length > 0 && (
+                    <div className="px-3 pb-3 pt-1 border-t border-border/30">
+                      <div className="space-y-1.5">
+                        {Object.entries(variation.design).map(([axis, tags]) => (
+                          <div key={axis} className="flex items-start gap-2">
+                            <span className="text-[0.6rem] text-ink-muted w-16 shrink-0 pt-0.5 capitalize">
+                              {axis}:
+                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {(tags as string[]).map((tag) => {
+                                const isEmphasized = variation.emphasizedTags?.includes(tag);
+                                return (
+                                  <button
+                                    key={tag}
+                                    onClick={() => toggleDraftVariationTag(draft.id, variation.id, tag)}
+                                    className={clsx(
+                                      'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.65rem] transition-all',
+                                      isEmphasized
+                                        ? 'bg-brass/20 text-brass border border-brass/40'
+                                        : 'bg-canvas-muted text-ink-tertiary border border-transparent hover:bg-canvas-muted/80'
+                                    )}
+                                    title={isEmphasized ? 'Click to de-emphasize' : 'Click to emphasize in polish'}
+                                  >
+                                    {isEmphasized && <Heart size={8} className="fill-current" />}
+                                    {tag}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Per-variation context images with inline annotation suggestions */}
                   {variation.recommended_context_ids && variation.recommended_context_ids.length > 0 && (
                     <div className="px-3 pb-3 pt-1 border-t border-border/30">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 mb-2">
                         <Image size={12} className="text-ink-tertiary shrink-0" />
                         <span className="text-[0.65rem] text-ink-muted shrink-0">Context:</span>
-                        <div className="flex gap-1.5 flex-wrap">
-                          {variation.recommended_context_ids.map((imgId) => {
-                            const img = findImageById(imgId);
-                            return img ? (
-                              <img
-                                key={imgId}
-                                src={getImageUrl(img.image_path)}
-                                alt={img.caption || 'Context image'}
-                                className="w-7 h-7 rounded object-cover border border-border/50"
-                                title={variation.context_reasoning || img.caption || imgId}
-                              />
-                            ) : (
-                              <div
-                                key={imgId}
-                                className="w-7 h-7 rounded bg-canvas-muted flex items-center justify-center"
-                                title={`Image not found: ${imgId}`}
-                              >
-                                <Image size={12} className="text-ink-muted" />
-                              </div>
-                            );
-                          })}
-                        </div>
                         {variation.context_reasoning && (
                           <span
-                            className="text-[0.6rem] text-ink-muted italic truncate flex-1 ml-1"
+                            className="text-[0.6rem] text-ink-muted italic truncate flex-1"
                             title={variation.context_reasoning}
                           >
                             {variation.context_reasoning}
                           </span>
                         )}
+                      </div>
+                      <div className="space-y-2">
+                        {variation.recommended_context_ids.map((imgId) => {
+                          const img = findImageById(imgId);
+                          // Find suggestion for this image
+                          const suggestion = draft.annotationSuggestions?.find(s => s.image_id === imgId);
+                          const isApplied = appliedAnnotations.has(imgId);
+
+                          return (
+                            <div key={imgId} className="flex gap-2 items-start">
+                              {img ? (
+                                <img
+                                  src={getImageUrl(img.image_path)}
+                                  alt={img.annotation || 'Context image'}
+                                  className="w-10 h-10 rounded object-cover border border-border/50 shrink-0"
+                                  title={img.annotation || imgId}
+                                />
+                              ) : (
+                                <div
+                                  className="w-10 h-10 rounded bg-canvas-muted flex items-center justify-center shrink-0"
+                                  title={`Image not found: ${imgId}`}
+                                >
+                                  <Image size={14} className="text-ink-muted" />
+                                </div>
+                              )}
+                              <div className="flex-1 min-w-0">
+                                {/* Show annotation and suggestion side by side */}
+                                {img?.annotation && (
+                                  <p className="text-[0.65rem] text-ink-secondary line-clamp-3" title={img.annotation}>
+                                    "{img.annotation}"
+                                  </p>
+                                )}
+                                {/* Inline annotation suggestion */}
+                                {suggestion && !isApplied && (
+                                  <div className="mt-1 flex items-start gap-2 bg-amber-50/50 rounded p-1.5">
+                                    <Sparkles size={10} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[0.65rem] text-amber-700">
+                                        "{suggestion.suggested_annotation}"
+                                      </p>
+                                      {suggestion.reason && (
+                                        <p className="text-[0.55rem] text-amber-600/70 mt-0.5">
+                                          {suggestion.reason}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <button
+                                      onClick={() => handleApplyAnnotation(imgId, suggestion.suggested_annotation)}
+                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                    >
+                                      Apply
+                                    </button>
+                                  </div>
+                                )}
+                                {isApplied && (
+                                  <div className="mt-1 flex items-center gap-1 text-[0.6rem] text-green-600">
+                                    <Check size={10} />
+                                    Applied
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
@@ -309,91 +485,15 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
         </div>
       </div>
 
-      {/* Caption Suggestions Section */}
-      {draft.captionSuggestions && draft.captionSuggestions.length > 0 && (
-        <div className="px-4 py-3 border-t border-border bg-amber-50/50 shrink-0">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertCircle size={14} className="text-amber-600" />
-            <span className="text-xs font-medium text-amber-700">
-              Caption Improvements Suggested
-            </span>
-            <span className="text-[0.65rem] text-amber-600/70">
-              Better captions help AI generate more relevant images
-            </span>
-          </div>
-          <div className="space-y-2">
-            {draft.captionSuggestions.map((suggestion) => {
-              const img = findImageById(suggestion.image_id);
-              const isApplied = appliedCaptions.has(suggestion.image_id);
-              return (
-                <div
-                  key={suggestion.image_id}
-                  className={clsx(
-                    'flex gap-3 items-start p-2 rounded-md',
-                    isApplied ? 'bg-green-50/50' : 'bg-white/50'
-                  )}
-                >
-                  {img ? (
-                    <img
-                      src={getImageUrl(img.image_path)}
-                      alt={suggestion.original_caption || 'Image'}
-                      className="w-10 h-10 rounded object-cover border border-border/50 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded bg-canvas-muted flex items-center justify-center shrink-0">
-                      <Image size={14} className="text-ink-muted" />
-                    </div>
-                  )}
-                  <div className="flex-1 min-w-0">
-                    {suggestion.original_caption && (
-                      <p className="text-[0.65rem] text-ink-muted line-through mb-0.5">
-                        {suggestion.original_caption}
-                      </p>
-                    )}
-                    <p className="text-xs text-ink-secondary">
-                      "{suggestion.suggested_caption}"
-                    </p>
-                    {suggestion.reason && (
-                      <p className="text-[0.6rem] text-amber-600/80 mt-0.5 italic">
-                        {suggestion.reason}
-                      </p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => handleApplyCaption(suggestion.image_id, suggestion.suggested_caption)}
-                    disabled={isApplied}
-                    className={clsx(
-                      'shrink-0 px-2 py-1 rounded text-xs transition-colors',
-                      isApplied
-                        ? 'bg-green-100 text-green-700 cursor-default'
-                        : 'bg-amber-100 text-amber-700 hover:bg-amber-200'
-                    )}
-                  >
-                    {isApplied ? (
-                      <span className="flex items-center gap-1">
-                        <Check size={12} />
-                        Applied
-                      </span>
-                    ) : (
-                      'Apply'
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Footer */}
       <div className="flex items-center justify-between px-4 py-3 border-t border-border bg-surface shrink-0">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"
             size="sm"
-            leftIcon={isGeneratingVariations ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
+            leftIcon={draft.isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             onClick={() => addMoreDraftVariations(draft.id, 2)}
-            disabled={isGeneratingVariations || isGenerating}
+            disabled={draft.isGenerating || isGeneratingImages || isPolishingAll}
           >
             Add More
           </Button>
@@ -402,20 +502,38 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Polish All button - only show when there are annotations */}
+          {hasAnnotations && (
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={
+                isPolishingAll ? (
+                  <Loader2 size={14} className="animate-spin" />
+                ) : (
+                  <Sparkles size={14} />
+                )
+              }
+              onClick={handlePolishAll}
+              disabled={isPolishingAll || isGeneratingImages || draft.isGenerating}
+            >
+              {isPolishingAll ? 'Polishing...' : 'Polish All'}
+            </Button>
+          )}
           <Button
             variant="brass"
             leftIcon={
-              isGenerating ? (
+              isGeneratingImages ? (
                 <Loader2 size={16} className="animate-spin" />
               ) : (
                 <Wand2 size={16} />
               )
             }
             onClick={handleGenerate}
-            disabled={draft.variations.length === 0 || isGenerating || isGeneratingVariations}
+            disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating || isPolishingAll}
           >
-            {isGenerating ? 'Generating...' : 'Generate Images'}
+            {isGeneratingImages ? 'Generating...' : 'Generate Images'}
           </Button>
         </div>
       </div>

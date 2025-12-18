@@ -105,3 +105,9 @@ def reload_metadata(test_data_dir, client):
         # The load_metadata function reads from disk, so this should work
         pass
     return _reload
+
+
+@pytest.fixture
+def sample_prompt_with_image(sample_prompt_id, sample_image_id):
+    """Return tuple of (prompt_id, image_id) for tests needing both."""
+    return (sample_prompt_id, sample_image_id)

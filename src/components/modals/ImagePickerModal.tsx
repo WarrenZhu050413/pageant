@@ -1,49 +1,43 @@
 import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
-import { X, Check, Star, FolderOpen, ChevronLeft } from 'lucide-react';
+import { X, Check, FolderOpen, ChevronLeft, Star } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button } from '../ui';
 import type { Collection } from '../../types';
 
-type PickerSource = 'favorites' | 'collection';
 type PickerStep = 'select-collection' | 'select-images';
+
+const FAVORITES_COLLECTION_NAME = '⭐ Favorites';
 
 interface ImagePickerModalProps {
   isOpen: boolean;
-  source: PickerSource;
   onClose: () => void;
   onConfirm: (imageIds: string[]) => void;
 }
 
-export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePickerModalProps) {
+export function ImagePickerModal({ isOpen, onClose, onConfirm }: ImagePickerModalProps) {
   const prompts = useStore((s) => s.prompts);
-  const favorites = useStore((s) => s.favorites);
-  const collections = useStore((s) => s.collections);
+  const rawCollections = useStore((s) => s.collections);
+
+  // Sort collections with Favorites at top
+  const collections = useMemo(() => {
+    return [...rawCollections].sort((a, b) => {
+      if (a.name === FAVORITES_COLLECTION_NAME) return -1;
+      if (b.name === FAVORITES_COLLECTION_NAME) return 1;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [rawCollections]);
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [selectedImageIds, setSelectedImageIds] = useState<Set<string>>(new Set());
   const [selectedCollection, setSelectedCollection] = useState<Collection | null>(null);
-  const [step, setStep] = useState<PickerStep>(
-    source === 'collection' ? 'select-collection' : 'select-images'
-  );
+  const [step, setStep] = useState<PickerStep>('select-collection');
 
-  // Get images based on source
+  // Get images from selected collection
   const availableImages = useMemo(() => {
-    if (source === 'favorites') {
-      // Get favorite images with their data
-      return favorites
-        .map((id) => {
-          for (const p of prompts) {
-            const img = p.images.find((i) => i.id === id);
-            if (img) return { image: img, promptTitle: p.title };
-          }
-          return null;
-        })
-        .filter(Boolean) as { image: { id: string; image_path: string }; promptTitle: string }[];
-    } else if (source === 'collection' && selectedCollection) {
-      // Get images from selected collection
+    if (selectedCollection) {
       return selectedCollection.image_ids
         .map((id) => {
           for (const p of prompts) {
@@ -55,7 +49,7 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
         .filter(Boolean) as { image: { id: string; image_path: string }; promptTitle: string }[];
     }
     return [];
-  }, [source, favorites, selectedCollection, prompts]);
+  }, [selectedCollection, prompts]);
 
   const handleToggleImage = (id: string) => {
     setSelectedImageIds((prev) => {
@@ -88,7 +82,7 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
   const handleClose = () => {
     setSelectedImageIds(new Set());
     setSelectedCollection(null);
-    setStep(source === 'collection' ? 'select-collection' : 'select-images');
+    setStep('select-collection');
     onClose();
   };
 
@@ -106,9 +100,7 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
   if (!isOpen) return null;
 
   const title =
-    source === 'favorites'
-      ? 'Select from Favorites'
-      : step === 'select-collection'
+    step === 'select-collection'
       ? 'Select a Collection'
       : `Select from "${selectedCollection?.name}"`;
 
@@ -141,7 +133,7 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
-            {source === 'collection' && step === 'select-images' && (
+            {step === 'select-images' && (
               <button
                 onClick={handleBackToCollections}
                 className="p-1 rounded-lg text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
@@ -150,8 +142,8 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
               </button>
             )}
             <div className="flex items-center gap-2">
-              {source === 'favorites' ? (
-                <Star size={18} className="text-favorite" />
+              {selectedCollection?.name === FAVORITES_COLLECTION_NAME ? (
+                <Star size={18} className="text-amber-500" />
               ) : (
                 <FolderOpen size={18} className="text-brass" />
               )}
@@ -171,44 +163,49 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 min-h-[300px]">
           {/* Collection Selection Step */}
-          {source === 'collection' && step === 'select-collection' && (
+          {step === 'select-collection' && (
             <div className="space-y-2">
               {collections.length === 0 ? (
                 <div className="text-center py-8 text-ink-muted text-sm">
                   No collections yet. Create a collection first.
                 </div>
               ) : (
-                collections.map((collection) => (
-                  <button
-                    key={collection.id}
-                    onClick={() => handleSelectCollection(collection)}
-                    className={clsx(
-                      'w-full p-3 rounded-lg text-left',
-                      'bg-canvas-subtle hover:bg-canvas-muted transition-colors',
-                      'flex items-center gap-3'
-                    )}
-                  >
-                    <FolderOpen size={20} className="text-brass shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-ink truncate">{collection.name}</div>
-                      <div className="text-xs text-ink-muted">
-                        {collection.image_ids.length} images
+                collections.map((collection) => {
+                  const isFavorites = collection.name === FAVORITES_COLLECTION_NAME;
+                  return (
+                    <button
+                      key={collection.id}
+                      onClick={() => handleSelectCollection(collection)}
+                      className={clsx(
+                        'w-full p-3 rounded-lg text-left',
+                        'bg-canvas-subtle hover:bg-canvas-muted transition-colors',
+                        'flex items-center gap-3'
+                      )}
+                    >
+                      {isFavorites ? (
+                        <Star size={20} className="text-amber-500 shrink-0" />
+                      ) : (
+                        <FolderOpen size={20} className="text-brass shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-ink truncate">{collection.name}</div>
+                        <div className="text-xs text-ink-muted">
+                          {collection.image_ids.length} images
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))
+                    </button>
+                  );
+                })
               )}
             </div>
           )}
 
           {/* Image Selection Step */}
-          {(source === 'favorites' || step === 'select-images') && (
+          {step === 'select-images' && (
             <>
               {availableImages.length === 0 ? (
                 <div className="text-center py-8 text-ink-muted text-sm">
-                  {source === 'favorites'
-                    ? 'No favorites yet. Star some images first.'
-                    : 'This collection is empty.'}
+                  This collection is empty.
                 </div>
               ) : (
                 <>
@@ -298,7 +295,7 @@ export function ImagePickerModal({ isOpen, source, onClose, onConfirm }: ImagePi
         </div>
 
         {/* Footer */}
-        {(source === 'favorites' || step === 'select-images') && (
+        {step === 'select-images' && (
           <div className="flex items-center justify-between px-4 py-3 border-t border-border shrink-0">
             <Button variant="secondary" size="sm" onClick={handleClose}>
               Cancel

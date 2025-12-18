@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Check } from 'lucide-react';
+import { Check, Sparkles, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
+import { polishAnnotations } from '../../api';
 import { SUGGESTED_TAGS, type DesignAxis } from '../../types';
 
 // Helper to find which axis a tag belongs to
@@ -42,9 +43,10 @@ export function DesignAnnotation() {
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
 
-  const [caption, setCaption] = useState('');
+  const [annotation, setAnnotation] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [isPolishing, setIsPolishing] = useState(false);
 
   const currentPrompt = useMemo(
     () => prompts.find((p) => p.id === currentPromptId) || null,
@@ -83,10 +85,18 @@ export function DesignAnnotation() {
     return null;
   }, [currentPrompt, currentCollection, currentImageIndex, imageMap]);
 
-  // Sync caption with current image
+  // Group annotations by axis for display - MUST be before early return (React hooks rule)
+  const groupedAnnotations = useMemo(() => {
+    if (!currentImage?.annotations) return [];
+    return Object.entries(currentImage.annotations).filter(
+      ([, tags]) => tags && tags.length > 0
+    );
+  }, [currentImage?.annotations]);
+
+  // Sync annotation with current image
   useEffect(() => {
-    setCaption(currentImage?.caption || '');
-  }, [currentImage?.id, currentImage?.caption]);
+    setAnnotation(currentImage?.annotation || '');
+  }, [currentImage?.id, currentImage?.annotation]);
 
   const handleTagClick = (tag: string) => {
     if (!currentImage) return;
@@ -99,7 +109,7 @@ export function DesignAnnotation() {
     if (!currentImage) return;
     setIsSaving(true);
     try {
-      await updateImageNotes(currentImage.id, currentImage.notes || '', caption);
+      await updateImageNotes(currentImage.id, currentImage.notes || '', annotation);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -107,96 +117,145 @@ export function DesignAnnotation() {
     }
   };
 
+  const handlePolish = async () => {
+    if (!currentImage || !annotation.trim()) return;
+    setIsPolishing(true);
+    try {
+      const response = await polishAnnotations([currentImage.id]);
+      if (response.success && response.polished.length > 0) {
+        const polished = response.polished[0].polished_annotation;
+        setAnnotation(polished);
+        // Auto-save the polished annotation
+        await updateImageNotes(currentImage.id, currentImage.notes || '', polished);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } finally {
+      setIsPolishing(false);
+    }
+  };
+
   if (!currentImage) return null;
 
   const hasAnnotations = currentImage.annotations && Object.keys(currentImage.annotations).length > 0;
-  const hasChanges = caption !== (currentImage.caption || '');
-
-  // Group annotations by axis for display
-  const groupedAnnotations = useMemo(() => {
-    if (!currentImage?.annotations) return [];
-    return Object.entries(currentImage.annotations).filter(
-      ([, tags]) => tags && tags.length > 0
-    );
-  }, [currentImage?.annotations]);
+  const hasChanges = annotation !== (currentImage.annotation || '');
 
   return (
-    <div className="px-6 py-3 space-y-3">
-      {/* Note Input - Full width, 2 lines */}
-      <div className="relative">
-        <textarea
-          value={caption}
-          onChange={(e) => setCaption(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey && hasChanges) {
-              e.preventDefault();
-              handleSave();
-            }
-          }}
-          placeholder="What stands out in this image?"
-          rows={2}
-          className={clsx(
-            'w-full px-3 py-2 pr-12 rounded-lg resize-none',
-            'bg-canvas-subtle border border-border/50',
-            'text-sm text-ink placeholder:text-ink-muted/60',
-            'focus:outline-none focus:ring-1 focus:ring-brass/30 focus:border-brass/50',
-            'transition-all'
-          )}
-        />
-        <div className="absolute right-2 top-2">
-          {saved ? (
-            <span className="text-xs text-success flex items-center gap-0.5">
-              <Check size={12} />
+    <div className="px-6 py-3">
+      {/* Two Column Layout: Notes | Design Tags */}
+      <div className="flex gap-6">
+        {/* Left Column: Notes */}
+        <div className="w-64 shrink-0">
+          <div className="relative">
+            <textarea
+              value={annotation}
+              onChange={(e) => setAnnotation(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey && hasChanges) {
+                  e.preventDefault();
+                  handleSave();
+                }
+              }}
+              placeholder="What stands out in this image?"
+              rows={3}
+              className={clsx(
+                'w-full px-3 py-2 rounded-lg resize-none',
+                'bg-canvas-subtle border border-border/50',
+                'text-sm text-ink placeholder:text-ink-muted/60',
+                'focus:outline-none focus:ring-1 focus:ring-brass/30 focus:border-brass/50',
+                'transition-all'
+              )}
+            />
+          </div>
+          {/* Helper text */}
+          <div className="mt-1.5 flex items-center justify-between text-[0.6rem] text-ink-muted">
+            <span>
+              <kbd className="px-1 py-0.5 rounded bg-canvas-muted border border-border/50 font-mono">⇧↵</kbd>
+              {' '}new line
             </span>
-          ) : hasChanges ? (
-            <button
-              onClick={handleSave}
-              disabled={isSaving}
-              className="px-2 py-0.5 rounded text-xs font-medium bg-brass text-surface hover:bg-brass-dark"
-            >
-              {isSaving ? '...' : 'Save'}
-            </button>
-          ) : null}
+            <span className="flex items-center gap-1.5">
+              {/* Polish button - only show when annotation has content */}
+              {annotation.trim() && (
+                <button
+                  onClick={handlePolish}
+                  disabled={isPolishing}
+                  className={clsx(
+                    'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.6rem] font-medium transition-all',
+                    'bg-brass/10 text-brass hover:bg-brass/20',
+                    isPolishing && 'opacity-50'
+                  )}
+                  title="Polish annotation with AI"
+                >
+                  {isPolishing ? (
+                    <Loader2 size={9} className="animate-spin" />
+                  ) : (
+                    <Sparkles size={9} />
+                  )}
+                  Polish
+                </button>
+              )}
+              {saved ? (
+                <span className="text-success flex items-center gap-0.5">
+                  <Check size={10} /> saved
+                </span>
+              ) : hasChanges ? (
+                <button
+                  onClick={handleSave}
+                  disabled={isSaving}
+                  className="px-1.5 py-0.5 rounded text-[0.6rem] font-medium bg-brass text-surface hover:bg-brass-dark"
+                >
+                  {isSaving ? '...' : '↵ save'}
+                </button>
+              ) : (
+                <span>
+                  <kbd className="px-1 py-0.5 rounded bg-canvas-muted border border-border/50 font-mono">↵</kbd>
+                  {' '}to save
+                </span>
+              )}
+            </span>
+          </div>
+        </div>
+
+        {/* Right Column: Design Tags by Axis */}
+        <div className="flex-1 min-w-0">
+          {hasAnnotations ? (
+            <div className="space-y-1.5">
+              {groupedAnnotations.map(([axis, tags]) => (
+                <div key={axis} className="flex items-start gap-2">
+                  <span className="w-14 text-[0.6rem] text-ink-muted uppercase tracking-wide text-right shrink-0 pt-1">
+                    {axis.replace('_', ' ')}
+                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {tags.map((tag) => {
+                      const liked = isTagLiked(tag, currentImage.liked_axes);
+                      return (
+                        <button
+                          key={tag}
+                          onClick={() => handleTagClick(tag)}
+                          className={clsx(
+                            'px-2 py-0.5 rounded-full text-xs transition-all',
+                            'border',
+                            liked
+                              ? 'bg-brass/15 border-brass text-brass-dark font-medium'
+                              : 'bg-surface border-border/50 text-ink-secondary hover:border-brass/40 hover:bg-brass/5'
+                          )}
+                        >
+                          {liked && <span className="mr-0.5">♥</span>}
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-ink-muted/50 italic py-2">
+              Design tags will appear on new generations
+            </p>
+          )}
         </div>
       </div>
-
-      {/* Design Tags - Organized by Axis */}
-      {hasAnnotations ? (
-        <div className="space-y-1.5">
-          {groupedAnnotations.map(([axis, tags]) => (
-            <div key={axis} className="flex items-center gap-3">
-              <span className="w-16 text-[0.65rem] text-ink-muted uppercase tracking-wide text-right shrink-0">
-                {axis.replace('_', ' ')}
-              </span>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {tags.map((tag) => {
-                  const liked = isTagLiked(tag, currentImage.liked_axes);
-                  return (
-                    <button
-                      key={tag}
-                      onClick={() => handleTagClick(tag)}
-                      className={clsx(
-                        'px-2.5 py-0.5 rounded-full text-xs transition-all',
-                        'border',
-                        liked
-                          ? 'bg-brass/15 border-brass text-brass-dark font-medium'
-                          : 'bg-surface border-border/50 text-ink-secondary hover:border-brass/40 hover:bg-brass/5'
-                      )}
-                    >
-                      {liked && <span className="mr-0.5">♥</span>}
-                      {tag}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-xs text-ink-muted/50 italic text-center py-2">
-          Design tags will appear on new generations
-        </p>
-      )}
     </div>
   );
 }

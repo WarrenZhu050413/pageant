@@ -2,7 +2,6 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
   Prompt,
-  Template,
   Collection,
   Story,
   Settings,
@@ -14,6 +13,7 @@ import type {
   ImageData,
   DesignPreferences,
   DesignAxis,
+  DesignDimension,
   LibraryItem,
   LibraryItemType,
   PromptVariation,
@@ -31,7 +31,6 @@ interface AppStore {
   // Data
   prompts: Prompt[];
   favorites: string[];
-  templates: Template[];
   libraryItems: LibraryItem[];
   collections: Collection[];
   stories: Story[];
@@ -67,10 +66,14 @@ interface AppStore {
   showPromptPreview: boolean;
   // Image generation params for variations (stored for use in generateFromVariations)
   variationsImageParams: ImageGenerationParams;
+  // Streaming text for real-time feedback during prompt generation
+  streamingText: string;
 
   // Draft Prompts (decoupled variations workflow)
   draftPrompts: DraftPrompt[];
   currentDraftId: string | null;
+  // Track drafts currently generating images (for concurrent batch support)
+  generatingImageDraftIds: Set<string>;
 
   // Collection Viewing
   currentCollectionId: string | null;
@@ -107,7 +110,6 @@ interface AppStore {
   generate: (params: {
     prompt: string;
     title?: string;  // Optional - will be auto-generated if not provided
-    category?: string;
     count?: number;
   } & ImageGenerationParams) => Promise<void>;
   iterate: (imageId: string) => Promise<void>;
@@ -130,10 +132,14 @@ interface AppStore {
   // Draft Prompt Actions
   setCurrentDraft: (id: string | null) => void;
   updateDraftVariation: (draftId: string, variationId: string, newText: string) => void;
+  updateDraftVariationNotes: (draftId: string, variationId: string, notes: string) => void;
+  toggleDraftVariationTag: (draftId: string, variationId: string, tag: string) => void;
   removeDraftVariation: (draftId: string, variationId: string) => void;
   duplicateDraftVariation: (draftId: string, variationId: string) => void;
   regenerateDraftVariation: (draftId: string, variationId: string) => Promise<void>;
   addMoreDraftVariations: (draftId: string, count?: number) => Promise<void>;
+  polishDraftVariation: (draftId: string, variationId: string) => Promise<void>;
+  polishDraftVariations: (draftId: string) => Promise<void>;
   generateFromDraft: (draftId: string) => Promise<void>;
   deleteDraft: (draftId: string) => void;
   getCurrentDraft: () => DraftPrompt | null;
@@ -157,12 +163,7 @@ interface AppStore {
   clearPromptSelection: () => void;
 
   // Image notes
-  updateImageNotes: (imageId: string, notes: string, caption?: string) => Promise<void>;
-
-  // Templates
-  createTemplate: (data: { name: string; prompt: string; category: string; tags: string[] }) => Promise<void>;
-  deleteTemplate: (id: string) => Promise<void>;
-  useTemplate: (id: string) => Promise<Template | undefined>;
+  updateImageNotes: (imageId: string, notes: string, annotation?: string) => Promise<void>;
 
   // Design Library
   createLibraryItem: (data: {
@@ -177,6 +178,7 @@ interface AppStore {
   }) => Promise<void>;
   deleteLibraryItem: (id: string) => Promise<void>;
   useLibraryItem: (id: string) => Promise<LibraryItem | undefined>;
+  extractDesignToken: (imageId: string, annotation?: string, likedTags?: string[]) => Promise<LibraryItem | undefined>;
 
   // Collections
   createCollection: (name: string, description?: string) => Promise<void>;
@@ -220,6 +222,13 @@ interface AppStore {
   fetchDesignPreferences: () => Promise<void>;
   resetDesignPreferences: () => Promise<void>;
 
+  // Design Dimensions (Rich AI Analysis)
+  pendingAnalysis: Set<string>;  // Image IDs currently being analyzed
+  analyzeDimensions: (imageId: string) => Promise<DesignDimension[]>;
+  generateConcept: (imageId: string, dimension: DesignDimension) => Promise<void>;
+  confirmDimension: (imageId: string, axis: string) => Promise<void>;
+  updateImageDimensions: (imageId: string, dimensions: Record<string, DesignDimension>) => Promise<void>;
+
   // Error handling
   setError: (error: string | null) => void;
   clearError: () => void;
@@ -238,7 +247,6 @@ export const useStore = create<AppStore>()(
       // Initial state
       prompts: [],
       favorites: [],
-      templates: [],
       libraryItems: [],
       collections: [],
       stories: [],
@@ -269,10 +277,12 @@ export const useStore = create<AppStore>()(
       variationsTitle: '',
       showPromptPreview: false,
       variationsImageParams: {},
+      streamingText: '',
 
       // Draft Prompts
       draftPrompts: [],
       currentDraftId: null,
+      generatingImageDraftIds: new Set(),
 
       // Collection Viewing
       currentCollectionId: null,
@@ -284,12 +294,14 @@ export const useStore = create<AppStore>()(
       designPreferences: null,
       totalRated: 0,
 
+      // Design Dimensions (Rich AI Analysis)
+      pendingAnalysis: new Set<string>(),
+
       // Initialize app
       initialize: async () => {
         try {
-          const [prompts, templates, libraryItems, collections, settings, sessions] = await Promise.all([
+          const [prompts, libraryItems, collections, settings, sessions] = await Promise.all([
             api.fetchPrompts(),
-            api.fetchTemplates(),
             api.fetchLibraryItems(),
             api.fetchCollections(),
             api.fetchSettings(),
@@ -309,7 +321,6 @@ export const useStore = create<AppStore>()(
 
           set({
             prompts,
-            templates,
             libraryItems,
             collections,
             settings,
@@ -324,9 +335,8 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [prompts, templates, libraryItems, collections] = await Promise.all([
+          const [prompts, libraryItems, collections] = await Promise.all([
             api.fetchPrompts(),
-            api.fetchTemplates(),
             api.fetchLibraryItems(),
             api.fetchCollections(),
           ]);
@@ -334,7 +344,7 @@ export const useStore = create<AppStore>()(
           const favResponse = await api.fetchFavorites();
           const favoriteIds = favResponse.map((f) => f.id);
 
-          set({ prompts, templates, libraryItems, collections, favorites: favoriteIds });
+          set({ prompts, libraryItems, collections, favorites: favoriteIds });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -433,7 +443,7 @@ export const useStore = create<AppStore>()(
       clearContextImages: () => set({ contextImageIds: [] }),
 
       // Generation (supports concurrent generations)
-      generate: async ({ prompt, title, category, count, image_size, aspect_ratio, seed, safety_level }) => {
+      generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level }) => {
         const { contextImageIds, pendingPrompts, currentSessionId } = get();
 
         // Create pending prompt
@@ -448,7 +458,6 @@ export const useStore = create<AppStore>()(
           const response = await api.generateImages({
             prompt,
             title,
-            category,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
@@ -515,11 +524,14 @@ export const useStore = create<AppStore>()(
           createdAt: new Date().toISOString(),
           imageParams: { image_size, aspect_ratio, seed, safety_level },
           contextImageIds: contextImageIds.length > 0 ? [...contextImageIds] : undefined,
+          isGenerating: true, // Per-draft generating state for concurrent support
         };
 
+        // Note: isGeneratingVariations kept for backwards compatibility but not used to block UI
         set({
           isGeneratingVariations: true,
           error: null,
+          streamingText: '', // Reset streaming text
           draftPrompts: [newDraft, ...draftPrompts],
           currentDraftId: draftId,
           currentPromptId: null, // Clear current prompt to show draft view
@@ -531,46 +543,77 @@ export const useStore = create<AppStore>()(
         });
 
         try {
-          const response = await api.generatePromptVariations({
+          // Use streaming API for real-time progress
+          let response: { success: boolean; variations?: typeof newDraft.variations; generated_title?: string; annotation_suggestions?: typeof newDraft.annotationSuggestions; error?: string } = { success: false };
+
+          for await (const event of api.generatePromptVariationsStream({
             prompt,
-            title: title || undefined, // Pass title if provided, model will generate if not
+            title: title || undefined,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             image_size,
             aspect_ratio,
             seed,
             safety_level,
-          });
+          })) {
+            if (event.type === 'chunk') {
+              // Update streaming text for UI feedback (rolling window to limit memory)
+              const newText = get().streamingText + (event.text || '');
+              set({ streamingText: newText.slice(-1000) }); // Keep last 1000 chars
+            } else if (event.type === 'complete') {
+              response = {
+                success: event.success || false,
+                variations: event.variations,
+                generated_title: event.generated_title,
+                annotation_suggestions: event.annotation_suggestions,
+              };
+            } else if (event.type === 'error') {
+              response = { success: false, error: event.error };
+            }
+          }
 
-          if (response.success) {
+          if (response.success && response.variations) {
             // Use generated title from model if user didn't provide one
             const finalTitle = response.generated_title || title || 'Untitled';
 
-            // Update the draft with variations, title, and caption suggestions
+            // Update the draft with variations, title, and annotation suggestions
+            // Set isGenerating: false on this specific draft
             set({
               draftPrompts: get().draftPrompts.map((d) =>
                 d.id === draftId
                   ? {
                       ...d,
-                      variations: response.variations,
+                      variations: response.variations!,
                       title: finalTitle,
-                      captionSuggestions: response.caption_suggestions,
+                      annotationSuggestions: response.annotation_suggestions,
+                      isGenerating: false,
                     }
                   : d
               ),
               promptVariations: response.variations, // Keep legacy state for modal fallback
               variationsTitle: finalTitle, // Update legacy title state
               isGeneratingVariations: false,
+              streamingText: '', // Clear streaming text on success
             });
           } else {
+            // Mark this draft as no longer generating on error
             set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId ? { ...d, isGenerating: false } : d
+              ),
               isGeneratingVariations: false,
+              streamingText: '',
               error: response.error || 'Failed to generate variations',
             });
           }
         } catch (error) {
+          // Mark this draft as no longer generating on error
           set({
+            draftPrompts: get().draftPrompts.map((d) =>
+              d.id === draftId ? { ...d, isGenerating: false } : d
+            ),
             isGeneratingVariations: false,
+            streamingText: '',
             error: (error as Error).message,
           });
         }
@@ -689,6 +732,7 @@ export const useStore = create<AppStore>()(
             variationsBasePrompt: '',
             variationsTitle: '',
             variationsImageParams: {},
+            streamingText: '',
           });
 
           await get().refreshData();
@@ -714,6 +758,7 @@ export const useStore = create<AppStore>()(
           variationsTitle: '',
           showPromptPreview: false,
           variationsImageParams: {},
+          streamingText: '',
         });
       },
 
@@ -738,8 +783,48 @@ export const useStore = create<AppStore>()(
               ? {
                   ...d,
                   variations: d.variations.map((v) =>
-                    v.id === variationId ? { ...v, text: newText } : v
+                    v.id === variationId ? { ...v, text: newText, isEdited: true } : v
                   ),
+                }
+              : d
+          ),
+        });
+      },
+
+      updateDraftVariationNotes: (draftId, variationId, notes) => {
+        const { draftPrompts } = get();
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId
+              ? {
+                  ...d,
+                  variations: d.variations.map((v) =>
+                    v.id === variationId ? { ...v, userNotes: notes } : v
+                  ),
+                }
+              : d
+          ),
+        });
+      },
+
+      toggleDraftVariationTag: (draftId, variationId, tag) => {
+        const { draftPrompts } = get();
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId
+              ? {
+                  ...d,
+                  variations: d.variations.map((v) => {
+                    if (v.id !== variationId) return v;
+                    const current = v.emphasizedTags || [];
+                    const isEmphasized = current.includes(tag);
+                    return {
+                      ...v,
+                      emphasizedTags: isEmphasized
+                        ? current.filter((t) => t !== tag)
+                        : [...current, tag],
+                    };
+                  }),
                 }
               : d
           ),
@@ -819,7 +904,12 @@ export const useStore = create<AppStore>()(
         const draft = draftPrompts.find((d) => d.id === draftId);
         if (!draft) return;
 
-        set({ isGeneratingVariations: true });
+        // Set per-draft generating state
+        set({
+          draftPrompts: draftPrompts.map((d) =>
+            d.id === draftId ? { ...d, isGenerating: true } : d
+          ),
+        });
 
         try {
           const response = await api.generatePromptVariations({
@@ -832,13 +922,124 @@ export const useStore = create<AppStore>()(
             set({
               draftPrompts: get().draftPrompts.map((d) =>
                 d.id === draftId
-                  ? { ...d, variations: [...d.variations, ...response.variations] }
+                  ? { ...d, variations: [...d.variations, ...response.variations], isGenerating: false }
+                  : d
+              ),
+            });
+          } else {
+            set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId ? { ...d, isGenerating: false } : d
+              ),
+            });
+          }
+        } catch (error) {
+          set({
+            draftPrompts: get().draftPrompts.map((d) =>
+              d.id === draftId ? { ...d, isGenerating: false } : d
+            ),
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      polishDraftVariation: async (draftId, variationId) => {
+        const { draftPrompts } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft) return;
+
+        const variation = draft.variations.find((v) => v.id === variationId);
+        if (!variation) return;
+
+        set({ isGeneratingVariations: true });
+
+        try {
+          const response = await api.polishPrompts({
+            base_prompt: draft.basePrompt,
+            variations: [{
+              id: variation.id,
+              text: variation.text,
+              user_notes: variation.userNotes,
+              mood: variation.mood,
+              design: variation.design,
+              emphasized_tags: variation.emphasizedTags,
+            }],
+            context_image_ids: draft.contextImageIds,
+          });
+
+          if (response.success && response.polished_variations.length > 0) {
+            const polished = response.polished_variations[0];
+            set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId
+                  ? {
+                      ...d,
+                      variations: d.variations.map((v) =>
+                        v.id === variationId
+                          ? { ...v, text: polished.text, userNotes: '', isEdited: false }
+                          : v
+                      ),
+                    }
                   : d
               ),
               isGeneratingVariations: false,
             });
           } else {
-            set({ isGeneratingVariations: false });
+            set({ isGeneratingVariations: false, error: response.error || 'Polish failed' });
+          }
+        } catch (error) {
+          set({
+            isGeneratingVariations: false,
+            error: (error as Error).message,
+          });
+        }
+      },
+
+      polishDraftVariations: async (draftId) => {
+        const { draftPrompts } = get();
+        const draft = draftPrompts.find((d) => d.id === draftId);
+        if (!draft || draft.variations.length === 0) return;
+
+        set({ isGeneratingVariations: true });
+
+        try {
+          const response = await api.polishPrompts({
+            base_prompt: draft.basePrompt,
+            variations: draft.variations.map((v) => ({
+              id: v.id,
+              text: v.text,
+              user_notes: v.userNotes,
+              mood: v.mood,
+              design: v.design,
+              emphasized_tags: v.emphasizedTags,
+            })),
+            context_image_ids: draft.contextImageIds,
+          });
+
+          if (response.success) {
+            // Build a map of polished results
+            const polishedMap = new Map(
+              response.polished_variations.map((p) => [p.id, p])
+            );
+
+            set({
+              draftPrompts: get().draftPrompts.map((d) =>
+                d.id === draftId
+                  ? {
+                      ...d,
+                      variations: d.variations.map((v) => {
+                        const polished = polishedMap.get(v.id);
+                        return polished
+                          ? { ...v, text: polished.text, userNotes: '', isEdited: false }
+                          : v;
+                      }),
+                    }
+                  : d
+              ),
+              isGeneratingVariations: false,
+            });
+          } else {
+            set({ isGeneratingVariations: false, error: response.error || 'Polish failed' });
           }
         } catch (error) {
           set({
@@ -849,11 +1050,18 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromDraft: async (draftId) => {
-        const { draftPrompts, currentSessionId } = get();
+        const { draftPrompts, currentSessionId, generatingImageDraftIds } = get();
         const draft = draftPrompts.find((d) => d.id === draftId);
         if (!draft || draft.variations.length === 0) return;
 
-        set({ isGenerating: true, error: null });
+        // Add to generating set (allows concurrent batch generation)
+        const newGeneratingIds = new Set(generatingImageDraftIds);
+        newGeneratingIds.add(draftId);
+        set({
+          generatingImageDraftIds: newGeneratingIds,
+          isGenerating: true, // Keep for backwards compat
+          error: null
+        });
 
         try {
           const response = await api.generateFromPrompts({
@@ -871,10 +1079,15 @@ export const useStore = create<AppStore>()(
             ...draft.imageParams,
           });
 
-          // Remove the draft after successful generation
+          // Remove from generating set and delete the draft
+          const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
+          updatedGeneratingIds.delete(draftId);
+
           set({
             draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
             currentDraftId: null,
+            generatingImageDraftIds: updatedGeneratingIds,
+            isGenerating: updatedGeneratingIds.size > 0, // Derive from set
           });
 
           await get().refreshData();
@@ -883,12 +1096,16 @@ export const useStore = create<AppStore>()(
           set({
             currentPromptId: response.prompt_id,
             currentImageIndex: 0,
-            isGenerating: false,
             contextImageIds: [],
           });
         } catch (error) {
+          // Remove from generating set on error
+          const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
+          updatedGeneratingIds.delete(draftId);
+
           set({
-            isGenerating: false,
+            generatingImageDraftIds: updatedGeneratingIds,
+            isGenerating: updatedGeneratingIds.size > 0,
             error: (error as Error).message,
           });
         }
@@ -1106,53 +1323,21 @@ export const useStore = create<AppStore>()(
       },
 
       // Image notes
-      updateImageNotes: async (imageId, notes, caption) => {
+      updateImageNotes: async (imageId, notes, annotation) => {
         try {
-          await api.updateImageNotes(imageId, notes, caption);
+          await api.updateImageNotes(imageId, notes, annotation);
 
           // Update local state
           const { prompts } = get();
           const updatedPrompts = prompts.map((p) => ({
             ...p,
             images: p.images.map((img) =>
-              img.id === imageId ? { ...img, notes, caption: caption ?? img.caption } : img
+              img.id === imageId ? { ...img, notes, annotation: annotation ?? img.annotation } : img
             ),
           }));
           set({ prompts: updatedPrompts });
         } catch (error) {
           set({ error: (error as Error).message });
-        }
-      },
-
-      // Templates
-      createTemplate: async (data) => {
-        try {
-          await api.createTemplate(data);
-          const templates = await api.fetchTemplates();
-          set({ templates });
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      deleteTemplate: async (id) => {
-        try {
-          await api.deleteTemplate(id);
-          const templates = await api.fetchTemplates();
-          set({ templates });
-        } catch (error) {
-          set({ error: (error as Error).message });
-        }
-      },
-
-      useTemplate: async (id) => {
-        try {
-          await api.useTemplate(id);
-          const { templates } = get();
-          return templates.find((t) => t.id === id);
-        } catch (error) {
-          set({ error: (error as Error).message });
-          return undefined;
         }
       },
 
@@ -1183,6 +1368,27 @@ export const useStore = create<AppStore>()(
           const libraryItems = await api.fetchLibraryItems();
           set({ libraryItems });
           return item;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return undefined;
+        }
+      },
+
+      extractDesignToken: async (imageId, annotation, likedTags) => {
+        try {
+          const response = await api.extractDesignToken({
+            image_id: imageId,
+            annotation,
+            liked_tags: likedTags,
+          });
+          if (response.success && response.item) {
+            const libraryItems = await api.fetchLibraryItems();
+            set({ libraryItems });
+            return response.item;
+          } else {
+            set({ error: response.error || 'Failed to extract design token' });
+            return undefined;
+          }
         } catch (error) {
           set({ error: (error as Error).message });
           return undefined;
@@ -1501,6 +1707,100 @@ export const useStore = create<AppStore>()(
           await api.resetDesignPreferences();
           set({ designPreferences: null, totalRated: 0 });
           // Refresh data to clear liked_axes from images
+          await get().refreshData();
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      // Design Dimensions (Rich AI Analysis)
+      analyzeDimensions: async (imageId: string) => {
+        // Add to pending analysis
+        const pendingAnalysis = new Set(get().pendingAnalysis);
+        pendingAnalysis.add(imageId);
+        set({ pendingAnalysis });
+
+        try {
+          const response = await api.analyzeDimensions(imageId);
+          if (!response.success) {
+            throw new Error(response.error || 'Analysis failed');
+          }
+
+          // Return the dimensions for UI to handle
+          return response.dimensions;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return [];
+        } finally {
+          // Remove from pending analysis
+          const updated = new Set(get().pendingAnalysis);
+          updated.delete(imageId);
+          set({ pendingAnalysis: updated });
+        }
+      },
+
+      generateConcept: async (imageId: string, dimension: DesignDimension) => {
+        // Use existing pendingPrompts pattern for async generation
+        const tempId = `concept-${Date.now()}`;
+        const newPending = new Map(get().pendingPrompts);
+        newPending.set(tempId, { title: `Concept: ${dimension.name}`, count: 1 });
+        set({ isGenerating: true, pendingPrompts: newPending });
+
+        try {
+          const response = await api.generateConcept(imageId, dimension);
+          if (!response.success) {
+            throw new Error(response.error || 'Concept generation failed');
+          }
+
+          // Refresh data to get the new concept prompt
+          await get().refreshData();
+
+          // Navigate to the new concept prompt
+          if (response.prompt_id) {
+            set({ currentPromptId: response.prompt_id, currentImageIndex: 0 });
+          }
+        } catch (error) {
+          set({ error: (error as Error).message });
+        } finally {
+          const updatedPending = new Map(get().pendingPrompts);
+          updatedPending.delete(tempId);
+          set({
+            isGenerating: updatedPending.size > 0,
+            pendingPrompts: updatedPending,
+          });
+        }
+      },
+
+      confirmDimension: async (imageId: string, axis: string) => {
+        // Get current image to find its dimensions
+        const { prompts } = get();
+        let currentDimensions: Record<string, DesignDimension> = {};
+
+        for (const prompt of prompts) {
+          const img = prompt.images.find((i) => i.id === imageId);
+          if (img?.design_dimensions) {
+            currentDimensions = img.design_dimensions;
+            break;
+          }
+        }
+
+        if (!currentDimensions[axis]) {
+          return; // No dimension to confirm
+        }
+
+        try {
+          await api.confirmDimension(imageId, axis, currentDimensions);
+          // Refresh data to get updated dimensions
+          await get().refreshData();
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      updateImageDimensions: async (imageId: string, dimensions: Record<string, DesignDimension>) => {
+        try {
+          await api.updateImageDimensions(imageId, dimensions);
+          // Refresh data to get updated dimensions
           await get().refreshData();
         } catch (error) {
           set({ error: (error as Error).message });

@@ -4,7 +4,7 @@ import { IconButton } from './IconButton'
 
 describe('IconButton', () => {
   describe('tooltip positioning', () => {
-    it('should have tooltip that stays within viewport bounds', () => {
+    it('should position tooltip above button to avoid overflow in bottom-positioned overlays', () => {
       render(
         <IconButton tooltip="Test tooltip">
           <span>Icon</span>
@@ -14,24 +14,35 @@ describe('IconButton', () => {
       // Find the tooltip container
       const tooltipContainer = screen.getByText('Test tooltip')
 
-      // The tooltip should NOT have fixed left-1/2 -translate-x-1/2 positioning
-      // which causes overflow. Instead it should use dynamic positioning.
-      // Check that tooltip has classes for bounded positioning
-      expect(tooltipContainer.className).toContain('left-0')
-      expect(tooltipContainer.className).not.toContain('left-1/2')
-      expect(tooltipContainer.className).not.toContain('-translate-x-1/2')
+      // Tooltip should be positioned above the button (bottom-full)
+      // This prevents overflow when buttons are at the bottom of image overlays
+      expect(tooltipContainer.className).toContain('bottom-full')
+      expect(tooltipContainer.className).toContain('mb-2')
     })
 
-    it('should position tooltip below button', () => {
+    it('should center tooltip horizontally under the button', () => {
       render(
-        <IconButton tooltip="Below tooltip">
+        <IconButton tooltip="Centered tooltip">
           <span>Icon</span>
         </IconButton>
       )
 
-      const tooltipContainer = screen.getByText('Below tooltip')
-      // Tooltip should be below the button to avoid top overflow
-      expect(tooltipContainer.className).toContain('top-full')
+      const tooltipContainer = screen.getByText('Centered tooltip')
+      // Tooltip should be centered using transform
+      expect(tooltipContainer.className).toContain('left-1/2')
+      expect(tooltipContainer.className).toContain('-translate-x-1/2')
+    })
+
+    it('should have high z-index to escape overflow-hidden containers', () => {
+      render(
+        <IconButton tooltip="High z-index tooltip">
+          <span>Icon</span>
+        </IconButton>
+      )
+
+      const tooltipContainer = screen.getByText('High z-index tooltip')
+      // z-[100] ensures tooltip appears above overflow-hidden parents
+      expect(tooltipContainer.className).toContain('z-[100]')
     })
   })
 

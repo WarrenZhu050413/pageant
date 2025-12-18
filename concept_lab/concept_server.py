@@ -495,6 +495,275 @@ app.mount("/outputs", StaticFiles(directory=str(OUTPUT_DIR)), name="outputs")
 
 
 # =============================================================================
+# FEATURE: Gradient Dimension Variations
+# =============================================================================
+
+GRADIENT_VARIATION_PROMPT = """You are a creative director generating image prompts that explore a gradient along a specific design dimension.
+
+Given this base prompt and image context, generate {count} variations that form a spectrum from one extreme to another along the "{dimension}" dimension.
+
+Base prompt: "{base_prompt}"
+
+Dimension to vary: {dimension}
+Range: From "{from_extreme}" to "{to_extreme}"
+
+Generate {count} scene descriptions that smoothly transition along this spectrum:
+- The first variation should be strongly "{from_extreme}"
+- The last variation should be strongly "{to_extreme}"
+- Middle variations should be evenly distributed along the gradient
+- Each scene should still be coherent and visually interesting
+- Maintain the core subject/concept from the base prompt
+
+For each variation, provide:
+1. **position**: A number from 0.0 (from_extreme) to 1.0 (to_extreme) indicating where on the gradient this falls
+2. **label**: A short 2-4 word label describing this point on the gradient (e.g., "Deeply Saturated", "Neutral Tones", "Almost Monochrome")
+3. **description**: A detailed scene description (2-3 sentences) for AI image generation
+4. **mood**: The emotional tone (warm, cool, dramatic, serene, etc.)
+5. **design**: Tags for colors, composition, aesthetic if relevant
+
+Return ONLY valid JSON:
+{{
+  "gradient_axis": "{dimension}",
+  "from_extreme": "{from_extreme}",
+  "to_extreme": "{to_extreme}",
+  "variations": [
+    {{
+      "position": 0.0,
+      "label": "string",
+      "description": "string",
+      "mood": "string",
+      "design": {{"colors": ["tag1"], "composition": ["tag2"]}}
+    }}
+  ]
+}}
+"""
+
+MORE_LIKE_THIS_PROMPT = """You are a creative director helping a user explore different directions they could take from this image.
+
+Analyze this image and suggest {count} distinct creative directions the user might want to explore. Each direction should:
+1. Start from what makes this image interesting/effective
+2. Push in a specific creative direction (style, mood, composition, subject, etc.)
+3. Be different enough from other directions to be worth exploring
+
+For each direction, provide:
+1. **direction_type**: Category of exploration (style, mood, composition, subject, color, narrative, genre, technique)
+2. **name**: An evocative 2-4 word name for this direction (e.g., "Darker Mood", "Wider Lens", "Retro Filter")
+3. **description**: What this direction explores and why it might be interesting (1-2 sentences)
+4. **prompt**: A complete scene description that takes the image in this direction (2-3 sentences for AI generation)
+5. **intensity**: How different from the original (subtle, moderate, dramatic)
+
+Focus on directions that:
+- Preserve what works while changing something interesting
+- Offer genuine creative variety
+- Are achievable with AI image generation
+
+Return ONLY valid JSON:
+{{
+  "source_analysis": "Brief description of what makes this image work",
+  "directions": [
+    {{
+      "direction_type": "string",
+      "name": "string",
+      "description": "string",
+      "prompt": "string",
+      "intensity": "subtle|moderate|dramatic"
+    }}
+  ]
+}}
+"""
+
+
+class GradientVariationRequest(BaseModel):
+    """Request for gradient dimension variations."""
+    base_prompt: str
+    dimension: str  # e.g., "saturation", "warmth", "contrast", "abstraction"
+    from_extreme: str  # e.g., "extremely saturated", "very warm"
+    to_extreme: str  # e.g., "almost desaturated", "very cool"
+    count: int = 5
+    image_base64: Optional[str] = None  # Optional reference image
+
+
+class GradientVariation(BaseModel):
+    """A single point on the gradient."""
+    position: float  # 0.0 to 1.0
+    label: str
+    description: str
+    mood: str
+    design: dict = {}
+
+
+class GradientVariationResponse(BaseModel):
+    """Response with gradient variations."""
+    gradient_axis: str
+    from_extreme: str
+    to_extreme: str
+    variations: list[GradientVariation]
+
+
+class MoreLikeThisRequest(BaseModel):
+    """Request for 'More Like This' exploration directions."""
+    image_base64: str
+    count: int = 5
+    original_prompt: Optional[str] = None  # Original prompt if available
+
+
+class ExplorationDirection(BaseModel):
+    """A single exploration direction."""
+    direction_type: str
+    name: str
+    description: str
+    prompt: str
+    intensity: str  # subtle, moderate, dramatic
+
+
+class MoreLikeThisResponse(BaseModel):
+    """Response with exploration directions."""
+    source_analysis: str
+    directions: list[ExplorationDirection]
+
+
+@app.post("/api/gradient-variations", response_model=GradientVariationResponse)
+async def generate_gradient_variations(request: GradientVariationRequest):
+    """Generate prompt variations along a gradient dimension.
+
+    Example: Generate 5 variations from "extremely saturated" to "almost monochrome"
+    """
+    logger.info(f"Generating gradient variations: {request.dimension} from '{request.from_extreme}' to '{request.to_extreme}'")
+
+    try:
+        prompt = GRADIENT_VARIATION_PROMPT.format(
+            count=request.count,
+            base_prompt=request.base_prompt,
+            dimension=request.dimension,
+            from_extreme=request.from_extreme,
+            to_extreme=request.to_extreme,
+        )
+
+        # Build contents with optional image
+        contents = []
+        if request.image_base64:
+            image_bytes = base64.b64decode(request.image_base64)
+            contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+            contents.append("Reference image for context:")
+        contents.append(prompt)
+
+        response = client.models.generate_content(
+            model=TEXT_MODEL,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.8,
+            )
+        )
+
+        result = json.loads(response.text)
+        variations = [GradientVariation(**v) for v in result["variations"]]
+
+        logger.info(f"Generated {len(variations)} gradient variations")
+        return GradientVariationResponse(
+            gradient_axis=result.get("gradient_axis", request.dimension),
+            from_extreme=result.get("from_extreme", request.from_extreme),
+            to_extreme=result.get("to_extreme", request.to_extreme),
+            variations=variations
+        )
+
+    except Exception as e:
+        logger.error(f"Gradient generation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Gradient generation failed: {str(e)}")
+
+
+@app.post("/api/more-like-this", response_model=MoreLikeThisResponse)
+async def explore_more_like_this(request: MoreLikeThisRequest):
+    """Generate exploration directions for 'More Like This' workflow.
+
+    Instead of immediately generating images, this returns creative directions
+    the user can review, edit, and then choose to generate.
+    """
+    logger.info(f"Generating 'More Like This' directions (count={request.count})")
+
+    try:
+        image_bytes = base64.b64decode(request.image_base64)
+
+        prompt = MORE_LIKE_THIS_PROMPT.format(count=request.count)
+        if request.original_prompt:
+            prompt += f"\n\nOriginal prompt used for this image: {request.original_prompt}"
+
+        response = client.models.generate_content(
+            model=TEXT_MODEL,
+            contents=[
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"),
+                types.Part.from_text(text=prompt)
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.8,
+            )
+        )
+
+        result = json.loads(response.text)
+        directions = [ExplorationDirection(**d) for d in result["directions"]]
+
+        logger.info(f"Generated {len(directions)} exploration directions")
+        return MoreLikeThisResponse(
+            source_analysis=result.get("source_analysis", ""),
+            directions=directions
+        )
+
+    except Exception as e:
+        logger.error(f"More Like This failed: {e}")
+        raise HTTPException(status_code=500, detail=f"More Like This failed: {str(e)}")
+
+
+# =============================================================================
+# Common dimension presets for gradient variations
+# =============================================================================
+
+DIMENSION_PRESETS = {
+    "saturation": {
+        "from": "extremely vibrant and saturated colors",
+        "to": "almost completely desaturated, near monochrome"
+    },
+    "warmth": {
+        "from": "very warm, golden, amber tones",
+        "to": "very cool, blue, icy tones"
+    },
+    "contrast": {
+        "from": "extremely high contrast, stark blacks and whites",
+        "to": "very low contrast, soft and subtle"
+    },
+    "abstraction": {
+        "from": "photorealistic, highly detailed",
+        "to": "completely abstract, pure shapes and colors"
+    },
+    "complexity": {
+        "from": "extremely detailed and complex",
+        "to": "ultra minimalist, bare essentials"
+    },
+    "mood_intensity": {
+        "from": "extremely dramatic and intense",
+        "to": "very calm and serene"
+    },
+    "vintage": {
+        "from": "modern, clean, contemporary",
+        "to": "heavily vintage, aged, retro film aesthetic"
+    },
+    "darkness": {
+        "from": "bright, high-key lighting",
+        "to": "dark, moody, low-key lighting"
+    }
+}
+
+
+@app.get("/api/dimension-presets")
+async def get_dimension_presets():
+    """Get preset dimension ranges for gradient variations."""
+    return {
+        "presets": DIMENSION_PRESETS,
+        "usage": "Use these as from_extreme and to_extreme values in /api/gradient-variations"
+    }
+
+
+# =============================================================================
 # Run Server
 # =============================================================================
 
@@ -503,11 +772,13 @@ if __name__ == "__main__":
     print("CONCEPT ISOLATION LAB v2.0")
     print("=" * 60)
     print(f"Output directory: {OUTPUT_DIR}")
-    print(f"API docs: http://localhost:8766/docs")
+    print(f"API docs: http://localhost:8767/docs")
     print("")
-    print("Modes:")
-    print("  1. User-specified: POST /api/isolate-concepts with dimensions=[...]")
-    print("  2. Auto-suggest: POST /api/isolate-concepts with count=N")
+    print("Features:")
+    print("  1. Concept Isolation: POST /api/isolate-concepts")
+    print("  2. Gradient Variations: POST /api/gradient-variations")
+    print("  3. More Like This: POST /api/more-like-this")
+    print("  4. Dimension Presets: GET /api/dimension-presets")
     print("=" * 60)
 
-    uvicorn.run(app, host="0.0.0.0", port=8766)
+    uvicorn.run(app, host="0.0.0.0", port=8767)
