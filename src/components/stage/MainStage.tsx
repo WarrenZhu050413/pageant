@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,6 +8,7 @@ import {
   Loader2,
   FileEdit,
   FolderOpen,
+  FileText,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { IconButton, Button } from '../ui';
@@ -15,6 +16,7 @@ import { SingleView } from './SingleView';
 import { GridView } from './GridView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
+import { PromptVariationsView } from './PromptVariationsView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
@@ -63,9 +65,22 @@ export function MainStage() {
 
   const hasPending = pendingPrompts.size > 0;
 
+  // State for viewing variations of generated prompt
+  const [showingVariations, setShowingVariations] = useState(false);
+
   // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
+  }
+
+  // Show read-only variations view when toggled
+  if (showingVariations && currentPrompt) {
+    return (
+      <PromptVariationsView
+        prompt={currentPrompt}
+        onBack={() => setShowingVariations(false)}
+      />
+    );
   }
 
   return (
@@ -155,6 +170,18 @@ export function MainStage() {
 
           {/* Divider */}
           <div className="w-px h-6 bg-border" />
+
+          {/* Variations button - only show when viewing a prompt */}
+          {currentPrompt && currentPrompt.images.some(img => img.varied_prompt) && (
+            <Button
+              size="sm"
+              variant="secondary"
+              leftIcon={<FileText size={14} />}
+              onClick={() => setShowingVariations(true)}
+            >
+              Variations
+            </Button>
+          )}
 
           {/* Selection mode toggle */}
           <Button
