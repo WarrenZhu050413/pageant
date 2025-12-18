@@ -42,7 +42,7 @@ export function GenerateTab() {
     return saved ? parseInt(saved, 10) : 4;
   });
   const [showDropdown, setShowDropdown] = useState(false);
-  const [customCountInput, setCustomCountInput] = useState(''); // For editing 5+ input
+  const [customCountInput, setCustomCountInput] = useState<string | null>(null); // For editing 5+ input
   const [selectedConceptIds, setSelectedConceptIds] = useState<string[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [editingContextImageId, setEditingContextImageId] = useState<string | null>(null);
@@ -316,10 +316,10 @@ export function GenerateTab() {
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
-                value={customCountInput || count}
+                value={customCountInput !== null ? customCountInput : count}
                 onChange={(e) => {
                   const raw = e.target.value;
-                  setCustomCountInput(raw); // Allow any value while typing
+                  setCustomCountInput(raw); // Allow any value while typing (including empty)
                   const val = parseInt(raw, 10);
                   if (!isNaN(val) && val >= 1) updateCount(val);
                 }}
@@ -328,7 +328,7 @@ export function GenerateTab() {
                   // On blur, if empty or invalid, reset to 6
                   const val = parseInt(e.target.value, 10);
                   if (isNaN(val) || val < 1) updateCount(6);
-                  setCustomCountInput(''); // Clear local state, use count directly
+                  setCustomCountInput(null); // Clear local state, use count directly
                 }}
                 onClick={(e) => e.stopPropagation()}
                 className={clsx(
