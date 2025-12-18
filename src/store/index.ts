@@ -20,6 +20,7 @@ import type {
   CreateTokenRequest,
 } from '../types';
 import * as api from '../api';
+import { toast } from './toastStore';
 
 interface PendingPrompt {
   title?: string;  // Optional - will be auto-generated if not provided
@@ -44,6 +45,8 @@ interface AppStore {
   selectionMode: SelectionMode;
   selectedIds: Set<string>;
   contextImageIds: string[];
+  // Ephemeral annotation overrides for context images (not persisted)
+  contextAnnotationOverrides: Record<string, string>;
 
   // UI State
   isGenerating: boolean;
@@ -97,6 +100,7 @@ interface AppStore {
   setSelectionMode: (mode: SelectionMode) => void;
   toggleSelection: (id: string) => void;
   selectAll: () => void;
+  setSelectedIds: (ids: string[]) => void;
   clearSelection: () => void;
 
   // Context images
@@ -105,6 +109,10 @@ interface AppStore {
   addContextImages: (ids: string[]) => void;
   removeContextImage: (id: string) => void;
   clearContextImages: () => void;
+  // Context annotation overrides
+  setContextAnnotationOverride: (imageId: string, annotation: string) => void;
+  clearContextAnnotationOverride: (imageId: string) => void;
+  getContextAnnotationOverride: (imageId: string) => string | undefined;
 
   // Generation
   generate: (params: {
@@ -169,6 +177,7 @@ interface AppStore {
 
   // Collections
   createCollection: (name: string, description?: string, imageIds?: string[]) => Promise<void>;
+  updateCollection: (id: string, data: { name?: string; description?: string }) => Promise<void>;
   deleteCollection: (id: string) => Promise<void>;
   addToCollection: (collectionId: string) => Promise<void>;
   addImagesToCollection: (collectionId: string, imageIds: string[]) => Promise<void>;
@@ -245,6 +254,7 @@ export const useStore = create<AppStore>()(
       selectionMode: 'none',
       selectedIds: new Set(),
       contextImageIds: [],
+      contextAnnotationOverrides: {},
 
       isGenerating: false,
       pendingPrompts: new Map(),
@@ -422,6 +432,10 @@ export const useStore = create<AppStore>()(
         }
       },
 
+      setSelectedIds: (ids) => {
+        set({ selectedIds: new Set(ids) });
+      },
+
       clearSelection: () => {
         set({ selectedIds: new Set() });
       },
@@ -442,13 +456,38 @@ export const useStore = create<AppStore>()(
         }
       },
       removeContextImage: (id) => {
-        set({ contextImageIds: get().contextImageIds.filter((i) => i !== id) });
+        const { contextAnnotationOverrides } = get();
+        const newOverrides = { ...contextAnnotationOverrides };
+        delete newOverrides[id];
+        set({
+          contextImageIds: get().contextImageIds.filter((i) => i !== id),
+          contextAnnotationOverrides: newOverrides,
+        });
       },
-      clearContextImages: () => set({ contextImageIds: [] }),
+      clearContextImages: () => set({ contextImageIds: [], contextAnnotationOverrides: {} }),
+
+      // Context annotation overrides
+      setContextAnnotationOverride: (imageId, annotation) => {
+        set({
+          contextAnnotationOverrides: {
+            ...get().contextAnnotationOverrides,
+            [imageId]: annotation,
+          },
+        });
+      },
+      clearContextAnnotationOverride: (imageId) => {
+        const { contextAnnotationOverrides } = get();
+        const newOverrides = { ...contextAnnotationOverrides };
+        delete newOverrides[imageId];
+        set({ contextAnnotationOverrides: newOverrides });
+      },
+      getContextAnnotationOverride: (imageId) => {
+        return get().contextAnnotationOverrides[imageId];
+      },
 
       // Generation (supports concurrent generations)
       generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level }) => {
-        const { contextImageIds, pendingPrompts, currentSessionId } = get();
+        const { contextImageIds, contextAnnotationOverrides, pendingPrompts, currentSessionId, prompts } = get();
 
         // Create pending prompt
         const tempId = `pending-${Date.now()}`;
@@ -458,7 +497,31 @@ export const useStore = create<AppStore>()(
         // isGenerating is true if any pending prompts exist
         set({ isGenerating: true, pendingPrompts: newPending, error: null });
 
+        // Store original annotations for images with overrides (for restoration after generation)
+        const originalAnnotations: Record<string, { notes: string; annotation: string }> = {};
+
+        // Helper to find image by ID
+        const findImage = (imageId: string) => {
+          for (const p of prompts) {
+            const img = p.images.find((i) => i.id === imageId);
+            if (img) return img;
+          }
+          return null;
+        };
+
         try {
+          // Apply annotation overrides temporarily
+          for (const [imageId, override] of Object.entries(contextAnnotationOverrides)) {
+            const img = findImage(imageId);
+            if (img) {
+              originalAnnotations[imageId] = {
+                notes: img.notes || '',
+                annotation: img.annotation || '',
+              };
+              await api.updateImageNotes(imageId, img.notes || '', override);
+            }
+          }
+
           await api.generateImages({
             prompt,
             title,
@@ -483,6 +546,25 @@ export const useStore = create<AppStore>()(
             isGenerating: updatedPending.size > 0,
             pendingPrompts: updatedPending,
             contextImageIds: [],
+            contextAnnotationOverrides: {},
+          });
+
+          // Show success toast with option to view
+          const promptTitle = title || 'Untitled';
+          // Find the newly created prompt (should be the latest one)
+          const { prompts: updatedPrompts } = get();
+          const newPrompt = updatedPrompts.find((p) => p.title === promptTitle) || updatedPrompts[0];
+          toast.success(`"${promptTitle}" finished generating`, {
+            label: 'View',
+            onClick: () => {
+              if (newPrompt) {
+                set({
+                  currentPromptId: newPrompt.id,
+                  currentImageIndex: 0,
+                  currentDraftId: null,
+                });
+              }
+            },
           });
         } catch (error) {
           const updatedPending = new Map(get().pendingPrompts);
@@ -492,6 +574,22 @@ export const useStore = create<AppStore>()(
             pendingPrompts: updatedPending,
             error: (error as Error).message,
           });
+
+          // Show error toast
+          toast.error(`Generation failed: ${(error as Error).message}`);
+        } finally {
+          // Restore original annotations
+          for (const [imageId, original] of Object.entries(originalAnnotations)) {
+            try {
+              await api.updateImageNotes(imageId, original.notes, original.annotation);
+            } catch {
+              // Silently ignore restoration errors
+            }
+          }
+          // Refresh to sync state with backend after restoration
+          if (Object.keys(originalAnnotations).length > 0) {
+            await get().refreshData();
+          }
         }
       },
 
@@ -506,8 +604,12 @@ export const useStore = create<AppStore>()(
           set({
             isGenerating: false,
           });
+
+          // Show success toast
+          toast.success('Iteration complete');
         } catch (error) {
           set({ isGenerating: false, error: (error as Error).message });
+          toast.error(`Iteration failed: ${(error as Error).message}`);
         }
       },
 
@@ -773,27 +875,36 @@ export const useStore = create<AppStore>()(
           });
 
           // Clear variations and refresh
+          const titleForToast = variationsTitle || 'Untitled';
           set({
             promptVariations: [],
             variationsBasePrompt: '',
             variationsTitle: '',
             variationsImageParams: {},
             streamingText: '',
+            isGenerating: false,
+            contextImageIds: [],
           });
 
           await get().refreshData();
 
-          set({
-            currentPromptId: response.prompt_id,
-            currentImageIndex: 0,
-            isGenerating: false,
-            contextImageIds: [],
+          // Show toast notification instead of auto-navigating (background generation)
+          toast.success(`"${titleForToast}" finished generating`, {
+            label: 'View',
+            onClick: () => {
+              set({
+                currentPromptId: response.prompt_id,
+                currentImageIndex: 0,
+                currentDraftId: null,
+              });
+            },
           });
         } catch (error) {
           set({
             isGenerating: false,
             error: (error as Error).message,
           });
+          toast.error(`Generation failed: ${(error as Error).message}`);
         }
       },
 
@@ -1108,29 +1219,49 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromDraft: async (draftId) => {
-        const { draftPrompts, currentSessionId, generatingImageDraftIds, pendingPrompts } = get();
+        const { draftPrompts, currentSessionId, generatingImageDraftIds, contextAnnotationOverrides, prompts } = get();
         const draft = draftPrompts.find((d) => d.id === draftId);
         if (!draft || draft.variations.length === 0) return;
 
         // Add to generating set (allows concurrent batch generation)
+        // Note: Don't add to pendingPrompts - the draft itself shows generating state
         const newGeneratingIds = new Set(generatingImageDraftIds);
         newGeneratingIds.add(draftId);
 
-        // Add to pendingPrompts for sidebar animation
-        const newPending = new Map(pendingPrompts);
-        newPending.set(draftId, {
-          title: draft.title,
-          count: draft.variations.length,
-        });
-
         set({
           generatingImageDraftIds: newGeneratingIds,
-          pendingPrompts: newPending,
           isGenerating: true, // Keep for backwards compat
           error: null
         });
 
+        // Store original annotations for images with overrides (for restoration after generation)
+        const originalAnnotations: Record<string, { notes: string; annotation: string }> = {};
+
+        // Helper to find image by ID
+        const findImage = (imageId: string) => {
+          for (const p of prompts) {
+            const img = p.images.find((i) => i.id === imageId);
+            if (img) return img;
+          }
+          return null;
+        };
+
         try {
+          // Apply annotation overrides temporarily for context images in this draft
+          const contextIds = draft.contextImageIds || [];
+          for (const [imageId, override] of Object.entries(contextAnnotationOverrides)) {
+            if (contextIds.includes(imageId)) {
+              const img = findImage(imageId);
+              if (img) {
+                originalAnnotations[imageId] = {
+                  notes: img.notes || '',
+                  annotation: img.annotation || '',
+                };
+                await api.updateImageNotes(imageId, img.notes || '', override);
+              }
+            }
+          }
+
           const response = await api.generateFromPrompts({
             title: draft.title,
             prompts: draft.variations.map((v) => ({
@@ -1147,41 +1278,63 @@ export const useStore = create<AppStore>()(
             ...draft.imageParams,
           });
 
-          // Remove from generating set, pendingPrompts, and delete the draft
+          // Remove from generating set and delete the draft
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
           updatedGeneratingIds.delete(draftId);
-          const updatedPending = new Map(get().pendingPrompts);
-          updatedPending.delete(draftId);
 
           set({
             draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
             currentDraftId: null,
             generatingImageDraftIds: updatedGeneratingIds,
-            pendingPrompts: updatedPending,
             isGenerating: updatedGeneratingIds.size > 0, // Derive from set
+            contextAnnotationOverrides: {}, // Clear overrides after successful generation
           });
 
           await get().refreshPrompts();
 
-          // Navigate to newly created prompt
+          // Show toast notification instead of auto-navigating (background generation)
+          const promptTitle = draft.title || 'Untitled';
+          toast.success(`"${promptTitle}" finished generating`, {
+            label: 'View',
+            onClick: () => {
+              set({
+                currentPromptId: response.prompt_id,
+                currentImageIndex: 0,
+                currentDraftId: null,
+              });
+            },
+          });
+
+          // Clear context but don't navigate
           set({
-            currentPromptId: response.prompt_id,
-            currentImageIndex: 0,
             contextImageIds: [],
           });
         } catch (error) {
-          // Remove from generating set and pendingPrompts on error
+          // Remove from generating set on error
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
           updatedGeneratingIds.delete(draftId);
-          const updatedPending = new Map(get().pendingPrompts);
-          updatedPending.delete(draftId);
 
           set({
             generatingImageDraftIds: updatedGeneratingIds,
-            pendingPrompts: updatedPending,
             isGenerating: updatedGeneratingIds.size > 0,
             error: (error as Error).message,
           });
+
+          // Show error toast
+          toast.error(`Generation failed: ${(error as Error).message}`);
+        } finally {
+          // Restore original annotations
+          for (const [imageId, original] of Object.entries(originalAnnotations)) {
+            try {
+              await api.updateImageNotes(imageId, original.notes, original.annotation);
+            } catch {
+              // Silently ignore restoration errors
+            }
+          }
+          // Refresh to sync state with backend after restoration
+          if (Object.keys(originalAnnotations).length > 0) {
+            await get().refreshData();
+          }
         }
       },
 
@@ -1285,8 +1438,12 @@ export const useStore = create<AppStore>()(
       },
 
       selectAllPrompts: () => {
-        const { prompts } = get();
-        set({ selectedPromptIds: new Set(prompts.map((p) => p.id)) });
+        const { prompts, draftPrompts } = get();
+        const allIds = [
+          ...prompts.map((p) => p.id),
+          ...draftPrompts.map((d) => d.id),
+        ];
+        set({ selectedPromptIds: new Set(allIds) });
       },
 
       clearPromptSelection: () => {
@@ -1386,6 +1543,16 @@ export const useStore = create<AppStore>()(
           });
           const collections = await api.fetchCollections();
           set({ collections, selectedIds: new Set(), selectionMode: 'none' });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      updateCollection: async (id, data) => {
+        try {
+          await api.updateCollection(id, data);
+          const collections = await api.fetchCollections();
+          set({ collections });
         } catch (error) {
           set({ error: (error as Error).message });
         }
