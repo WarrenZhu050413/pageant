@@ -102,8 +102,8 @@ export function MainStage() {
                   </p>
                 )}
                 {currentPrompt.basePrompt && (
-                  <p className="text-xs text-ink-tertiary truncate mt-0.5 max-w-md" title={currentPrompt.basePrompt}>
-                    Based on: "{currentPrompt.basePrompt.slice(0, 60)}{currentPrompt.basePrompt.length > 60 ? '...' : ''}"
+                  <p className="text-xs text-ink-tertiary mt-0.5" title={currentPrompt.basePrompt}>
+                    <span className="text-ink-muted">Based on:</span> "{currentPrompt.basePrompt.slice(0, 50)}{currentPrompt.basePrompt.length > 50 ? '...' : ''}"
                   </p>
                 )}
                 <p className="text-xs text-ink-muted">

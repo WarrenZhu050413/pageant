@@ -213,7 +213,7 @@ export function PromptsTab() {
                 'transition-all duration-150',
                 isPending && 'shimmer cursor-wait',
                 isDraft && 'border border-dashed border-brass/40',
-                isDraft && (item.isGenerating || item.isGeneratingImages) && 'shimmer',
+                // No shimmer for drafts - spinner is sufficient
                 isConcept && 'border border-purple-500/30',
                 isActive && !isSelectionMode
                   ? isDraft
