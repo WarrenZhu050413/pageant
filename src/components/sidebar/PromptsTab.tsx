@@ -10,6 +10,7 @@ export function PromptsTab() {
   const prompts = useStore((s) => s.prompts);
   const pendingPrompts = useStore((s) => s.pendingPrompts);
   const draftPrompts = useStore((s) => s.draftPrompts);
+  const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
   const pendingCount = pendingPrompts.size;
   const currentPromptId = useStore((s) => s.currentPromptId);
   const currentDraftId = useStore((s) => s.currentDraftId);
@@ -20,7 +21,7 @@ export function PromptsTab() {
   const selectAllPrompts = useStore((s) => s.selectAllPrompts);
   const clearPromptSelection = useStore((s) => s.clearPromptSelection);
   const batchDeletePrompts = useStore((s) => s.batchDeletePrompts);
-  const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
+  const deleteDraft = useStore((s) => s.deleteDraft);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -35,6 +36,8 @@ export function PromptsTab() {
     prompt?: string;
     thumbnail?: string;
     variationCount?: number;
+    isGenerating?: boolean; // Per-draft generating variations state
+    isGeneratingImages?: boolean; // Per-draft generating images state
     // Concept-specific fields
     conceptAxis?: string;
     sourceImageId?: string;
@@ -50,6 +53,8 @@ export function PromptsTab() {
       created_at: d.createdAt,
       prompt: d.basePrompt,
       variationCount: d.variations.length,
+      isGenerating: d.isGenerating,
+      isGeneratingImages: generatingImageDraftIds.has(d.id),
     })),
     // Pending prompts at top (below drafts)
     ...Array.from(pendingPrompts.entries()).map(([id, data]) => ({
@@ -77,7 +82,7 @@ export function PromptsTab() {
       })),
   ];
 
-  const selectableItems = allItems.filter((item) => item.itemType === 'prompt' || item.itemType === 'concept');
+  const selectableItems = allItems.filter((item) => item.itemType === 'prompt' || item.itemType === 'concept' || item.itemType === 'draft');
   const allSelected = selectableItems.length > 0 && selectedPromptIds.size === selectableItems.length;
 
   const handleToggleSelectionMode = () => {
@@ -88,7 +93,27 @@ export function PromptsTab() {
   };
 
   const handleDeleteSelected = async () => {
-    await batchDeletePrompts(Array.from(selectedPromptIds));
+    const selectedIds = Array.from(selectedPromptIds);
+
+    // Separate drafts from prompts/concepts
+    const draftIds = selectedIds.filter(id =>
+      allItems.find(item => item.id === id)?.itemType === 'draft'
+    );
+    const promptIds = selectedIds.filter(id => {
+      const item = allItems.find(item => item.id === id);
+      return item?.itemType === 'prompt' || item?.itemType === 'concept';
+    });
+
+    // Delete drafts (local state only)
+    for (const draftId of draftIds) {
+      deleteDraft(draftId);
+    }
+
+    // Delete prompts/concepts (API + refresh)
+    if (promptIds.length > 0) {
+      await batchDeletePrompts(promptIds);
+    }
+
     setIsDeleteDialogOpen(false);
     setIsSelectionMode(false);
   };
@@ -175,7 +200,7 @@ export function PromptsTab() {
             ? item.id === currentDraftId
             : item.id === currentPromptId;
           const isSelected = selectedPromptIds.has(item.id);
-          const isSelectable = isPrompt || isConcept;
+          const isSelectable = isPrompt || isConcept || isDraft;
 
           return (
             <motion.div
@@ -188,7 +213,7 @@ export function PromptsTab() {
                 'transition-all duration-150',
                 isPending && 'shimmer cursor-wait',
                 isDraft && 'border border-dashed border-brass/40',
-                isDraft && isGeneratingVariations && item.variationCount === 0 && 'shimmer',
+                isDraft && (item.isGenerating || item.isGeneratingImages) && 'shimmer',
                 isConcept && 'border border-purple-500/30',
                 isActive && !isSelectionMode
                   ? isDraft
@@ -250,9 +275,9 @@ export function PromptsTab() {
                     )}
                   >
                     {isDraft ? (
-                      // Draft: show edit icon or loading
+                      // Draft: show edit icon or loading spinner
                       <div className="w-full h-full flex items-center justify-center">
-                        {isGeneratingVariations && item.variationCount === 0 ? (
+                        {(item.isGenerating || item.isGeneratingImages) ? (
                           <Loader2 size={16} className="text-brass animate-spin" />
                         ) : (
                           <FileEdit size={16} className="text-brass" />
@@ -323,7 +348,9 @@ export function PromptsTab() {
 
                     <p className="text-[0.625rem] text-ink-muted mt-1">
                       {isDraft
-                        ? isGeneratingVariations && item.variationCount === 0
+                        ? item.isGeneratingImages
+                          ? 'Generating images...'
+                          : item.isGenerating
                           ? 'Creating variations...'
                           : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
                         : isConcept

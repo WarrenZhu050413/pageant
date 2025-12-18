@@ -63,7 +63,7 @@ export function MainStage() {
 
   const hasPending = pendingPrompts.size > 0;
 
-  // If viewing a draft, show the draft variations view
+  // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
   }
@@ -80,6 +80,12 @@ export function MainStage() {
                 <h2 className="font-[family-name:var(--font-display)] text-base font-semibold text-ink truncate">
                   {currentPrompt.title}
                 </h2>
+                {/* Show variation title as subtitle when available */}
+                {currentPrompt.images[currentImageIndex]?.variation_title && (
+                  <p className="text-sm text-ink-secondary truncate">
+                    {currentPrompt.images[currentImageIndex].variation_title}
+                  </p>
+                )}
                 {currentPrompt.basePrompt && (
                   <p className="text-xs text-ink-tertiary truncate mt-0.5 max-w-md" title={currentPrompt.basePrompt}>
                     Based on: "{currentPrompt.basePrompt.slice(0, 60)}{currentPrompt.basePrompt.length > 60 ? '...' : ''}"

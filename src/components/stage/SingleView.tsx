@@ -16,6 +16,7 @@ import {
   Search,
   Loader2,
   Check,
+  FileText,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -105,6 +106,9 @@ export function SingleView() {
   const [collectionName, setCollectionName] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+
+  // Variation prompt dialog state
+  const [isPromptDialogOpen, setIsPromptDialogOpen] = useState(false);
 
   // Sort collections newest first
   const sortedCollections = useMemo(() =>
@@ -227,7 +231,7 @@ export function SingleView() {
       )}
 
       {/* Image Container */}
-      <div className="flex-1 relative min-h-0 overflow-hidden">
+      <div className="flex-1 relative min-h-0">
         <div className="absolute inset-4 flex items-center justify-center">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
@@ -334,6 +338,19 @@ export function SingleView() {
                   >
                     <Copy size={18} />
                   </IconButton>
+                  {geminiGeneratedPrompt && (
+                    <IconButton
+                      variant="default"
+                      tooltip="View variation prompt"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsPromptDialogOpen(true);
+                      }}
+                      className="bg-surface/90 backdrop-blur-sm"
+                    >
+                      <FileText size={18} />
+                    </IconButton>
+                  )}
                   <a
                     href={getImageUrl(currentImage.image_path)}
                     download={`\${displayTitle}-\${currentImage.id}.\${currentImage.image_path.split('.').pop()}`}
@@ -551,6 +568,56 @@ export function SingleView() {
               disabled={isCreatingNew ? !collectionName.trim() : !selectedCollectionId}
             >
               {isCreatingNew ? 'Create & Add' : 'Add to Collection'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Variation Prompt Dialog */}
+      <Dialog
+        isOpen={isPromptDialogOpen}
+        onClose={() => setIsPromptDialogOpen(false)}
+        title="Variation Prompt"
+        className="max-w-2xl"
+      >
+        <div className="space-y-4">
+          {currentImage?.variation_title && (
+            <div>
+              <label className="text-xs font-medium text-ink-muted uppercase tracking-wide">
+                Variation Title
+              </label>
+              <p className="text-sm font-medium text-ink mt-1">
+                {currentImage.variation_title}
+              </p>
+            </div>
+          )}
+          <div>
+            <label className="text-xs font-medium text-ink-muted uppercase tracking-wide">
+              Generated Prompt
+            </label>
+            <div className="mt-2 p-3 bg-canvas-muted rounded-lg">
+              <p className="text-sm text-ink-secondary whitespace-pre-wrap font-mono">
+                {geminiGeneratedPrompt || 'No variation prompt available'}
+              </p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="ghost"
+              onClick={() => {
+                if (geminiGeneratedPrompt) {
+                  navigator.clipboard.writeText(geminiGeneratedPrompt);
+                }
+              }}
+              leftIcon={<Copy size={14} />}
+            >
+              Copy
+            </Button>
+            <Button
+              variant="brass"
+              onClick={() => setIsPromptDialogOpen(false)}
+            >
+              Close
             </Button>
           </div>
         </div>

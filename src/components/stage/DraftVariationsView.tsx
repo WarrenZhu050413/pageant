@@ -18,6 +18,8 @@ import {
   MessageSquare,
   Heart,
   Pencil,
+  CheckSquare,
+  Square,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -31,6 +33,7 @@ interface DraftVariationsViewProps {
 export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const updateDraftVariation = useStore((s) => s.updateDraftVariation);
   const removeDraftVariation = useStore((s) => s.removeDraftVariation);
+  const removeMultipleDraftVariations = useStore((s) => s.removeMultipleDraftVariations);
   const duplicateDraftVariation = useStore((s) => s.duplicateDraftVariation);
   const regenerateDraftVariation = useStore((s) => s.regenerateDraftVariation);
   const addMoreDraftVariations = useStore((s) => s.addMoreDraftVariations);
@@ -51,9 +54,13 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [appliedAnnotations, setAppliedAnnotations] = useState<Set<string>>(new Set());
+  const [revertedAnnotations, setRevertedAnnotations] = useState<Set<string>>(new Set());
   const [polishingIds, setPolishingIds] = useState<Set<string>>(new Set());
   const [isPolishingAll, setIsPolishingAll] = useState(false);
+
+  // Selection mode state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedVariationIds, setSelectedVariationIds] = useState<Set<string>>(new Set());
 
   // Build a map of image ID to image data for quick lookup
   const imageMap = useMemo(() => {
@@ -68,12 +75,23 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
   const findImageById = useCallback((id: string) => imageMap.get(id), [imageMap]);
 
-  // Apply an annotation suggestion
-  const handleApplyAnnotation = async (imageId: string, suggestedAnnotation: string) => {
+  // Revert to original annotation (undo auto-applied suggestion)
+  const handleRevertAnnotation = async (imageId: string, originalAnnotation: string) => {
     const img = findImageById(imageId);
-    // updateImageNotes takes (imageId, notes, annotation) - keep existing notes, update annotation
+    // updateImageNotes takes (imageId, notes, annotation) - keep existing notes, revert annotation
+    await updateImageNotes(imageId, img?.notes || '', originalAnnotation);
+    setRevertedAnnotations((prev) => new Set(prev).add(imageId));
+  };
+
+  // Re-apply suggestion after reverting
+  const handleReapplyAnnotation = async (imageId: string, suggestedAnnotation: string) => {
+    const img = findImageById(imageId);
     await updateImageNotes(imageId, img?.notes || '', suggestedAnnotation);
-    setAppliedAnnotations((prev) => new Set(prev).add(imageId));
+    setRevertedAnnotations((prev) => {
+      const next = new Set(prev);
+      next.delete(imageId);
+      return next;
+    });
   };
 
   const handleRegenerate = async (variationId: string) => {
@@ -138,14 +156,65 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
     (v) => (v.userNotes && v.userNotes.trim()) || (v.emphasizedTags && v.emphasizedTags.length > 0)
   );
 
+  // Selection helpers
+  const toggleVariationSelection = (variationId: string) => {
+    setSelectedVariationIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(variationId)) {
+        next.delete(variationId);
+      } else {
+        next.add(variationId);
+      }
+      return next;
+    });
+  };
+
+  const allSelected = selectedVariationIds.size === draft.variations.length && draft.variations.length > 0;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedVariationIds(new Set());
+    } else {
+      setSelectedVariationIds(new Set(draft.variations.map((v) => v.id)));
+    }
+  };
+
+  const handleDeleteSelected = () => {
+    // Cannot delete all variations - must keep at least 1
+    if (selectedVariationIds.size >= draft.variations.length) {
+      return;
+    }
+    removeMultipleDraftVariations(draft.id, Array.from(selectedVariationIds));
+    setSelectedVariationIds(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const exitSelectionMode = () => {
+    setIsSelectionMode(false);
+    setSelectedVariationIds(new Set());
+  };
+
+  // Check if delete would remove all variations
+  const wouldDeleteAll = selectedVariationIds.size >= draft.variations.length;
+
   return (
     <div className="flex flex-col h-full bg-canvas">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded-lg bg-brass/10 flex items-center justify-center">
-            <FileEdit size={16} className="text-brass" />
-          </div>
+          {/* Selection toggle checkbox */}
+          <button
+            onClick={() => isSelectionMode ? exitSelectionMode() : setIsSelectionMode(true)}
+            className={clsx(
+              'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+              isSelectionMode
+                ? 'bg-brass/20 text-brass'
+                : 'bg-brass/10 text-brass hover:bg-brass/20'
+            )}
+            title={isSelectionMode ? 'Exit selection mode' : 'Select variations to delete'}
+          >
+            {isSelectionMode ? <CheckSquare size={16} /> : <FileEdit size={16} />}
+          </button>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2 className="font-[family-name:var(--font-display)] text-base font-semibold text-ink truncate">
@@ -160,31 +229,73 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDelete}
-          >
-            <X size={14} className="mr-1" />
-            Discard
-          </Button>
-          <Button
-            variant="brass"
-            size="sm"
-            leftIcon={
-              isGeneratingImages ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <Wand2 size={14} />
-              )
-            }
-            onClick={handleGenerate}
-            disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating}
-          >
-            {isGeneratingImages ? 'Generating...' : 'Generate Images'}
-          </Button>
+          {!isSelectionMode && (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleDelete}
+              >
+                <X size={14} className="mr-1" />
+                Discard
+              </Button>
+              <Button
+                variant="brass"
+                size="sm"
+                leftIcon={
+                  isGeneratingImages ? (
+                    <Loader2 size={14} className="animate-spin" />
+                  ) : (
+                    <Wand2 size={14} />
+                  )
+                }
+                onClick={handleGenerate}
+                disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating}
+              >
+                Generate Images
+              </Button>
+            </>
+          )}
+          {isSelectionMode && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={exitSelectionMode}
+            >
+              <X size={14} className="mr-1" />
+              Cancel
+            </Button>
+          )}
         </div>
       </header>
+
+      {/* Selection bar - shows when in selection mode */}
+      {isSelectionMode && (
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-brass/5 shrink-0">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={toggleSelectAll}
+              className="flex items-center gap-1.5 text-sm text-ink-secondary hover:text-ink transition-colors"
+            >
+              {allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
+              {allSelected ? 'Deselect All' : 'Select All'}
+            </button>
+            <span className="text-sm text-ink-tertiary">
+              {selectedVariationIds.size} selected
+            </span>
+          </div>
+          <Button
+            variant="danger"
+            size="sm"
+            leftIcon={<Trash2 size={14} />}
+            onClick={handleDeleteSelected}
+            disabled={selectedVariationIds.size === 0 || wouldDeleteAll}
+            title={wouldDeleteAll ? 'Cannot delete all variations' : 'Delete selected variations'}
+          >
+            Delete Selected
+          </Button>
+        </div>
+      )}
 
       {/* Base prompt summary */}
       <div className="px-4 py-3 border-b border-border bg-canvas-subtle shrink-0">
@@ -198,13 +309,13 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
       <div className="flex-1 overflow-y-auto p-4">
         {/* Loading state when initially generating */}
         {draft.isGenerating && draft.variations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-8 text-ink-tertiary">
+          <div className="flex flex-col items-center justify-center py-8 text-ink-tertiary w-full">
             <Loader2 className="w-8 h-8 animate-spin mb-3" />
             <p className="text-sm mb-3">Generating prompt variations...</p>
-            {/* Show streaming text as it arrives */}
+            {/* Show streaming text as it arrives - uses full width */}
             {streamingText && (
-              <div className="w-full max-w-2xl px-4">
-                <div className="w-full bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary overflow-hidden max-h-32 overflow-y-auto">
+              <div className="w-full self-stretch px-4">
+                <div className="w-full bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary max-h-48 overflow-y-auto">
                   <span className="opacity-50">Receiving:</span>
                   <pre className="w-full min-w-0 whitespace-pre-wrap break-words mt-1">{streamingText.slice(-500)}</pre>
                 </div>
@@ -222,6 +333,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
               const isExpanded = expandedIds.has(variation.id);
               const hasNotes = variation.userNotes && variation.userNotes.trim();
               const hasEmphasizedTags = variation.emphasizedTags && variation.emphasizedTags.length > 0;
+              const isSelected = selectedVariationIds.has(variation.id);
 
               return (
                 <motion.div
@@ -231,31 +343,52 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                   exit={{ opacity: 0, y: -10 }}
                   transition={{ duration: 0.2 }}
                   className={clsx(
-                    'border border-border rounded-lg',
+                    'border rounded-lg',
                     'bg-surface hover:bg-canvas-muted/30',
                     'transition-colors',
-                    (isRegenerating || isPolishing) && 'opacity-60'
+                    (isRegenerating || isPolishing) && 'opacity-60',
+                    isSelectionMode && isSelected
+                      ? 'border-brass bg-brass/5'
+                      : 'border-border'
                   )}
                 >
                   {/* Card header */}
                   <div className="flex items-start gap-3 p-3 pb-2">
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs font-medium text-ink-tertiary">
+                    {/* Selection checkbox */}
+                    {isSelectionMode && (
+                      <button
+                        onClick={() => toggleVariationSelection(variation.id)}
+                        className="shrink-0 mt-0.5"
+                      >
+                        {isSelected ? (
+                          <CheckSquare size={16} className="text-brass" />
+                        ) : (
+                          <Square size={16} className="text-ink-tertiary hover:text-ink" />
+                        )}
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 shrink-0 min-w-0">
+                      <span className="text-xs font-medium text-ink-tertiary shrink-0">
                         #{index + 1}
                       </span>
+                      {variation.title && (
+                        <span className="text-sm font-medium text-ink truncate" title={variation.title}>
+                          {variation.title}
+                        </span>
+                      )}
                       {variation.mood && (
-                        <Badge variant="secondary" size="sm">
+                        <Badge variant="secondary" size="sm" className="shrink-0">
                           {variation.mood}
                         </Badge>
                       )}
                       {variation.type && variation.type !== 'faithful' && (
-                        <Badge variant="outline" size="sm">
+                        <Badge variant="outline" size="sm" className="shrink-0">
                           {variation.type}
                         </Badge>
                       )}
                       {/* Edited indicator */}
                       {variation.isEdited && (
-                        <Badge variant="outline" size="sm" className="text-amber-600 border-amber-300 bg-amber-50">
+                        <Badge variant="outline" size="sm" className="text-amber-600 border-amber-300 bg-amber-50 shrink-0">
                           <Pencil size={10} className="mr-0.5" />
                           edited
                         </Badge>
@@ -264,57 +397,59 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
                     <div className="flex-1" />
 
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 shrink-0">
-                      {/* Polish button */}
-                      <button
-                        onClick={() => handlePolishVariation(variation.id)}
-                        disabled={isPolishing || isRegenerating || (!hasNotes && !hasEmphasizedTags)}
-                        className={clsx(
-                          'p-1.5 rounded-md transition-colors disabled:opacity-30',
-                          hasNotes || hasEmphasizedTags
-                            ? 'text-brass hover:text-brass hover:bg-brass/10'
-                            : 'text-ink-tertiary hover:text-ink hover:bg-canvas-muted'
-                        )}
-                        title={hasNotes || hasEmphasizedTags ? 'Polish with notes/tags' : 'Add notes or emphasize tags to enable polish'}
-                      >
-                        {isPolishing ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <Sparkles size={14} />
-                        )}
-                      </button>
-                      <button
-                        onClick={() => toggleExpand(variation.id)}
-                        className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
-                        title={isExpanded ? 'Collapse' : 'Expand to edit'}
-                      >
-                        {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                      </button>
-                      <button
-                        onClick={() => handleRegenerate(variation.id)}
-                        disabled={isRegenerating || isPolishing}
-                        className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors disabled:opacity-50"
-                        title="Regenerate"
-                      >
-                        <RefreshCw size={14} className={isRegenerating ? 'animate-spin' : ''} />
-                      </button>
-                      <button
-                        onClick={() => duplicateDraftVariation(draft.id, variation.id)}
-                        className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
-                        title="Duplicate"
-                      >
-                        <Copy size={14} />
-                      </button>
-                      <button
-                        onClick={() => removeDraftVariation(draft.id, variation.id)}
-                        className="p-1.5 rounded-md text-ink-tertiary hover:text-error hover:bg-error/10 transition-colors"
-                        title="Delete"
-                        disabled={draft.variations.length <= 1}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                    {/* Actions - hide in selection mode */}
+                    {!isSelectionMode && (
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Polish button */}
+                        <button
+                          onClick={() => handlePolishVariation(variation.id)}
+                          disabled={isPolishing || isRegenerating || (!hasNotes && !hasEmphasizedTags)}
+                          className={clsx(
+                            'p-1.5 rounded-md transition-colors disabled:opacity-30',
+                            hasNotes || hasEmphasizedTags
+                              ? 'text-brass hover:text-brass hover:bg-brass/10'
+                              : 'text-ink-tertiary hover:text-ink hover:bg-canvas-muted'
+                          )}
+                          title={hasNotes || hasEmphasizedTags ? 'Polish with notes/tags' : 'Add notes or emphasize tags to enable polish'}
+                        >
+                          {isPolishing ? (
+                            <Loader2 size={14} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={14} />
+                          )}
+                        </button>
+                        <button
+                          onClick={() => toggleExpand(variation.id)}
+                          className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
+                          title={isExpanded ? 'Collapse' : 'Expand to edit'}
+                        >
+                          {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </button>
+                        <button
+                          onClick={() => handleRegenerate(variation.id)}
+                          disabled={isRegenerating || isPolishing}
+                          className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors disabled:opacity-50"
+                          title="Regenerate"
+                        >
+                          <RefreshCw size={14} className={isRegenerating ? 'animate-spin' : ''} />
+                        </button>
+                        <button
+                          onClick={() => duplicateDraftVariation(draft.id, variation.id)}
+                          className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
+                          title="Duplicate"
+                        >
+                          <Copy size={14} />
+                        </button>
+                        <button
+                          onClick={() => removeDraftVariation(draft.id, variation.id)}
+                          className="p-1.5 rounded-md text-ink-tertiary hover:text-error hover:bg-error/10 transition-colors"
+                          title="Delete"
+                          disabled={draft.variations.length <= 1}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Prompt text - editable when expanded */}
@@ -417,7 +552,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                           const img = findImageById(imgId);
                           // Find suggestion for this image
                           const suggestion = draft.annotationSuggestions?.find(s => s.image_id === imgId);
-                          const isApplied = appliedAnnotations.has(imgId);
+                          const isReverted = revertedAnnotations.has(imgId);
 
                           return (
                             <div key={imgId} className="flex gap-2 items-start">
@@ -437,38 +572,52 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                                 </div>
                               )}
                               <div className="flex-1 min-w-0">
-                                {/* Show annotation and suggestion side by side */}
+                                {/* Show current annotation */}
                                 {img?.annotation && (
                                   <p className="text-[0.65rem] text-ink-secondary line-clamp-3" title={img.annotation}>
                                     "{img.annotation}"
                                   </p>
                                 )}
-                                {/* Inline annotation suggestion */}
-                                {suggestion && !isApplied && (
-                                  <div className="mt-1 flex items-start gap-2 bg-amber-50/50 rounded p-1.5">
-                                    <Sparkles size={10} className="text-amber-600 shrink-0 mt-0.5" />
+                                {/* Auto-applied suggestion: show "Applied" with Revert option */}
+                                {suggestion && !isReverted && (
+                                  <div className="mt-1 flex items-start gap-2 bg-green-50/50 rounded p-1.5">
+                                    <Check size={10} className="text-green-600 shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-[0.65rem] text-amber-700">
-                                        "{suggestion.suggested_annotation}"
+                                      <p className="text-[0.6rem] text-green-700">
+                                        Auto-polished
                                       </p>
-                                      {suggestion.reason && (
-                                        <p className="text-[0.55rem] text-amber-600/70 mt-0.5">
-                                          {suggestion.reason}
+                                      {suggestion.original_annotation && (
+                                        <p className="text-[0.55rem] text-ink-muted mt-0.5">
+                                          Was: "{suggestion.original_annotation}"
                                         </p>
                                       )}
                                     </div>
                                     <button
-                                      onClick={() => handleApplyAnnotation(imgId, suggestion.suggested_annotation)}
-                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                      onClick={() => handleRevertAnnotation(imgId, suggestion.original_annotation || '')}
+                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
                                     >
-                                      Apply
+                                      Revert
                                     </button>
                                   </div>
                                 )}
-                                {isApplied && (
-                                  <div className="mt-1 flex items-center gap-1 text-[0.6rem] text-green-600">
-                                    <Check size={10} />
-                                    Applied
+                                {/* Reverted: show option to re-apply */}
+                                {suggestion && isReverted && (
+                                  <div className="mt-1 flex items-start gap-2 bg-amber-50/50 rounded p-1.5">
+                                    <Sparkles size={10} className="text-amber-600 shrink-0 mt-0.5" />
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-[0.6rem] text-amber-700">
+                                        Reverted to original
+                                      </p>
+                                      <p className="text-[0.55rem] text-ink-muted mt-0.5">
+                                        Suggested: "{suggestion.suggested_annotation}"
+                                      </p>
+                                    </div>
+                                    <button
+                                      onClick={() => handleReapplyAnnotation(imgId, suggestion.suggested_annotation)}
+                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                    >
+                                      Re-apply
+                                    </button>
                                   </div>
                                 )}
                               </div>
@@ -533,7 +682,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
             onClick={handleGenerate}
             disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating || isPolishingAll}
           >
-            {isGeneratingImages ? 'Generating...' : 'Generate Images'}
+            Generate Images
           </Button>
         </div>
       </div>
