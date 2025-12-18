@@ -89,8 +89,9 @@ export function InfoSection() {
   };
 
   const actualPrompt = currentImage.varied_prompt || imagePrompt.prompt;
-  const originalPrompt = imagePrompt.prompt;
-  const showOriginalPrompt = currentImage.varied_prompt && currentImage.varied_prompt !== originalPrompt;
+  // basePrompt is the actual user input; prompt is the concatenated Gemini variations
+  const originalPrompt = imagePrompt.basePrompt;
+  const showOriginalPrompt = originalPrompt && currentImage.varied_prompt && currentImage.varied_prompt !== originalPrompt;
 
   return (
     <div className="border-t border-border">
