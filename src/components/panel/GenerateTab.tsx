@@ -42,6 +42,7 @@ export function GenerateTab() {
     return saved ? parseInt(saved, 10) : 4;
   });
   const [showDropdown, setShowDropdown] = useState(false);
+  const [customCountInput, setCustomCountInput] = useState(''); // For editing 5+ input
   const [selectedConceptIds, setSelectedConceptIds] = useState<string[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [editingContextImageId, setEditingContextImageId] = useState<string | null>(null);
@@ -312,18 +313,27 @@ export function GenerateTab() {
             <span className="shrink-0">5+</span>
             {count > 5 && (
               <input
-                type="number"
-                min="6"
-                value={count}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={customCountInput || count}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
+                  const raw = e.target.value;
+                  setCustomCountInput(raw); // Allow any value while typing
+                  const val = parseInt(raw, 10);
                   if (!isNaN(val) && val >= 1) updateCount(val);
+                }}
+                onFocus={() => setCustomCountInput(count.toString())}
+                onBlur={(e) => {
+                  // On blur, if empty or invalid, reset to 6
+                  const val = parseInt(e.target.value, 10);
+                  if (isNaN(val) || val < 1) updateCount(6);
+                  setCustomCountInput(''); // Clear local state, use count directly
                 }}
                 onClick={(e) => e.stopPropagation()}
                 className={clsx(
                   'w-12 bg-transparent text-center font-medium',
-                  'border-none outline-none',
-                  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+                  'border-none outline-none'
                 )}
                 autoFocus
               />
