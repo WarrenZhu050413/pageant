@@ -12,12 +12,14 @@ import {
   ChevronDown,
   Zap,
   Settings2,
+  Pencil,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, Input, Textarea } from '../ui';
 import { PromptPreviewModal } from '../modals/PromptPreviewModal';
 import { ImagePickerModal } from '../modals/ImagePickerModal';
+import { ContextAnnotationModal } from '../modals/ContextAnnotationModal';
 import type { ImageSize, AspectRatio, SafetyLevel } from '../../types';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from '../../types';
 
@@ -28,13 +30,21 @@ const SIZE_PRICES: Record<string, string> = {
   '4K': '$0.24',
 };
 
+// LocalStorage key for persisting image count preference
+const IMAGE_COUNT_KEY = 'pageant:defaultImageCount';
+
 export function GenerateTab() {
   const [title, setTitle] = useState('');
   const [prompt, setPrompt] = useState('');
-  const [count, setCount] = useState(4);
+  const [count, setCount] = useState(() => {
+    // Load saved count from localStorage, default to 4
+    const saved = localStorage.getItem(IMAGE_COUNT_KEY);
+    return saved ? parseInt(saved, 10) : 4;
+  });
   const [showDropdown, setShowDropdown] = useState(false);
   const [selectedConceptIds, setSelectedConceptIds] = useState<string[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [editingContextImageId, setEditingContextImageId] = useState<string | null>(null);
 
   // Advanced options state (per-request overrides)
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -44,6 +54,7 @@ export function GenerateTab() {
   const [safetyLevel, setSafetyLevel] = useState<string>('');
 
   const contextImageIds = useStore((s) => s.contextImageIds);
+  const contextAnnotationOverrides = useStore((s) => s.contextAnnotationOverrides);
   const removeContextImage = useStore((s) => s.removeContextImage);
   const clearContextImages = useStore((s) => s.clearContextImages);
   const setContextImages = useStore((s) => s.setContextImages);
@@ -55,11 +66,11 @@ export function GenerateTab() {
   const selectedIds = useStore((s) => s.selectedIds);
   const collections = useStore((s) => s.collections);
   const getCurrentImage = useStore((s) => s.getCurrentImage);
-  const libraryItems = useStore((s) => s.libraryItems);
+  const designTokens = useStore((s) => s.designTokens);
   const settings = useStore((s) => s.settings);
 
-  // Get design concepts from library
-  const concepts = libraryItems.filter((item) => item.type === 'design-token');
+  // Get design tokens from library
+  const concepts = designTokens;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -79,6 +90,12 @@ export function GenerateTab() {
   useEffect(() => {
     if (settings?.safety_level) setSafetyLevel(settings.safety_level);
   }, [settings?.safety_level]);
+
+  // Helper to update count and persist to localStorage
+  const updateCount = (newCount: number) => {
+    setCount(newCount);
+    localStorage.setItem(IMAGE_COUNT_KEY, newCount.toString());
+  };
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -120,13 +137,13 @@ export function GenerateTab() {
     );
   };
 
-  // Get style tags from selected concepts
+  // Get prompts/tags from selected design tokens
   const getSelectedConceptTags = () => {
     const selected = concepts.filter((c) => selectedConceptIds.includes(c.id));
     const allTags: string[] = [];
-    selected.forEach((concept) => {
-      if (concept.style_tags) allTags.push(...concept.style_tags);
-      if (concept.text) allTags.push(concept.text);
+    selected.forEach((token) => {
+      if (token.tags) allTags.push(...token.tags);
+      if (token.prompts) allTags.push(...token.prompts);
     });
     return [...new Set(allTags)];
   };
@@ -175,9 +192,9 @@ export function GenerateTab() {
     });
 
     // Clear form after submitting, reset advanced options to settings defaults
+    // Note: count is preserved as user's preference (stored in localStorage)
     setTitle('');
     setPrompt('');
-    setCount(4);
     setShowDropdown(false);
     setSelectedConceptIds([]);
     // Reset advanced options to settings values (not empty)
@@ -200,9 +217,9 @@ export function GenerateTab() {
     });
 
     // Clear form after submitting, reset advanced options to settings defaults
+    // Note: count is preserved as user's preference (stored in localStorage)
     setTitle('');
     setPrompt('');
-    setCount(4);
     setShowDropdown(false);
     setSelectedConceptIds([]);
     // Reset advanced options to settings values (not empty)
@@ -264,10 +281,10 @@ export function GenerateTab() {
           Number of Images
         </label>
         <div className="flex gap-2">
-          {[1, 2, 3, 4, 5, 6].map((n) => (
+          {[1, 2, 3, 4, 5].map((n) => (
             <button
               key={n}
-              onClick={() => setCount(n)}
+              onClick={() => updateCount(n)}
               className={clsx(
                 'flex-1 py-2 rounded-lg text-sm font-medium',
                 'transition-all duration-150',
@@ -279,6 +296,39 @@ export function GenerateTab() {
               {n}
             </button>
           ))}
+          {/* 5+ custom input - always show label with expandable input */}
+          <div
+            className={clsx(
+              'flex-1 flex items-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium',
+              'transition-all duration-150',
+              count > 5
+                ? 'bg-brass text-surface'
+                : 'bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle cursor-pointer'
+            )}
+            onClick={() => {
+              if (count <= 5) updateCount(6);
+            }}
+          >
+            <span className="shrink-0">5+</span>
+            {count > 5 && (
+              <input
+                type="number"
+                min="6"
+                value={count}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 1) updateCount(val);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                className={clsx(
+                  'w-12 bg-transparent text-center font-medium',
+                  'border-none outline-none',
+                  '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none'
+                )}
+                autoFocus
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -343,36 +393,69 @@ export function GenerateTab() {
 
         {/* Context image grid */}
         {contextImages.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            <AnimatePresence>
-              {contextImages.map((img) => (
-                <motion.div
-                  key={img!.id}
-                  initial={{ scale: 0, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0, opacity: 0 }}
-                  className="relative"
-                >
-                  <img
-                    src={getImageUrl(img!.image_path)}
-                    alt=""
-                    className="w-14 h-14 rounded-lg object-cover"
-                  />
-                  <button
-                    onClick={() => removeContextImage(img!.id)}
-                    className={clsx(
-                      'absolute -top-1 -right-1 w-5 h-5 rounded-full',
-                      'bg-ink text-surface',
-                      'flex items-center justify-center',
-                      'hover:bg-error transition-colors'
-                    )}
-                  >
-                    <X size={10} />
-                  </button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
+          <>
+            <div className="flex flex-wrap gap-2">
+              <AnimatePresence>
+                {contextImages.map((img) => {
+                  const hasOverride = img!.id in contextAnnotationOverrides;
+                  return (
+                    <motion.div
+                      key={img!.id}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      onClick={() => setEditingContextImageId(img!.id)}
+                      className="relative cursor-pointer group"
+                      title="Click to edit annotation for this context image"
+                    >
+                      <img
+                        src={getImageUrl(img!.image_path)}
+                        alt=""
+                        className={clsx(
+                          'w-14 h-14 rounded-lg object-cover transition-all',
+                          'group-hover:ring-2 group-hover:ring-brass/50',
+                          'group-hover:brightness-90'
+                        )}
+                      />
+                      {/* Hover overlay with edit icon */}
+                      <div className={clsx(
+                        'absolute inset-0 rounded-lg flex items-center justify-center',
+                        'bg-ink/40 opacity-0 group-hover:opacity-100 transition-opacity',
+                        'pointer-events-none'
+                      )}>
+                        <Pencil size={16} className="text-surface" />
+                      </div>
+                      {/* Override indicator (always visible when active) */}
+                      {hasOverride && (
+                        <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-brass flex items-center justify-center z-10">
+                          <Pencil size={8} className="text-surface" />
+                        </div>
+                      )}
+                      {/* Remove button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeContextImage(img!.id);
+                        }}
+                        className={clsx(
+                          'absolute -top-1 -right-1 w-5 h-5 rounded-full z-10',
+                          'bg-ink text-surface',
+                          'flex items-center justify-center',
+                          'hover:bg-error transition-colors'
+                        )}
+                      >
+                        <X size={10} />
+                      </button>
+                    </motion.div>
+                  );
+                })}
+              </AnimatePresence>
+            </div>
+            {/* Help text */}
+            <p className="text-[0.6rem] text-ink-muted">
+              Click an image to add context-specific annotation
+            </p>
+          </>
         )}
 
         {/* Add context buttons */}
@@ -647,6 +730,13 @@ export function GenerateTab() {
         isOpen={showImagePicker}
         onClose={() => setShowImagePicker(false)}
         onConfirm={handleImagePickerConfirm}
+      />
+
+      {/* Context Annotation Modal */}
+      <ContextAnnotationModal
+        isOpen={editingContextImageId !== null}
+        imageId={editingContextImageId}
+        onClose={() => setEditingContextImageId(null)}
       />
 
       {/* Upload Section */}
