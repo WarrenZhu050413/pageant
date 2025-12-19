@@ -8,6 +8,10 @@ A place to vibe-create with nano-banana pro.
 2. **Feedback-first UI** — refine prompts before generation, annotate images, star favorites, build collections
 3. **Design token extraction** — pull out design dimensions from images you like (colors, composition, mood, aesthetic) and remix them into new generations
 
+![Pageant UI - Prompt Refinement](docs/screenshot-1.png)
+
+![Pageant UI - Design Token Gallery](docs/screenshot-2.png)
+
 ## Quick Start
 
 ```bash
