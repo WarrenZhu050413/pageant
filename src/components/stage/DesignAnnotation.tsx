@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Check } from 'lucide-react';
+import { Check, Heart } from 'lucide-react';
 import { useStore } from '../../store';
-import { SUGGESTED_TAGS, type DesignAxis } from '../../types';
+import { SUGGESTED_TAGS, type DesignAxis, type DesignDimension } from '../../types';
 
 // Helper to find which axis a tag belongs to
 function findAxisForTag(
@@ -33,6 +33,11 @@ function isTagLiked(tag: string, likedAxes: Record<string, string[]> | undefined
   return false;
 }
 
+// Helper to check if a dimension axis is liked
+function isDimensionLiked(axis: string, likedDimensionAxes: string[] | undefined): boolean {
+  return likedDimensionAxes?.includes(axis) ?? false;
+}
+
 export function DesignAnnotation() {
   const prompts = useStore((s) => s.prompts);
   const collections = useStore((s) => s.collections);
@@ -40,6 +45,7 @@ export function DesignAnnotation() {
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
+  const toggleDimensionLike = useStore((s) => s.toggleDimensionLike);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
 
   const [annotation, setAnnotation] = useState('');
@@ -115,14 +121,27 @@ export function DesignAnnotation() {
     }
   };
 
+  const handleDimensionLikeClick = (axis: string) => {
+    if (!currentImage) return;
+    const isLiked = isDimensionLiked(axis, currentImage.liked_dimension_axes);
+    toggleDimensionLike(currentImage.id, axis, !isLiked);
+  };
+
+  // Get design dimensions from current image (limit to 3 most important)
+  const dimensions = useMemo(() => {
+    if (!currentImage?.design_dimensions) return [];
+    return Object.entries(currentImage.design_dimensions).slice(0, 3);
+  }, [currentImage?.design_dimensions]);
+
   if (!currentImage) return null;
 
   const hasAnnotations = currentImage.annotations && Object.keys(currentImage.annotations).length > 0;
+  const hasDimensions = dimensions.length > 0;
   const hasChanges = annotation !== (currentImage.annotation || '');
 
   return (
     <div className="px-6 py-5">
-      {/* Two Column Layout: Notes | Design Tags */}
+      {/* Three Column Layout: Notes | Design Tags | Dimensions */}
       <div className="flex gap-6">
         {/* Left Column: Notes */}
         <div className="w-64 shrink-0">
@@ -176,7 +195,7 @@ export function DesignAnnotation() {
           </div>
         </div>
 
-        {/* Right Column: Design Tags by Axis */}
+        {/* Middle Column: Design Tags by Axis */}
         <div className="flex-1 min-w-0">
           {hasAnnotations ? (
             <div className="space-y-1.5">
@@ -215,6 +234,43 @@ export function DesignAnnotation() {
             </p>
           )}
         </div>
+
+        {/* Right Column: Design Dimensions - compact list */}
+        {hasDimensions && (
+          <div className="w-56 shrink-0">
+            <div className="space-y-1">
+              {dimensions.map(([axis, dim]) => {
+                const liked = isDimensionLiked(axis, currentImage.liked_dimension_axes);
+                return (
+                  <button
+                    key={axis}
+                    onClick={() => handleDimensionLikeClick(axis)}
+                    className={clsx(
+                      'w-full px-2.5 py-1.5 rounded-md text-left transition-all',
+                      'flex items-center gap-2 group',
+                      liked
+                        ? 'bg-brass/15 text-brass-dark'
+                        : 'bg-canvas-subtle hover:bg-canvas-muted text-ink-secondary'
+                    )}
+                    title={dim.description}
+                  >
+                    <Heart
+                      size={12}
+                      className={clsx(
+                        'shrink-0 transition-colors',
+                        liked ? 'text-brass' : 'text-ink-muted/50 group-hover:text-brass/60'
+                      )}
+                      fill={liked ? 'currentColor' : 'none'}
+                    />
+                    <span className="text-xs leading-tight truncate">
+                      {dim.name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
