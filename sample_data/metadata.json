@@ -1,7 +1,122 @@
 {
   "generated_at": "2025-12-20T00:00:00",
   "model": "gemini-2.0-flash-exp",
-  "prompts": [],
+  "prompts": [
+    {
+      "id": "concept-prompt-tok-28d28b0c",
+      "prompt": "Abstract composition of pure white rim light edges against a pitch black background, tracing the outline of undefined curved forms.",
+      "title": "Concept: Stark Rim Lighting",
+      "created_at": "2025-12-19T22:31:52.285086",
+      "images": [
+        {
+          "id": "concept-tok-28d28b0c",
+          "image_path": "concept-f7f835c0.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-19T22:31:52.285086",
+          "varied_prompt": "Abstract composition of pure white rim light edges against a pitch black background, tracing the outline of undefined curved forms.",
+          "variation_title": "Stark Rim Lighting"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "lighting",
+      "source_image_id": "2025-12-19-22-30-59-Visceral-Textures-Noir-Moods-2"
+    },
+    {
+      "id": "concept-prompt-tok-37dae0c3",
+      "prompt": "Abstract visual layering of organic noise over geometric grid structures, blending modes, transparency and opacity interplay.",
+      "title": "Concept: Aggressive Double Exposure",
+      "created_at": "2025-12-19T22:33:41.135334",
+      "images": [
+        {
+          "id": "concept-tok-37dae0c3",
+          "image_path": "concept-01b9306e.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-19T22:33:41.135334",
+          "varied_prompt": "Abstract visual layering of organic noise over geometric grid structures, blending modes, transparency and opacity interplay.",
+          "variation_title": "Aggressive Double Exposure"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "composition",
+      "source_image_id": "2025-12-19-22-31-12-Visceral-Textures-Noir-Moods-4"
+    },
+    {
+      "id": "concept-prompt-tok-e471a133",
+      "prompt": "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones.",
+      "title": "Concept: Macro Biomorphic Texture",
+      "created_at": "2025-12-19T22:43:07.996284",
+      "images": [
+        {
+          "id": "concept-tok-e471a133",
+          "image_path": "concept-c774925c.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-19T22:43:07.996284",
+          "varied_prompt": "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones.",
+          "variation_title": "Macro Biomorphic Texture"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "aesthetic",
+      "source_image_id": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3"
+    },
+    {
+      "id": "concept-prompt-tok-2a62b43b",
+      "prompt": "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern.",
+      "title": "Concept: Binary Threshold Contrast",
+      "created_at": "2025-12-19T22:59:32.713279",
+      "images": [
+        {
+          "id": "concept-tok-2a62b43b",
+          "image_path": "concept-fd814ba8.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-19T22:59:32.713279",
+          "varied_prompt": "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern.",
+          "variation_title": "Binary Threshold Contrast"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "colors",
+      "source_image_id": "2025-12-19-22-31-00-Visceral-Textures-Noir-Moods-5"
+    },
+    {
+      "id": "concept-prompt-tok-c681261e",
+      "prompt": "Abstract gradient of warm browns, tans, and deep golds, reminiscent of old paper or dried earth, monochromatic warmth.",
+      "title": "Concept: Dusty Sepia Grading",
+      "created_at": "2025-12-19T23:16:02.517701",
+      "images": [
+        {
+          "id": "concept-tok-c681261e",
+          "image_path": "concept-8e83ecbf.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-19T23:16:02.517701",
+          "varied_prompt": "Abstract gradient of warm browns, tans, and deep golds, reminiscent of old paper or dried earth, monochromatic warmth.",
+          "variation_title": "Dusty Sepia Grading"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "colors",
+      "source_image_id": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3"
+    },
+    {
+      "id": "concept-prompt-tok-29202b7b",
+      "prompt": "Abstract representation of ink or smoke diffusing in a fluid medium. Soft, billowing shapes with no hard edges, floating in a dense, colored void.",
+      "title": "Concept: Fluid Suspension Density",
+      "created_at": "2025-12-20T01:18:23.034976",
+      "images": [
+        {
+          "id": "concept-tok-29202b7b",
+          "image_path": "concept-841e4462.jpg",
+          "mime_type": "image/jpeg",
+          "generated_at": "2025-12-20T01:18:23.034976",
+          "varied_prompt": "Abstract representation of ink or smoke diffusing in a fluid medium. Soft, billowing shapes with no hard edges, floating in a dense, colored void.",
+          "variation_title": "Fluid Suspension Density"
+        }
+      ],
+      "is_concept": true,
+      "concept_axis": "layout",
+      "source_image_id": "2025-12-20-01-15-00-Atmospheric-Noise-Texture-4"
+    }
+  ],
   "favorites": [],
   "templates": [],
   "collections": [],
@@ -51,7 +166,8 @@
       },
       "concept_image_path": "concept-f7f835c0.jpg",
       "concept_image_id": "concept-tok-28d28b0c",
-      "last_used": "2025-12-19T23:20:22.404218"
+      "last_used": "2025-12-19T23:20:22.404218",
+      "concept_prompt_id": "concept-prompt-tok-28d28b0c"
     },
     {
       "id": "tok-37dae0c3",
@@ -95,7 +211,8 @@
       },
       "concept_image_path": "concept-01b9306e.jpg",
       "concept_image_id": "concept-tok-37dae0c3",
-      "last_used": "2025-12-19T23:13:18.244455"
+      "last_used": "2025-12-19T23:13:18.244455",
+      "concept_prompt_id": "concept-prompt-tok-37dae0c3"
     },
     {
       "id": "tok-e471a133",
@@ -138,7 +255,8 @@
         "generation_prompt": "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones."
       },
       "concept_image_path": "concept-c774925c.jpg",
-      "concept_image_id": "concept-tok-e471a133"
+      "concept_image_id": "concept-tok-e471a133",
+      "concept_prompt_id": "concept-prompt-tok-e471a133"
     },
     {
       "id": "tok-2a62b43b",
@@ -181,7 +299,8 @@
         "generation_prompt": "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern."
       },
       "concept_image_path": "concept-fd814ba8.jpg",
-      "concept_image_id": "concept-tok-2a62b43b"
+      "concept_image_id": "concept-tok-2a62b43b",
+      "concept_prompt_id": "concept-prompt-tok-2a62b43b"
     },
     {
       "id": "tok-c681261e",
