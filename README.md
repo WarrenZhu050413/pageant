@@ -4,25 +4,22 @@ My interface for vibe-creating with nano-banana pro. It's built around two ideas
 
 ### 1. Context Engineering for Image Models
 
-Prompts are only half the story. What images you attach, what you say about them, what preferences you express—that's the context that shapes what you get back.
+For image models, what images we attach, what we say about them, what preferences we express strongly influences what we get back. Pageant implements three features to make context engineering less of a chore and even fun:
 
-Pageant makes this easy:
-
-- **Auto-selected reference images.** Gemini picks which images to attach to each prompt variation based on what you're trying to achieve.
+- **Auto-selected reference images.** We can add many candidate images into our context, and Gemini picks which images to attach to each prompt variation based on what we're trying to achieve.
 - **Annotations that travel with images.** Annotate an image, like specific design axes (color palette, composition, mood), and those preferences get sent as context whenever the image is attached.
 - **Design Tokens.** Extract a core visual concept from an image—isolate the thing that makes it work—and apply it to future generations.
 
+![Pageant UI - Design Token Gallery](docs/screenshot-2.png)
+
 ### 2. Batch Experimentation
 
-Great art comes from lots of experimentation. Pageant is built for volume:
+I believe that great art comes from tinkering and experimentation. Pageant is built for making this easy:
 
-- Enter one prompt idea → Gemini generates *n* variations, each with its own reference images and annotations
-- Fire off many prompt sets in parallel, no waiting
-- Refine what works, discard what doesn't, iterate fast
+- We can enter one prompt idea + many reference images (along with their annotation metadata) → Gemini generates _n_ variations, each with its own reference images and annotations
+- The workflow is fully asynchronous. We can fire off many prompt sets in parallel.
 
 ![Pageant UI - Prompt Refinement](docs/screenshot-1.png)
-
-![Pageant UI - Design Token Gallery](docs/screenshot-2.png)
 
 ## Quick Start
 
@@ -75,6 +72,7 @@ bun run build     # Type check + build
 ## API Key
 
 Checked in order:
+
 1. `~/.gemini/apikey.txt`
 2. `GEMINI_API_KEY` env var
 3. `GEMINI_API_KEY_PATH` pointing to key file
