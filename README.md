@@ -10,7 +10,7 @@ For image models, what images we attach, what we say about them, what preference
 - **Annotations that travel with images.** Annotate an image, like specific design axes (color palette, composition, mood), and those preferences get sent as context whenever the image is attached.
 - **Design Tokens.** Extract a core visual concept from an image—isolate the thing that makes it work—and apply it to future generations.
 
-![Pageant UI - Design Token Gallery](docs/screenshot-2.png)
+![Pageant UI - Design Token Gallery](docs/design-tokens.png)
 
 ### 2. Batch Experimentation
 
@@ -19,7 +19,7 @@ I believe that great art comes from tinkering and experimentation. Pageant is bu
 - We can enter one prompt idea + many reference images (along with their annotation metadata) → Gemini generates _n_ variations, each with its own reference images and annotations
 - The workflow is fully asynchronous. We can fire off many prompt sets in parallel.
 
-![Pageant UI - Prompt Refinement](docs/screenshot-1.png)
+![Pageant UI - Prompt Refinement](docs/prompt-refinement.png)
 
 ## Quick Start
 
