@@ -1,8 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Check, Sparkles, Loader2 } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useStore } from '../../store';
-import { polishAnnotations } from '../../api';
 import { SUGGESTED_TAGS, type DesignAxis } from '../../types';
 
 // Helper to find which axis a tag belongs to
@@ -46,7 +45,6 @@ export function DesignAnnotation() {
   const [annotation, setAnnotation] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [isPolishing, setIsPolishing] = useState(false);
 
   const currentPrompt = useMemo(
     () => prompts.find((p) => p.id === currentPromptId) || null,
@@ -117,31 +115,13 @@ export function DesignAnnotation() {
     }
   };
 
-  const handlePolish = async () => {
-    if (!currentImage || !annotation.trim()) return;
-    setIsPolishing(true);
-    try {
-      const response = await polishAnnotations([currentImage.id]);
-      if (response.success && response.polished.length > 0) {
-        const polished = response.polished[0].polished_annotation;
-        setAnnotation(polished);
-        // Auto-save the polished annotation
-        await updateImageNotes(currentImage.id, currentImage.notes || '', polished);
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2000);
-      }
-    } finally {
-      setIsPolishing(false);
-    }
-  };
-
   if (!currentImage) return null;
 
   const hasAnnotations = currentImage.annotations && Object.keys(currentImage.annotations).length > 0;
   const hasChanges = annotation !== (currentImage.annotation || '');
 
   return (
-    <div className="px-6 py-3">
+    <div className="px-6 py-5">
       {/* Two Column Layout: Notes | Design Tags */}
       <div className="flex gap-6">
         {/* Left Column: Notes */}
@@ -174,26 +154,6 @@ export function DesignAnnotation() {
               {' '}new line
             </span>
             <span className="flex items-center gap-1.5">
-              {/* Polish button - only show when annotation has content */}
-              {annotation.trim() && (
-                <button
-                  onClick={handlePolish}
-                  disabled={isPolishing}
-                  className={clsx(
-                    'flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.6rem] font-medium transition-all',
-                    'bg-brass/10 text-brass hover:bg-brass/20',
-                    isPolishing && 'opacity-50'
-                  )}
-                  title="Polish annotation with AI"
-                >
-                  {isPolishing ? (
-                    <Loader2 size={9} className="animate-spin" />
-                  ) : (
-                    <Sparkles size={9} />
-                  )}
-                  Polish
-                </button>
-              )}
               {saved ? (
                 <span className="text-success flex items-center gap-0.5">
                   <Check size={10} /> saved
