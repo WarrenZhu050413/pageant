@@ -252,8 +252,7 @@ export function SingleView() {
       )}
 
       {/* Image Container */}
-      <div className="flex-1 relative min-h-0 overflow-hidden">
-        <div className="absolute inset-4 flex items-center justify-center">
+      <div className="flex-1 relative flex items-center justify-center min-h-0 overflow-hidden p-4">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
           <button
@@ -280,7 +279,7 @@ export function SingleView() {
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             className={clsx(
-              'relative max-h-full max-w-full',
+              'relative max-h-full max-w-full flex',
               'shadow-lg',
               selectionMode !== 'none' && 'cursor-pointer',
               isSelected && 'ring-4 ring-brass'
@@ -295,7 +294,8 @@ export function SingleView() {
             <img
               src={getImageUrl(currentImage.image_path)}
               alt={displayTitle}
-              className="block max-h-full max-w-full h-auto w-auto object-contain"
+              className="max-h-full max-w-full object-contain"
+              style={{ display: 'block' }}
             />
 
             {/* Overlay Actions */}
@@ -454,8 +454,6 @@ export function SingleView() {
             <ChevronRight size={20} />
           </button>
         )}
-
-        </div>
       </div>
 
       {/* Dot Navigation */}
