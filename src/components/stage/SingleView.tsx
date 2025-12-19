@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -106,6 +106,25 @@ export function SingleView() {
 
   // Fullscreen view state
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Image dimensions for overlay sizing
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [imgDimensions, setImgDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  // Update dimensions when image loads or changes
+  const handleImageLoad = useCallback(() => {
+    if (imgRef.current) {
+      setImgDimensions({
+        width: imgRef.current.offsetWidth,
+        height: imgRef.current.offsetHeight,
+      });
+    }
+  }, []);
+
+  // Reset dimensions when image changes
+  useEffect(() => {
+    setImgDimensions(null);
+  }, [currentImageIndex]);
 
   // Fullscreen keyboard handler
   const handleFullscreenKeyDown = useCallback((e: KeyboardEvent) => {
@@ -279,11 +298,15 @@ export function SingleView() {
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             className={clsx(
-              'relative max-h-full max-w-full flex',
+              'relative',
               'shadow-lg',
               selectionMode !== 'none' && 'cursor-pointer',
               isSelected && 'ring-4 ring-brass'
             )}
+            style={imgDimensions ? {
+              width: imgDimensions.width,
+              height: imgDimensions.height,
+            } : undefined}
             onClick={() => {
               if (selectionMode !== 'none') {
                 toggleSelection(currentImage.id);
@@ -292,14 +315,15 @@ export function SingleView() {
             onDoubleClick={() => setIsFullscreen(true)}
           >
             <img
+              ref={imgRef}
               src={getImageUrl(currentImage.image_path)}
               alt={displayTitle}
               className="max-h-full max-w-full object-contain"
-              style={{ display: 'block' }}
+              onLoad={handleImageLoad}
             />
 
             {/* Overlay Actions */}
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/20 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
+            <div className="absolute inset-0 bg-gradient-to-t from-ink/10 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
               {/* Top right - Fullscreen button */}
               <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
                 <span className="text-[0.65rem] text-white/60 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
