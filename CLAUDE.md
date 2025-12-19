@@ -72,53 +72,87 @@ State is organized into modular slices in `src/store/slices/`:
 
 ## GitHub Issues Workflow
 
-All development tasks are tracked in GitHub Issues. This is the single source of truth.
+GitHub Issues is the **single source of truth** for tracking bugs, features, and improvements. It serves as persistent memory across sessions and a first place to check when problems arise.
+
+### Core Principle
+
+**Every identified problem or feature MUST have a GitHub issue.** Before starting any work, check if an issue already exists. If not, create one.
+
+### Workflow
+
+#### 1. Identify & Create Issue
+When you identify a bug, new feature, or improvement:
+```bash
+# Check existing issues first
+gh issue list
+gh issue list --state all | grep -i "keyword"
+
+# Create new issue if none exists
+gh issue create --title "Short description" --label "bug,size:small" --body "..."
+```
+
+**Issue body contains:**
+- Description of the problem/feature
+- Current behavior (for bugs)
+- Expected/desired behavior
+- Relevant context (files, screenshots, error messages)
+
+**Issue body does NOT contain:**
+- The fix or implementation plan (that goes in comments)
+
+#### 2. Plan in Comments
+Add the fix/implementation plan as **comments** on the issue:
+```bash
+gh issue comment 123 --body "## Plan
+1. Update X in file Y
+2. Add tests for Z
+3. ..."
+```
+
+Multiple comments are fine as the plan evolves.
+
+#### 3. Implement & Test
+- Write tests that verify the fix/feature
+- Implement the solution
+- Ensure `bun run build` passes
+
+#### 4. Commit & Close
+Commit with issue reference:
+```bash
+git commit -m "Short description
+
+- Detail 1
+- Detail 2
+- Tests: src/path/to/test.ts
+
+Fixes #123"
+```
+
+Then close with a summary comment:
+```bash
+gh issue comment 123 --body "Fixed in commit abc1234. Tests added in src/path/to/test.ts"
+# Issue auto-closes from "Fixes #123" in commit message
+```
 
 ### Size Labels
 - `size:small` - Quick fixes, renames, single-file changes
 - `size:medium` - Multi-file features, moderate refactors
 - `size:large` - Architectural changes, major features
 
-### Working on Issues
-```bash
-gh issue list                     # See open issues
-gh issue view 123                 # Read issue details
-gh issue develop 123 --checkout   # Create branch and start work
-```
-
-### Completing Issues
-When you finish an issue, state:
-1. The issue number
-2. What was done (brief)
-3. The commit hash that resolves it
-
-Example:
-> Completed #5: Renamed 'Caption' to 'Annotation' across UI.
-> Commit: `abc1234`
-
-The commit message should include `Fixes #123` to auto-close the issue.
-
-### Creating Issues
-Claude can create issues when the user identifies bugs or features:
-```bash
-gh issue create --title "..." --label "bug,size:small" --body "..."
-```
-
-### Documenting Design Decisions
-GitHub Issues is the unified hub for all design decisions. Claude must document major plans and feature changes on GitHub:
-
-- **Existing issue**: If work stems from an existing issue, add comments there with design decisions, trade-offs considered, and implementation approach
-- **New work**: Create a new issue to track the feature/change and document decisions as the work progresses
-- **Plan files**: When creating detailed plans (e.g., in `.claude/plans/`), summarize key decisions in the related GitHub issue
-
-This ensures all design rationale is traceable and can be referenced later.
-
 ### Quick Reference
 ```bash
-gh issue list --label "size:small"    # Filter by size
-gh issue close 123                     # Close manually
-gh issue edit 123 --add-label "..."   # Add labels
+gh issue list                         # Open issues
+gh issue list --state all             # All issues (check for regressions)
+gh issue view 123                     # Read issue details
+gh issue comment 123 --body "..."     # Add plan/update
+gh issue close 123                    # Close manually
+gh issue reopen 123                   # Reopen if regression found
 ```
+
+### When to Check Issues First
+- Before starting new work → existing issue?
+- When encountering a bug → was it reported before?
+- When something regresses → find the original fix
 
 ## Configuration
 
