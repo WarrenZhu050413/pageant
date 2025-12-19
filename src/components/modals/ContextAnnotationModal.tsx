@@ -92,15 +92,23 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
       onClose();
       return;
     }
-    // Cmd/Ctrl+Enter to save
+    // Cmd/Ctrl+Enter to save override
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (isOverridden || hasChanges) {
-        handleSaveOverride();
+      // Inline the save logic to avoid stale closure
+      if (imageId && localAnnotation !== originalAnnotation) {
+        setContextAnnotationOverride(imageId, localAnnotation);
+        setSaved(true);
+        setTimeout(() => {
+          onClose();
+        }, 300);
+      } else if (imageId && localAnnotation === originalAnnotation) {
+        clearContextAnnotationOverride(imageId);
+        onClose();
       }
       return;
     }
-  }, [onClose, isOverridden, hasChanges]);
+  }, [onClose, imageId, localAnnotation, originalAnnotation, setContextAnnotationOverride, clearContextAnnotationOverride]);
 
   // Global keyboard listener for modal
   useEffect(() => {
@@ -200,10 +208,6 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
                 <div className="mt-1.5 flex items-center justify-between text-[0.6rem] text-ink-muted">
                   <span className="flex items-center gap-3">
                     <span>
-                      <kbd className="px-1 py-0.5 rounded bg-canvas-muted border border-border/50 font-mono">⌘↵</kbd>
-                      {' '}save
-                    </span>
-                    <span>
                       <kbd className="px-1 py-0.5 rounded bg-canvas-muted border border-border/50 font-mono">esc</kbd>
                       {' '}close
                     </span>
@@ -253,14 +257,17 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
             <Button variant="ghost" size="sm" onClick={handleUseBase}>
               Use Base
             </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={handleSaveOverride}
-              disabled={!hasChanges && !isOverridden}
-            >
-              {isOverridden ? 'Save Override' : 'No Changes'}
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-canvas-muted border border-border/50 font-mono text-[0.6rem] text-ink-muted">⌘↵</kbd>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleSaveOverride}
+                disabled={!hasChanges && !isOverridden}
+              >
+                {isOverridden ? 'Save Override' : 'No Changes'}
+              </Button>
+            </div>
           </div>
         </div>
       </motion.div>
