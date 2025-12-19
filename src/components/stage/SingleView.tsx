@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -13,15 +13,15 @@ import {
   ChevronDown,
   ChevronUp,
   Images,
-  Search,
-  Loader2,
   Check,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { IconButton, Dialog, Button, Input } from '../ui';
 import { DesignAnnotation } from './DesignAnnotation';
-import type { ImageData, DesignDimension } from '../../types';
+import { ExtractionDialog } from './ExtractionDialog';
+import type { ImageData } from '../../types';
 
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
@@ -34,10 +34,6 @@ export function SingleView() {
   const nextImage = useStore((s) => s.nextImage);
   const prevImage = useStore((s) => s.prevImage);
   const deleteImage = useStore((s) => s.deleteImage);
-  // Design dimension analysis
-  const pendingAnalysis = useStore((s) => s.pendingAnalysis);
-  const analyzeDimensions = useStore((s) => s.analyzeDimensions);
-  const updateImageDimensions = useStore((s) => s.updateImageDimensions);
   const removeFromCurrentCollection = useStore((s) => s.removeFromCurrentCollection);
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
@@ -46,6 +42,7 @@ export function SingleView() {
   const contextImageIds = useStore((s) => s.contextImageIds);
   const createCollection = useStore((s) => s.createCollection);
   const addImagesToCollection = useStore((s) => s.addImagesToCollection);
+  const openExtractionDialog = useStore((s) => s.openExtractionDialog);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
@@ -106,6 +103,31 @@ export function SingleView() {
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
+  // Fullscreen view state
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Fullscreen keyboard handler
+  const handleFullscreenKeyDown = useCallback((e: KeyboardEvent) => {
+    if (!isFullscreen) return;
+    if (e.key === 'Escape') {
+      setIsFullscreen(false);
+    } else if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
+      prevImage();
+    } else if (e.key === 'ArrowRight' && currentImageIndex < displayImages.length - 1) {
+      nextImage();
+    }
+  }, [isFullscreen, currentImageIndex, displayImages.length, prevImage, nextImage]);
+
+  useEffect(() => {
+    if (isFullscreen) {
+      window.addEventListener('keydown', handleFullscreenKeyDown);
+      document.body.style.overflow = 'hidden';
+    }
+    return () => {
+      window.removeEventListener('keydown', handleFullscreenKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [isFullscreen, handleFullscreenKeyDown]);
 
   // Sort collections newest first
   const sortedCollections = useMemo(() =>
@@ -160,6 +182,7 @@ export function SingleView() {
   };
 
   return (
+    <>
     <div className="h-full flex flex-col">
       {/* Context Images Display - Above Image (only shown if context images exist) */}
       {promptContextImages.length > 0 && (
@@ -256,8 +279,8 @@ export function SingleView() {
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             className={clsx(
-              'relative w-fit h-fit',
-              'rounded-xl shadow-lg',
+              'relative max-h-full max-w-full',
+              'shadow-lg',
               selectionMode !== 'none' && 'cursor-pointer',
               isSelected && 'ring-4 ring-brass'
             )}
@@ -266,39 +289,28 @@ export function SingleView() {
                 toggleSelection(currentImage.id);
               }
             }}
+            onDoubleClick={() => setIsFullscreen(true)}
           >
             <img
               src={getImageUrl(currentImage.image_path)}
               alt={displayTitle}
-              className="block max-h-[calc(100vh-280px)] max-w-full h-auto w-auto object-contain rounded-xl"
+              className="block max-h-full max-w-full h-auto w-auto object-contain"
             />
 
             {/* Overlay Actions */}
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity rounded-xl overflow-visible">
+            <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10">
                 <div className="flex gap-2">
                   <IconButton
                     variant="default"
-                    tooltip="Extract dimensions"
-                    onClick={async (e) => {
+                    tooltip="Extract token"
+                    onClick={(e) => {
                       e.stopPropagation();
-                      const dimensions = await analyzeDimensions(currentImage.id);
-                      if (dimensions.length > 0) {
-                        const dimensionsMap: Record<string, DesignDimension> = {};
-                        for (const dim of dimensions) {
-                          dimensionsMap[dim.axis] = dim;
-                        }
-                        await updateImageDimensions(currentImage.id, dimensionsMap);
-                      }
+                      openExtractionDialog([currentImage.id]);
                     }}
-                    disabled={pendingAnalysis.has(currentImage.id)}
                     className="bg-surface/90 backdrop-blur-sm"
                   >
-                    {pendingAnalysis.has(currentImage.id) ? (
-                      <Loader2 size={18} className="animate-spin" />
-                    ) : (
-                      <Search size={18} />
-                    )}
+                    <Sparkles size={18} />
                   </IconButton>
                   <IconButton
                     variant="default"
@@ -337,7 +349,7 @@ export function SingleView() {
                   </IconButton>
                   <a
                     href={getImageUrl(currentImage.image_path)}
-                    download={`\${displayTitle}-\${currentImage.id}.\${currentImage.image_path.split('.').pop()}`}
+                    download={`${displayTitle.replace(/\s+/g, '-')}-${currentImage.id}.${currentImage.image_path.split('.').pop()}`}
                     onClick={(e) => e.stopPropagation()}
                     className="inline-flex"
                   >
@@ -558,5 +570,65 @@ export function SingleView() {
       </Dialog>
 
     </div>
+
+    {/* Fullscreen Image Modal */}
+    <AnimatePresence>
+      {isFullscreen && currentImage && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.15 }}
+          className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center cursor-zoom-out"
+          onClick={() => setIsFullscreen(false)}
+        >
+          {/* Navigation hint */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 text-white/50 text-xs">
+            Press Esc to close • Arrow keys to navigate
+          </div>
+
+          {/* Previous button */}
+          {currentImageIndex > 0 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); prevImage(); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <ChevronLeft size={24} />
+            </button>
+          )}
+
+          {/* Image */}
+          <motion.img
+            key={currentImage.id}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.15 }}
+            src={getImageUrl(currentImage.image_path)}
+            alt={displayTitle}
+            className="max-w-[95vw] max-h-[95vh] object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {/* Next button */}
+          {currentImageIndex < displayImages.length - 1 && (
+            <button
+              onClick={(e) => { e.stopPropagation(); nextImage(); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors"
+            >
+              <ChevronRight size={24} />
+            </button>
+          )}
+
+          {/* Image counter */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/70 text-sm">
+            {currentImageIndex + 1} / {displayImages.length}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+
+    {/* Shared Token Extraction dialog */}
+    <ExtractionDialog />
+    </>
   );
 }
