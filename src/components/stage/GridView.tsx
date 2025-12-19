@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Star, Check, FolderMinus } from 'lucide-react';
+import { Check, FolderMinus } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 
@@ -37,8 +37,6 @@ export function GridView() {
       .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
   }, [prompts, currentCollection]);
   const setViewMode = useStore((s) => s.setViewMode);
-  const toggleFavorite = useStore((s) => s.toggleFavorite);
-  const isImageFavorite = useStore((s) => s.isImageFavorite);
   const removeFromCurrentCollection = useStore((s) => s.removeFromCurrentCollection);
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
@@ -72,7 +70,6 @@ export function GridView() {
     <div className="h-full overflow-y-auto p-4">
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {displayImages.map((image, index) => {
-          const isFavorite = isImageFavorite(image.id);
           const isSelected = selectedIds.has(image.id);
 
           return (
@@ -82,7 +79,7 @@ export function GridView() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
               className={clsx(
-                'group relative aspect-square rounded-xl overflow-hidden',
+                'group relative aspect-square overflow-hidden',
                 'bg-canvas-muted cursor-pointer',
                 'transition-all duration-200',
                 isSelected
@@ -104,26 +101,6 @@ export function GridView() {
                   'opacity-0 group-hover:opacity-100 transition-opacity'
                 )}
               />
-
-              {/* Favorite button (when viewing prompts) */}
-              {!isViewingCollection && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleFavorite(image.id);
-                  }}
-                  className={clsx(
-                    'absolute top-2 right-2 w-8 h-8 rounded-full',
-                    'flex items-center justify-center',
-                    'transition-all duration-200',
-                    isFavorite
-                      ? 'bg-favorite text-surface opacity-100'
-                      : 'bg-surface/80 text-ink-muted opacity-0 group-hover:opacity-100 hover:text-favorite'
-                  )}
-                >
-                  <Star size={16} fill={isFavorite ? 'currentColor' : 'none'} />
-                </button>
-              )}
 
               {/* Remove from collection button (when viewing collections) */}
               {isViewingCollection && (
@@ -165,11 +142,11 @@ export function GridView() {
                 </span>
               </div>
 
-              {/* Mood/variation badge */}
-              {image.mood && (
-                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-brass-muted backdrop-blur-sm">
-                  <span className="text-[0.625rem] font-medium text-brass-dark">
-                    {image.mood}
+              {/* Variation title badge */}
+              {image.variation_title && (
+                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-brass-muted backdrop-blur-sm max-w-[60%]">
+                  <span className="text-[0.625rem] font-medium text-brass-dark truncate block">
+                    {image.variation_title}
                   </span>
                 </div>
               )}

@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock fetch globally for comprehensive API tests
 const mockFetch = vi.fn();
-global.fetch = mockFetch;
+;(globalThis as typeof globalThis & { fetch: typeof fetch }).fetch = mockFetch;
 
 // Mock the request function to test transformations (only for transformation tests)
 const mockRequest = vi.fn();
@@ -163,7 +163,7 @@ describe('Upload functionality', () => {
   it('uploadImages should POST FormData and return response', async () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
-      json: () => Promise.resolve({ prompt_id: 'p1', count: 2 }),
+      json: () => Promise.resolve({ success: true, prompt_id: 'p1', images: [{}, {}] }),
     });
 
     const { uploadImages } = await import('./index');
@@ -178,7 +178,8 @@ describe('Upload functionality', () => {
       '/api/upload',
       expect.objectContaining({ method: 'POST' })
     );
-    expect(result.count).toBe(2);
+    expect(result.prompt_id).toBe('p1');
+    expect(result.images.length).toBe(2);
   });
 
   it('uploadImages should throw on failure', async () => {

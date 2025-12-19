@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { LibraryItem } from '../../types'
+import type { DesignToken } from '../../types'
 
 /**
  * Test for the null seed handling fix.
@@ -46,16 +46,21 @@ describe('GenerateTab settings initialization', () => {
 
     it('should correctly handle loose equality for null check', () => {
       // null == undefined is true (loose equality)
+      // eslint-disable-next-line no-constant-binary-expression
       expect(null == undefined).toBe(true)
 
       // null === undefined is false (strict equality)
+      // eslint-disable-next-line no-constant-binary-expression
       expect(null === undefined).toBe(false)
 
       // null !== undefined is true - this was the bug!
+      // eslint-disable-next-line no-constant-binary-expression
       expect(null !== undefined).toBe(true)
 
       // null != null is false - this is the fix
+      // eslint-disable-next-line no-constant-binary-expression
       expect(null != null).toBe(false)
+      // eslint-disable-next-line no-constant-binary-expression
       expect(undefined != null).toBe(false)
     })
 
@@ -83,36 +88,41 @@ describe('GenerateTab settings initialization', () => {
 /**
  * Tests for Design Concepts picker functionality.
  *
- * The concept picker allows users to select design concepts from the library
- * and have their tags included in the generation prompt.
+ * The concept picker allows users to select design tokens from the library
+ * and have their tags/prompts included in the generation prompt.
  */
 describe('GenerateTab concept picker', () => {
-  // Mock concept data
-  const mockConcepts: LibraryItem[] = [
+  // Mock design token data
+  const mockTokens: DesignToken[] = [
     {
       id: 'concept-1',
-      type: 'design-token',
       name: 'Warm Tones',
-      style_tags: ['warm', 'golden', 'sunset'],
-      text: 'warm color palette',
+      tags: ['warm', 'golden', 'sunset'],
+      prompts: ['warm color palette'],
+      images: [],
       created_at: '2025-01-01',
       use_count: 0,
+      creation_method: 'ai-extraction',
     },
     {
       id: 'concept-2',
-      type: 'design-token',
       name: 'Dramatic Mood',
-      style_tags: ['dramatic', 'moody', 'cinematic'],
+      tags: ['dramatic', 'moody', 'cinematic'],
+      prompts: [],
+      images: [],
       created_at: '2025-01-01',
       use_count: 0,
+      creation_method: 'ai-extraction',
     },
     {
       id: 'concept-3',
-      type: 'design-token',
-      name: 'Text Only',
-      text: 'minimalist aesthetic',
+      name: 'Prompt Only',
+      tags: [],
+      prompts: ['minimalist aesthetic'],
+      images: [],
       created_at: '2025-01-01',
       use_count: 0,
+      creation_method: 'manual',
     },
   ]
 
@@ -149,53 +159,55 @@ describe('GenerateTab concept picker', () => {
   })
 
   describe('getSelectedConceptTags', () => {
-    // Replicate the tag extraction logic from GenerateTab
+    // Replicate the tag extraction logic from GenerateTab (now uses DesignToken)
     const getSelectedConceptTags = (
-      concepts: LibraryItem[],
+      tokens: DesignToken[],
       selectedIds: string[]
     ): string[] => {
-      const selected = concepts.filter((c) => selectedIds.includes(c.id))
+      const selected = tokens.filter((c) => selectedIds.includes(c.id))
       const allTags: string[] = []
-      selected.forEach((concept) => {
-        if (concept.style_tags) allTags.push(...concept.style_tags)
-        if (concept.text) allTags.push(concept.text)
+      selected.forEach((token) => {
+        if (token.tags) allTags.push(...token.tags)
+        if (token.prompts) allTags.push(...token.prompts)
       })
       return [...new Set(allTags)]
     }
 
-    it('should return empty array when no concepts selected', () => {
-      const result = getSelectedConceptTags(mockConcepts, [])
+    it('should return empty array when no tokens selected', () => {
+      const result = getSelectedConceptTags(mockTokens, [])
       expect(result).toEqual([])
     })
 
-    it('should return style_tags from selected concept', () => {
-      const result = getSelectedConceptTags(mockConcepts, ['concept-2'])
+    it('should return tags from selected token', () => {
+      const result = getSelectedConceptTags(mockTokens, ['concept-2'])
       expect(result).toEqual(['dramatic', 'moody', 'cinematic'])
     })
 
-    it('should combine tags and text from concept', () => {
-      const result = getSelectedConceptTags(mockConcepts, ['concept-1'])
+    it('should combine tags and prompts from token', () => {
+      const result = getSelectedConceptTags(mockTokens, ['concept-1'])
       expect(result).toContain('warm')
       expect(result).toContain('golden')
       expect(result).toContain('warm color palette')
     })
 
-    it('should deduplicate tags across multiple concepts', () => {
-      // Add a concept with overlapping tag
-      const conceptsWithOverlap: LibraryItem[] = [
-        ...mockConcepts,
+    it('should deduplicate tags across multiple tokens', () => {
+      // Add a token with overlapping tag
+      const tokensWithOverlap: DesignToken[] = [
+        ...mockTokens,
         {
           id: 'concept-4',
-          type: 'design-token',
           name: 'Also Warm',
-          style_tags: ['warm', 'cozy'], // 'warm' overlaps with concept-1
+          tags: ['warm', 'cozy'], // 'warm' overlaps with concept-1
+          prompts: [],
+          images: [],
           created_at: '2025-01-01',
           use_count: 0,
+          creation_method: 'manual',
         },
       ]
 
       const result = getSelectedConceptTags(
-        conceptsWithOverlap,
+        tokensWithOverlap,
         ['concept-1', 'concept-4']
       )
 
@@ -204,8 +216,8 @@ describe('GenerateTab concept picker', () => {
       expect(warmCount).toBe(1)
     })
 
-    it('should handle concept with only text (no style_tags)', () => {
-      const result = getSelectedConceptTags(mockConcepts, ['concept-3'])
+    it('should handle token with only prompts (no tags)', () => {
+      const result = getSelectedConceptTags(mockTokens, ['concept-3'])
       expect(result).toEqual(['minimalist aesthetic'])
     })
   })

@@ -1,5 +1,0 @@
-The save as template modal, and other modals, are not workign properly. /Users/wz/Desktop/Captura de pantalla 2025-12-16 a la(s) 2.42.15 p.m..png
-
-I get an internal server error when I try to delete.
-
-

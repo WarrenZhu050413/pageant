@@ -8,3 +8,6 @@ __pycache__/
 .env
 generated_images/
 logs/
+.archive/
+.annotations/
+**/.annotations/

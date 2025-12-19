@@ -1,32 +1,51 @@
-Design tag guidelines (select 1-3 per axis based on the scene):
-NOTE: These are SUGGESTED tags. You may use novel, specific tags when they better describe the scene.
-For example, "film-noir" for style, "golden-hour" for colors, or "dutch-angle" for composition are valid.
-The system learns from your tags, so be precise and descriptive.
+Analyze this image along these design dimensions. For each dimension, list ALL applicable tags (you can select multiple per dimension).
 
-- colors:
+DIMENSIONS AND SUGGESTED TAGS:
+NOTE: These are suggested tags. You may use novel, specific tags when they better describe the image.
+For example: "film-noir", "golden-hour", "dutch-angle", "neon-glow", "hand-lettered" are all valid.
+Be precise and descriptive - the system learns from your annotations.
+
+colors (pick from any subcategory):
   Palette type: monochromatic, complementary, analogous, triadic, split-complementary, tetradic
   Temperature: warm, cool, neutral
   Saturation: vibrant, muted, pastel, saturated, desaturated, earthy
   Contrast: high-contrast, low-contrast, subtle-gradients
   Mood-based: moody-dark, light-airy, rich-jewel-tones, soft-naturals
 
-- composition:
+composition (pick from any subcategory):
   Framing: close-up, medium-shot, wide-angle, extreme-close-up, bird's-eye, worm's-eye
   Balance: rule-of-thirds, symmetrical, asymmetrical, centered, golden-ratio
   Lines: diagonal, horizontal, vertical, curved, leading-lines
   Depth: layered, shallow-depth, deep-focus, foreground-focus, atmospheric-perspective
   Space: negative-space, framed, contained, expansive, cropped-tight
 
-- layout:
+mood: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, contemplative, whimsical, bold, intimate, grand, nostalgic, futuristic
+
+layout (pick from any subcategory):
   Structure: centered, asymmetric, grid, modular, freeform
   Density: dense, spacious, balanced, clustered, scattered
   Flow: dynamic, static, radial, linear, organic
   Hierarchy: focal-point, distributed, progressive, nested
 
-- aesthetic:
+aesthetic (pick from any subcategory):
   Realism: photorealistic, hyperrealistic, stylized-realism
   Illustration: illustrated, flat-design, line-art, hand-drawn, vector
   Digital: 3D-rendered, CGI, digital-painting, pixel-art, low-poly
   Movement: art-nouveau, art-deco, bauhaus, swiss-style, brutalist
   Era: retro, vintage, mid-century, 80s-aesthetic, Y2K, modern, futuristic
   Approach: minimalist, maximalist, abstract, surreal, collage, mixed-media
+
+typeface_feel (pick from any subcategory):
+  Category: sans-serif, serif, slab-serif, monospace, display, script
+  Weight: light, regular, medium, bold, black
+  Character: geometric, humanist, elegant, playful, technical, editorial
+
+Return ONLY a JSON object mapping each axis to its tags (no markdown, no explanation):
+{
+  "colors": ["warm", "vibrant"],
+  "composition": ["rule-of-thirds", "layered"],
+  "mood": ["dramatic", "bold"],
+  "layout": ["asymmetric", "dynamic"],
+  "aesthetic": ["minimalist", "modern"],
+  "typeface_feel": ["sans-serif", "geometric"]
+}

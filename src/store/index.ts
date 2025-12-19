@@ -225,6 +225,7 @@ interface AppStore {
   generateConcept: (imageId: string, dimension: DesignDimension) => Promise<void>;
   confirmDimension: (imageId: string, axis: string) => Promise<void>;
   updateImageDimensions: (imageId: string, dimensions: Record<string, DesignDimension>) => Promise<void>;
+  toggleDimensionLike: (imageId: string, axis: string, liked: boolean) => Promise<void>;
 
   // Token Extraction Dialog (shared between SingleView and SelectionTray)
   extractionDialog: {
@@ -896,6 +897,7 @@ export const useStore = create<AppStore>()(
               text: v.text,
               mood: v.mood,
               design: v.design,
+              design_dimensions: v.design_dimensions,  // Pass dimensions for storage on images
             })),
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
@@ -1298,6 +1300,7 @@ export const useStore = create<AppStore>()(
               title: v.title,  // Pass variation title for display
               mood: v.mood,
               design: v.design,
+              design_dimensions: v.design_dimensions,  // Pass dimensions for storage on images
               // Include per-variation context for targeted image generation
               recommended_context_ids: v.recommended_context_ids,
             })),
@@ -1501,6 +1504,15 @@ export const useStore = create<AppStore>()(
       // Design Tokens
       createToken: async (data) => {
         try {
+          // Check if a token with the same name already exists
+          const existingTokens = get().designTokens;
+          const duplicate = existingTokens.find(
+            (t) => t.name.toLowerCase() === data.name.toLowerCase()
+          );
+          if (duplicate) {
+            throw new Error(`Token "${data.name}" already exists`);
+          }
+
           const token = await api.createToken(data);
           const designTokens = await api.fetchTokens();
           set({ designTokens });
@@ -1993,10 +2005,79 @@ export const useStore = create<AppStore>()(
         }
       },
 
+      toggleDimensionLike: async (imageId, axis, liked) => {
+        // Optimistic update - update UI immediately
+        const { prompts } = get();
+        const updatedPrompts = prompts.map((p) => ({
+          ...p,
+          images: p.images.map((img) => {
+            if (img.id !== imageId) return img;
+
+            const currentLikedAxes = img.liked_dimension_axes || [];
+            let newLikedAxes: string[];
+
+            if (liked) {
+              newLikedAxes = currentLikedAxes.includes(axis)
+                ? currentLikedAxes
+                : [...currentLikedAxes, axis];
+            } else {
+              newLikedAxes = currentLikedAxes.filter((a) => a !== axis);
+            }
+
+            return {
+              ...img,
+              liked_dimension_axes: newLikedAxes,
+            };
+          }),
+        }));
+        set({ prompts: updatedPrompts });
+
+        // Persist to backend
+        try {
+          await api.toggleDimensionLike(imageId, axis, liked);
+        } catch (error) {
+          // Ignore 404/Not Found - image missing from metadata is expected for old images
+          const msg = (error as Error).message || '';
+          if (!msg.includes('404') && !msg.includes('Not Found')) {
+            set({ error: msg });
+          }
+        }
+      },
+
       // Token Extraction Dialog actions
       openExtractionDialog: async (imageIds: string[]) => {
-        // Show "analyzing" toast immediately - user can continue working
         const imageCount = imageIds.length;
+
+        // For single image: check if it has pre-computed dimensions
+        if (imageCount === 1) {
+          const { prompts } = get();
+          let precomputedDimensions: DesignDimension[] | null = null;
+
+          for (const prompt of prompts) {
+            const img = prompt.images.find((i) => i.id === imageIds[0]);
+            if (img?.design_dimensions) {
+              // Convert Record<string, DesignDimension> to array
+              precomputedDimensions = Object.values(img.design_dimensions);
+              break;
+            }
+          }
+
+          if (precomputedDimensions && precomputedDimensions.length > 0) {
+            // Use pre-computed dimensions - open dialog immediately
+            set({
+              extractionDialog: {
+                isOpen: true,
+                isExtracting: false,
+                imageIds,
+                suggestedDimensions: precomputedDimensions,
+                selectedDimensionIndex: null,
+              },
+            });
+            return;
+          }
+        }
+
+        // Multiple images OR no pre-computed: call API for analysis
         toast.info(`Analyzing ${imageCount} image${imageCount !== 1 ? 's' : ''} for design dimensions...`);
 
         // Store imageIds for when dialog opens later

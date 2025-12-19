@@ -88,11 +88,6 @@ export function PromptVariationsView({ prompt, onBack }: PromptVariationsViewPro
                     <h3 className="text-sm font-medium text-ink truncate">
                       {variation.title}
                     </h3>
-                    {variation.mood && (
-                      <Badge variant="secondary" size="sm" className="shrink-0">
-                        {variation.mood}
-                      </Badge>
-                    )}
                   </div>
                   <button
                     onClick={() => handleCopy(variation.id, variation.text)}

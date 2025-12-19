@@ -9,72 +9,50 @@
 // Tags are stored with their axis context in the backend annotations,
 // so unknown tags can still be categorized by AI during generation.
 
-// Known design axes - but the system allows arbitrary axes too
-export const KNOWN_AXES = ['colors', 'composition', 'mood', 'layout', 'aesthetic', 'typeface_feel'] as const;
+// Core design axes - the four pillars of the design system
+export const KNOWN_AXES = ['colors', 'composition', 'layout', 'aesthetic'] as const;
 
-// Suggested tags per axis - used for autocomplete, not validation
+// Suggested tags per axis - used for autocomplete and AI guidance
 export const SUGGESTED_TAGS: Record<string, readonly string[]> = {
   colors: [
-    // Palette type
-    'monochromatic', 'complementary', 'analogous', 'triadic', 'split-complementary', 'tetradic',
+    // Core palette types
+    'monochromatic', 'misty', 'subtle-gradients',
     // Temperature
-    'warm', 'cool', 'neutral',
-    // Saturation
-    'vibrant', 'muted', 'pastel', 'saturated', 'desaturated', 'earthy',
-    // Contrast
-    'high-contrast', 'low-contrast', 'subtle-gradients',
-    // Mood-based
-    'moody-dark', 'light-airy', 'rich-jewel-tones', 'soft-naturals',
+    'warm-tones', 'cool-tones',
+    // Intensity
+    'high-contrast', 'muted', 'vibrant',
+    // Nature-derived
+    'earth-tones', 'pastels',
   ],
   composition: [
-    // Framing
-    'close-up', 'medium-shot', 'wide-angle', 'extreme-close-up', 'bird\'s-eye', 'worm\'s-eye',
+    // Depth & layering
+    'layered', 'overlapping', 'fragmented',
     // Balance
-    'rule-of-thirds', 'symmetrical', 'asymmetrical', 'centered', 'golden-ratio',
-    // Lines
-    'diagonal', 'horizontal', 'vertical', 'curved', 'leading-lines',
-    // Depth
-    'layered', 'shallow-depth', 'deep-focus', 'foreground-focus', 'atmospheric-perspective',
+    'centered', 'symmetrical', 'asymmetrical',
+    // Structure
+    'rule-of-thirds', 'diagonal', 'framed',
     // Space
-    'negative-space', 'framed', 'contained', 'expansive', 'cropped-tight',
-  ],
-  mood: [
-    'warm', 'cool', 'dramatic', 'serene', 'energetic', 'mysterious', 'playful', 'elegant',
-    'contemplative', 'whimsical', 'bold', 'intimate', 'grand', 'nostalgic', 'futuristic',
+    'negative-space',
   ],
   layout: [
-    // Structure
-    'centered', 'asymmetric', 'grid', 'modular', 'freeform',
-    // Density
-    'dense', 'spacious', 'balanced', 'clustered', 'scattered',
-    // Flow
-    'dynamic', 'static', 'radial', 'linear', 'organic',
-    // Hierarchy
-    'focal-point', 'distributed', 'progressive', 'nested',
-  ],
-  style: [
-    // Realism
-    'photorealistic', 'hyperrealistic', 'stylized-realism',
-    // Illustration
-    'illustrated', 'flat-design', 'line-art', 'hand-drawn', 'vector',
-    // Digital
-    '3D-rendered', 'CGI', 'digital-painting', 'pixel-art', 'low-poly',
+    // Form
+    'abstract', 'organic', 'grid',
     // Movement
-    'art-nouveau', 'art-deco', 'bauhaus', 'swiss-style', 'brutalist',
-    // Era
-    'retro', 'vintage', 'mid-century', '80s-aesthetic', 'Y2K', 'modern', 'futuristic',
-    // Approach
-    'minimalist', 'maximalist', 'abstract', 'surreal', 'collage', 'mixed-media',
-  ],
-  typeface: [
-    // Category
-    'sans-serif', 'serif', 'slab-serif', 'monospace', 'display', 'script',
-    // Weight
-    'light', 'regular', 'medium', 'bold', 'black',
-    // Style
-    'geometric', 'humanist', 'grotesque', 'transitional', 'modern', 'old-style',
+    'flow', 'dynamic', 'balanced',
+    // Density
+    'minimal', 'dense', 'structured',
     // Character
-    'elegant', 'playful', 'technical', 'editorial', 'friendly', 'authoritative',
+    'chaotic',
+  ],
+  aesthetic: [
+    // Surreal/experimental
+    'surreal', 'double-exposure', 'experimental',
+    // Mood-based
+    'dreamy', 'ethereal', 'nostalgic',
+    // Texture
+    'gritty', 'raw', 'polished',
+    // Era
+    'futuristic',
   ],
 };
 
@@ -112,6 +90,7 @@ export interface ImageData {
   mime_type: string;
   generated_at: string;
   varied_prompt?: string;
+  variation_title?: string;  // Short title for this specific variation (2-5 words)
   mood?: string;
   variation_type?: string;
   notes?: string;
@@ -119,6 +98,7 @@ export interface ImageData {
   // Design dimension system - Rich AI analysis per axis
   design_dimensions?: Record<string, DesignDimension>;  // axis -> dimension with tags, description, etc.
   liked_axes?: LikedAxes;  // User's liked tags per axis
+  liked_dimension_axes?: string[];  // Which dimension axes the user has liked (can be multiple)
   // Legacy fields (deprecated, will be migrated to design_dimensions)
   design_tags?: string[];  // @deprecated - use design_dimensions[axis].tags
   annotations?: Record<string, string[]>;  // @deprecated - use design_dimensions
@@ -162,38 +142,46 @@ export interface DraftPrompt {
 }
 
 
-// Design Library - unified system for saving design building blocks
-export type LibraryItemType = 'fragment' | 'preset' | 'template' | 'design-token';
+// Design Token - the ONLY library item type
+// Flexible container for images + prompts representing a design dimension
 
-export interface LibraryItem {
+export interface DesignTokenImage {
+  id: string;                    // Reference to ImageData.id
+  // Snapshot of metadata at extraction time
+  annotation?: string;
+  liked_axes?: LikedAxes;
+  image_path?: string;           // For export portability
+}
+
+export interface DesignToken {
   id: string;
-  type: LibraryItemType;
   name: string;
   description?: string;
   created_at: string;
+  updated_at?: string;
   use_count: number;
   last_used?: string;
 
-  // For fragments: short text snippets to insert
-  text?: string;
+  // Core content
+  images: DesignTokenImage[];    // Source images with metadata snapshots
+  prompts: string[];             // Text fragments / prompt snippets
 
-  // For presets: style tag combinations
-  style_tags?: string[];
+  // Optional concept image (AI-generated to represent the dimension)
+  concept_image_id?: string;     // Reference to a generated concept image
+  concept_image_path?: string;   // Direct path for export
 
-  // For templates: full prompts
-  prompt?: string;
+  // Creation metadata
+  creation_method: 'ai-extraction' | 'manual';
 
-  // Common: categorization
-  category?: string;
-  tags?: string[];
-
-  // For design-token: source references
-  source_image_id?: string;
-  source_prompt_id?: string;
-  extracted_from?: {
-    annotation?: string;
-    liked_tags?: string[];
+  // AI extraction metadata (only present if creation_method === 'ai-extraction')
+  extraction?: {
+    dimension: DesignDimension;  // The AI-suggested dimension used
+    generation_prompt: string;   // Prompt that generated the concept
   };
+
+  // Categorization
+  category?: string;             // e.g., "lighting", "mood", "composition"
+  tags?: string[];               // Searchable tags
 }
 
 export interface Collection {
@@ -202,22 +190,6 @@ export interface Collection {
   description?: string;
   image_ids: string[];
   thumbnail_id?: string;
-  created_at: string;
-}
-
-export interface Chapter {
-  id: string;
-  title: string;
-  text: string;
-  image_ids: string[];
-  layout: 'single' | 'grid' | 'split';
-}
-
-export interface Story {
-  id: string;
-  title: string;
-  description?: string;
-  chapters: Chapter[];
   created_at: string;
 }
 
@@ -280,9 +252,12 @@ export interface GenerateResponse {
 export interface PromptVariation {
   id: string;
   text: string;
+  title?: string;  // Short title for this variation (2-5 words)
   mood: string;
   type: string;
   design?: Record<string, string[]>;  // Design tags by axis (colors, composition, etc.)
+  // Design dimensions - rich, substantial descriptions for design tokens
+  design_dimensions?: DesignDimension[];  // 3-4 substantial dimensions from AI
   // Per-variation context image assignment
   recommended_context_ids?: string[];  // Image IDs to use for THIS variation
   context_reasoning?: string;  // Why these images were chosen
@@ -319,8 +294,10 @@ export interface GenerateFromPromptsRequest extends ImageGenerationParams {
   title: string;
   prompts: {
     text: string;
+    title?: string;  // Short title for this specific variation
     mood?: string;
     design?: Record<string, string[]>;
+    design_dimensions?: DesignDimension[];  // Design dimensions from AI
     recommended_context_ids?: string[];  // Per-variation context
   }[];
   context_image_ids?: string[];
@@ -356,24 +333,6 @@ export interface PolishPromptsResponse {
   error?: string;
 }
 
-// Polish Annotations API types
-export interface PolishAnnotationsRequest {
-  image_ids: string[];
-}
-
-export interface PolishedAnnotation {
-  image_id: string;
-  original_annotation: string;
-  polished_annotation: string;
-}
-
-export interface PolishAnnotationsResponse {
-  success: boolean;
-  polished: PolishedAnnotation[];
-  skipped: string[];
-  error?: string;
-}
-
 // Design Dimension Analysis API types
 export interface AnalyzeDimensionsRequest {
   image_id: string;
@@ -403,16 +362,52 @@ export interface UpdateDimensionsRequest {
   dimensions: Record<string, DesignDimension>;
 }
 
-// Design Token Extraction API types
-export interface ExtractDesignTokenRequest {
-  image_id: string;
-  annotation?: string;  // Override image's annotation
-  liked_tags?: string[];  // Override image's liked_axes
+// Design Token API types
+
+// Suggest dimensions from multiple images (AI extraction step 1)
+export interface SuggestDimensionsRequest {
+  image_ids: string[];
+  count?: number;  // Number of dimensions to suggest (default 5)
 }
 
-export interface ExtractDesignTokenResponse {
+export interface SuggestDimensionsResponse {
   success: boolean;
-  item?: LibraryItem;
+  dimensions: DesignDimension[];
+  error?: string;
+}
+
+// Create a Design Token (step 2 after suggestion, or manual creation)
+export interface CreateTokenRequest {
+  name: string;
+  description?: string;
+  image_ids: string[];
+  prompts?: string[];
+  creation_method: 'ai-extraction' | 'manual';
+
+  // For AI extraction only
+  dimension?: DesignDimension;    // The chosen dimension
+  generate_concept?: boolean;     // Whether to generate a concept image
+
+  // Categorization
+  category?: string;
+  tags?: string[];
+}
+
+export interface CreateTokenResponse {
+  success: boolean;
+  token?: DesignToken;
+  error?: string;
+}
+
+// Generate concept image for existing token
+export interface GenerateTokenConceptRequest {
+  aspect_ratio?: string;
+}
+
+export interface GenerateTokenConceptResponse {
+  success: boolean;
+  concept_image_path?: string;
+  concept_image_id?: string;
   error?: string;
 }
 
@@ -423,47 +418,8 @@ export interface UploadResponse {
 }
 
 // UI State types
-export type ViewMode = 'single' | 'grid';
-export type LeftTab = 'prompts' | 'collections' | 'library';
-export type RightTab = 'info' | 'generate' | 'settings';
+export type ViewMode = 'single' | 'grid' | 'token-gallery';
+export type LeftTab = 'prompts' | 'collections' | 'all-images' | 'library';
+export type RightTab = 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select';
 
-export interface SelectionState {
-  mode: SelectionMode;
-  selectedIds: Set<string>;
-}
-
-
-// Store state
-export interface AppState {
-  // Data
-  prompts: Prompt[];
-  favorites: string[];
-  collections: Collection[];
-  stories: Story[];
-  settings: Settings | null;
-
-  // Navigation
-  currentPromptId: string | null;
-  currentImageIndex: number;
-  viewMode: ViewMode;
-  leftTab: LeftTab;
-  rightTab: RightTab;
-
-  // Selection
-  selection: SelectionState;
-  contextImageIds: string[];
-
-  // UI State
-  isGenerating: boolean;
-  pendingPrompts: Map<string, { title: string; count: number }>;
-  error: string | null;
-
-  // Sessions
-  sessions: Session[];
-  currentSessionId: string | null;
-  notes: string;
-}
-
-// Utility types
-export type ImageWithPrompt = ImageData & { promptId: string; promptTitle: string };

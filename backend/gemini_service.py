@@ -1,6 +1,7 @@
 """Gemini API service for image generation - simplified from Reverie."""
 
 import base64
+import json
 import logging
 import os
 import time
@@ -25,16 +26,22 @@ class DesignTags(BaseModel):
     composition: list[str] = Field(default_factory=list, description="Composition tags like 'centered', 'rule-of-thirds', 'wide-angle'")
     layout: list[str] = Field(default_factory=list, description="Layout tags like 'spacious', 'dense', 'balanced'")
     aesthetic: list[str] = Field(default_factory=list, description="Style tags like 'minimalist', 'photorealistic', 'illustrated'")
-    typeface_feel: list[str] = Field(default_factory=list, description="Typography feel like 'sans-serif', 'elegant', 'bold'")
 
 
 class SceneVariation(BaseModel):
     """A single scene variation for image generation."""
     id: str = Field(description="Scene identifier like '1', '2', etc.")
-    type: Literal["faithful", "exploration"] = Field(description="Whether this closely matches the prompt or explores new directions")
+    title: str = Field(description="Short, evocative title for this variation (2-5 words)")
     description: str = Field(description="Detailed scene description for AI image generation")
-    mood: str = Field(description="Emotional tone like 'warm', 'dramatic', 'serene'")
     design: DesignTags = Field(default_factory=DesignTags, description="Design attributes for this scene")
+    # Deprecated - kept for backwards compatibility
+    type: str = Field(default="", description="Deprecated")
+    mood: str = Field(default="", description="Deprecated")
+    # Design dimensions - rich, substantial descriptions for design tokens
+    design_dimensions: list[DesignDimensionOutput] = Field(
+        default_factory=list,
+        description="3-4 substantial design dimensions capturing the visual essence"
+    )
     # Per-variation context image assignment
     recommended_context_ids: list[str] = Field(
         default_factory=list,
@@ -86,19 +93,6 @@ class PolishPromptsResponse(BaseModel):
     polished_variations: list[PolishedVariation] = Field(description="List of polished variations")
 
 
-# Models for Polish Annotations feature
-class PolishedAnnotationItem(BaseModel):
-    """A single polished annotation result."""
-    image_id: str = Field(description="The image ID")
-    original_annotation: str = Field(description="The original annotation text")
-    polished_annotation: str = Field(description="The refined annotation text")
-
-
-class PolishAnnotationsResponse(BaseModel):
-    """Response containing polished annotations."""
-    items: list[PolishedAnnotationItem] = Field(description="Polished annotations")
-
-
 # Models for Design Dimension Analysis
 class DesignDimensionOutput(BaseModel):
     """A single design dimension extracted from an image (for structured output)."""
@@ -112,6 +106,22 @@ class DesignDimensionOutput(BaseModel):
 class DimensionAnalysisResponse(BaseModel):
     """Response containing design dimension analysis."""
     dimensions: list[DesignDimensionOutput] = Field(description="List of design dimensions")
+
+
+# Model for Multi-Image Dimension Suggestion
+class MultiImageDimensionOutput(BaseModel):
+    """A design dimension common across multiple images."""
+    axis: str = Field(description="Design axis category like 'lighting', 'mood', 'colors'")
+    name: str = Field(description="Evocative 2-4 word name like 'Warm Golden Hour'")
+    description: str = Field(description="2-3 sentence analysis of how this dimension manifests across the images")
+    tags: list[str] = Field(description="3-5 design vocabulary tags")
+    generation_prompt: str = Field(description="Prompt for generating pure concept image")
+    commonality: str = Field(description="Brief explanation of what makes this dimension common across the images")
+
+
+class MultiImageDimensionResponse(BaseModel):
+    """Response containing dimensions common across multiple images."""
+    dimensions: list[MultiImageDimensionOutput] = Field(description="List of common design dimensions")
 
 
 def _detect_image_mime_type(data: bytes) -> str:
@@ -184,6 +194,85 @@ class GeminiService:
             ),
         )
         self.client = genai.Client(api_key=self.api_key, http_options=http_options)
+
+        # Import load_prompt for externalized prompts
+        try:
+            from backend.config import load_prompt
+        except ImportError:
+            from config import load_prompt
+        self._load_prompt = load_prompt
+
+    async def _generate_structured[T: BaseModel](
+        self,
+        *,
+        prompt: str,
+        response_schema: type[T],
+        model: str | None = None,
+        images: list[tuple[bytes, str, str | None]] | None = None,
+        system_instruction: str | None = None,
+        operation_name: str = "generation",
+        temperature: float | None = None,
+    ) -> T:
+        """Unified structured JSON generation with image interleaving.
+
+        Args:
+            prompt: The text prompt to send
+            response_schema: Pydantic model class for structured output
+            model: Model to use (defaults to DEFAULT_TEXT_MODEL)
+            images: Optional list of (bytes, mime_type, label) tuples to interleave
+            system_instruction: Optional system instruction
+            operation_name: Name for logging (e.g., "polish_annotations")
+            temperature: Optional temperature setting
+
+        Returns:
+            Parsed Pydantic model instance
+        """
+        model_name = model or self.DEFAULT_TEXT_MODEL
+        start_time = time.time()
+        num_images = len(images) if images else 0
+
+        logger.info(f"[{operation_name}] Starting with model={model_name}, images={num_images}")
+
+        # Build config
+        config_kwargs: dict[str, Any] = {
+            "response_mime_type": "application/json",
+            "response_schema": response_schema,
+        }
+        if system_instruction:
+            config_kwargs["system_instruction"] = system_instruction
+        if temperature is not None:
+            config_kwargs["temperature"] = temperature
+
+        config = types.GenerateContentConfig(**config_kwargs)
+
+        # Build contents with optional image interleaving
+        if images:
+            contents: list[Any] = [prompt]
+            for img_bytes, mime_type, label in images:
+                if label:
+                    contents.append(f"\n{label}:")
+                contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+        else:
+            contents = prompt
+
+        try:
+            response = await self.client.aio.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=config,
+            )
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[{operation_name}] Failed after {elapsed:.1f}s: {e}")
+            raise
+
+        elapsed = time.time() - start_time
+
+        # Parse structured response
+        result = response_schema.model_validate_json(response.text)
+
+        logger.info(f"[{operation_name}] Completed in {elapsed:.1f}s")
+        return result
 
     async def generate_image(
         self,
@@ -544,7 +633,14 @@ If any image's caption is inadequate for generation context, suggest improvement
         if has_pool:
             contents = []
             contents.append(prompt)
-            for img_id, img_bytes, mime_type, caption, confirmed_dims in context_image_pool:
+            for pool_item in context_image_pool:
+                # Handle both old (5-tuple) and new (6-tuple) formats
+                if len(pool_item) == 6:
+                    img_id, img_bytes, mime_type, caption, confirmed_dims, liked_dim_axes = pool_item
+                else:
+                    img_id, img_bytes, mime_type, caption, confirmed_dims = pool_item
+                    liked_dim_axes = None
+
                 contents.append(f"\n\nImage ID: {img_id}")
                 contents.append(f"Annotation: {caption or '(none)'}")
                 # Include confirmed design dimensions if available
@@ -558,6 +654,9 @@ If any image's caption is inadequate for generation context, suggest improvement
                         dims_text.append(f"  - {axis}: \"{dim_name}\" - {dim_desc} [tags: {tags_str}]")
                     if dims_text:
                         contents.append(f"Design Qualities:\n" + "\n".join(dims_text))
+                # Include user's liked dimensions - important for understanding their preferences
+                if liked_dim_axes:
+                    contents.append(f"User's Preferred Dimensions: {', '.join(liked_dim_axes)}")
                 contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
         elif has_legacy:
             contents = []
@@ -706,7 +805,14 @@ If any image's caption is inadequate for generation context, suggest improvement
             contents = []
             contents.append(prompt)
             # Add each image with its ID, caption, and design dimensions
-            for img_id, img_bytes, mime_type, caption, confirmed_dims in context_image_pool:
+            for pool_item in context_image_pool:
+                # Handle both old (5-tuple) and new (6-tuple) formats
+                if len(pool_item) == 6:
+                    img_id, img_bytes, mime_type, caption, confirmed_dims, liked_dim_axes = pool_item
+                else:
+                    img_id, img_bytes, mime_type, caption, confirmed_dims = pool_item
+                    liked_dim_axes = None
+
                 contents.append(f"\n\nImage ID: {img_id}")
                 contents.append(f"Annotation: {caption or '(none)'}")
                 # Include confirmed design dimensions if available
@@ -720,6 +826,9 @@ If any image's caption is inadequate for generation context, suggest improvement
                         dims_text.append(f"  - {axis}: \"{dim_name}\" - {dim_desc} [tags: {tags_str}]")
                     if dims_text:
                         contents.append(f"Design Qualities:\n" + "\n".join(dims_text))
+                # Include user's liked dimensions - important for understanding their preferences
+                if liked_dim_axes:
+                    contents.append(f"User's Preferred Dimensions: {', '.join(liked_dim_axes)}")
                 contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
         elif has_legacy:
             # Legacy mode
@@ -780,10 +889,7 @@ If any image's caption is inadequate for generation context, suggest improvement
         logger.info(f"Polishing {len(variations)} variations using {model_name}")
 
         # Load prompt template
-        prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
-        prompt_file = os.path.join(prompts_dir, "polish_prompts.txt")
-        with open(prompt_file, "r") as f:
-            prompt_template = f.read()
+        prompt_template = self._load_prompt("polish_prompts")
 
         # Build variations section
         variations_section = "VARIATIONS TO POLISH:\n"
@@ -845,103 +951,15 @@ If any image's caption is inadequate for generation context, suggest improvement
             logger.error(f"Polish prompts failed after {elapsed:.1f}s: {e}")
             raise
 
-    async def polish_annotations(
-        self,
-        annotations: list[dict],  # [{ image_id, annotation, image_path }]
-    ) -> list[PolishedAnnotationItem]:
-        """Polish image annotations for better AI context.
-
-        Refines existing annotations to be more precise and evocative
-        while preserving the user's original intent. Uses fast text model.
-
-        Args:
-            annotations: List of dicts with image_id, annotation, and optional image_path
-
-        Returns:
-            List of PolishedAnnotationItem with refined annotations
-        """
-        model_name = self.DEFAULT_FAST_TEXT_MODEL
-        start_time = time.time()
-
-        logger.info(f"Polishing {len(annotations)} annotations using {model_name}")
-
-        # Build prompt for polishing
-        prompt = """You are refining image annotations for AI image generation context.
-
-TASK: Polish each annotation to be more precise and evocative while preserving the user's intent.
-
-RULES:
-1. PRESERVE the user's original meaning, emotional tone, and key observations
-2. ADD clarity and specificity where helpful (visual elements, textures, moods)
-3. FIX grammar and make the text flow naturally
-4. KEEP the user's voice - if they wrote poetically, keep it poetic
-5. DO NOT add new concepts not implied by the original
-6. Keep annotations concise (1-3 sentences max)
-
-EXAMPLES:
-Original: "Love the surreal mirror feeling, texture is amazing here"
-Polished: "Surreal mirror-like quality with rich, tactile texture. Hand reaching from foreground creates dreamscape atmosphere."
-
-Original: "cool moody vibe, dark"
-Polished: "Moody, atmospheric darkness with evocative shadows."
-
-Original: "I like how the hand grips here, very tense"
-Polished: "Tense grip with dramatic lighting emphasizing the tension in the fingers."
-
-ANNOTATIONS TO POLISH:
-"""
-
-        for item in annotations:
-            prompt += f"\n---\nImage ID: {item['image_id']}\nOriginal: {item['annotation']}\n"
-
-        prompt += "\n\nReturn polished versions for each annotation, preserving the user's intent."
-
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=PolishAnnotationsResponse,
-        )
-
-        # Build contents - include images for visual context if available
-        contents = [prompt]
-        for item in annotations:
-            if item.get('image_path'):
-                try:
-                    img_bytes = item['image_path'].read_bytes()
-                    mime_type = _detect_image_mime_type(img_bytes)
-                    contents.append(f"\nImage {item['image_id']}:")
-                    contents.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
-                except Exception as e:
-                    logger.warning(f"Could not load image {item['image_id']}: {e}")
-
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config,
-            )
-
-            elapsed = time.time() - start_time
-            result = PolishAnnotationsResponse.model_validate_json(response.text)
-
-            # Add original annotations to the results
-            annotation_map = {item['image_id']: item['annotation'] for item in annotations}
-            for polished_item in result.items:
-                polished_item.original_annotation = annotation_map.get(polished_item.image_id, "")
-
-            logger.info(f"Polished {len(result.items)} annotations in {elapsed:.1f}s")
-            return result.items
-
-        except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"Polish annotations failed after {elapsed:.1f}s: {e}")
-            raise
-
     async def annotate_design_dimensions(
         self,
         image_bytes: bytes,
         image_mime_type: str = "image/jpeg",
     ) -> DesignAnnotation:
         """Analyze an image along design dimensions for preference learning.
+
+        Note: Uses manual JSON parsing (not structured output) because the
+        response schema is dynamic - axes are not fixed ahead of time.
 
         Args:
             image_bytes: Raw image bytes
@@ -953,62 +971,11 @@ ANNOTATIONS TO POLISH:
         import json
         import re
 
-        prompt = """Analyze this image along these design dimensions. For each dimension, list ALL applicable tags (you can select multiple per dimension).
-
-DIMENSIONS AND SUGGESTED TAGS:
-NOTE: These are suggested tags. You may use novel, specific tags when they better describe the image.
-For example: "film-noir", "golden-hour", "dutch-angle", "neon-glow", "hand-lettered" are all valid.
-Be precise and descriptive - the system learns from your annotations.
-
-colors (pick from any subcategory):
-  Palette type: monochromatic, complementary, analogous, triadic, split-complementary, tetradic
-  Temperature: warm, cool, neutral
-  Saturation: vibrant, muted, pastel, saturated, desaturated, earthy
-  Contrast: high-contrast, low-contrast, subtle-gradients
-  Mood-based: moody-dark, light-airy, rich-jewel-tones, soft-naturals
-
-composition (pick from any subcategory):
-  Framing: close-up, medium-shot, wide-angle, extreme-close-up, bird's-eye, worm's-eye
-  Balance: rule-of-thirds, symmetrical, asymmetrical, centered, golden-ratio
-  Lines: diagonal, horizontal, vertical, curved, leading-lines
-  Depth: layered, shallow-depth, deep-focus, foreground-focus, atmospheric-perspective
-  Space: negative-space, framed, contained, expansive, cropped-tight
-
-mood: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, contemplative, whimsical, bold, intimate, grand, nostalgic, futuristic
-
-layout (pick from any subcategory):
-  Structure: centered, asymmetric, grid, modular, freeform
-  Density: dense, spacious, balanced, clustered, scattered
-  Flow: dynamic, static, radial, linear, organic
-  Hierarchy: focal-point, distributed, progressive, nested
-
-aesthetic (pick from any subcategory):
-  Realism: photorealistic, hyperrealistic, stylized-realism
-  Illustration: illustrated, flat-design, line-art, hand-drawn, vector
-  Digital: 3D-rendered, CGI, digital-painting, pixel-art, low-poly
-  Movement: art-nouveau, art-deco, bauhaus, swiss-style, brutalist
-  Era: retro, vintage, mid-century, 80s-aesthetic, Y2K, modern, futuristic
-  Approach: minimalist, maximalist, abstract, surreal, collage, mixed-media
-
-typeface_feel (pick from any subcategory):
-  Category: sans-serif, serif, slab-serif, monospace, display, script
-  Weight: light, regular, medium, bold, black
-  Character: geometric, humanist, elegant, playful, technical, editorial
-
-Return ONLY a JSON object mapping each axis to its tags (no markdown, no explanation):
-{
-  "colors": ["warm", "vibrant"],
-  "composition": ["rule-of-thirds", "layered"],
-  "mood": ["dramatic", "bold"],
-  "layout": ["asymmetric", "dynamic"],
-  "aesthetic": ["minimalist", "modern"],
-  "typeface_feel": ["sans-serif", "geometric"]
-}"""
-
+        prompt = self._load_prompt("design_dimensions")
         model_name = self.DEFAULT_TEXT_MODEL
         start_time = time.time()
 
-        print(f"[{model_name}] Annotating design dimensions...")
+        logger.info(f"[annotate_design_dimensions] Starting with model={model_name}")
 
         config = types.GenerateContentConfig(
             system_instruction="You are a design analyst. Return only valid JSON, no markdown formatting.",
@@ -1027,16 +994,7 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
             )
         except Exception as e:
             elapsed = time.time() - start_time
-            # Log detailed error information
-            error_msg = str(e)
-            error_type = type(e).__name__
-            print(f"[ERROR] Annotation failed after {elapsed:.1f}s")
-            print(f"  Error Type: {error_type}")
-            print(f"  Error Message: {error_msg}")
-            if hasattr(e, 'status_code'):
-                print(f"  Status Code: {e.status_code}")
-            if hasattr(e, 'reason'):
-                print(f"  Reason: {e.reason}")
+            logger.error(f"[annotate_design_dimensions] Failed after {elapsed:.1f}s: {e}")
             raise
 
         elapsed = time.time() - start_time
@@ -1050,27 +1008,20 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
                         if hasattr(part, "text") and part.text:
                             text += part.text
 
-        print(f"[OK] Annotated in {elapsed:.1f}s")
+        logger.info(f"[annotate_design_dimensions] Completed in {elapsed:.1f}s")
 
-        # Parse JSON response
+        # Parse JSON response (dynamic schema - can't use structured output)
         try:
-            # Clean up response (remove markdown code blocks if present)
             clean_text = text.strip()
             if clean_text.startswith("```"):
                 clean_text = re.sub(r"^```(?:json)?\n?", "", clean_text)
                 clean_text = re.sub(r"\n?```$", "", clean_text)
 
             data = json.loads(clean_text)
-
-            # Parse all axes dynamically - any key with list value is an axis
-            axes = {}
-            for key, value in data.items():
-                if isinstance(value, list):
-                    axes[key] = value
-
+            axes = {k: v for k, v in data.items() if isinstance(v, list)}
             return DesignAnnotation(axes=axes, raw_response=text)
         except json.JSONDecodeError as e:
-            print(f"[WARN] Failed to parse annotation JSON: {e}")
+            logger.warning(f"[annotate_design_dimensions] JSON parse failed: {e}")
             return DesignAnnotation(axes={}, raw_response=text)
 
     async def analyze_dimensions(
@@ -1146,16 +1097,98 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
             print(f"[WARN] Failed to parse dimension analysis JSON: {e}")
             return []
 
+    async def suggest_dimensions_multi(
+        self,
+        images: list[tuple[bytes, str]],  # List of (image_bytes, mime_type)
+        count: int = 5,
+    ) -> list[dict]:
+        """Analyze multiple images and suggest common design dimensions.
+
+        Uses Flash model for speed. Finds dimensions that are COMMON across
+        all provided images, making them good candidates for Design Tokens.
+
+        Args:
+            images: List of (image_bytes, mime_type) tuples
+            count: Number of dimensions to suggest (default 5)
+
+        Returns:
+            List of design dimension dicts with keys:
+            - axis: Design axis category
+            - name: Evocative name
+            - description: Detailed analysis
+            - tags: Design vocabulary tags
+            - generation_prompt: Prompt for concept generation
+            - commonality: What makes this dimension common across images
+        """
+        if not images:
+            return []
+
+        start_time = time.time()
+        num_images = len(images)
+        logger.info(f"[suggest_dimensions_multi] Suggesting {count} common dimensions from {num_images} images")
+
+        # Load and format prompt
+        prompt = self._load_prompt("suggest_dimensions_multi").format(
+            num_images=num_images,
+            count=count,
+        )
+
+        # Build content parts
+        content_parts = []
+        for img_bytes, mime_type in images:
+            content_parts.append(types.Part.from_bytes(data=img_bytes, mime_type=mime_type))
+        content_parts.append(types.Part.from_text(text=prompt))
+
+        try:
+            response = self.client.models.generate_content(
+                model=self.DEFAULT_FAST_TEXT_MODEL,  # Flash for speed
+                contents=content_parts,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=MultiImageDimensionResponse,
+                    temperature=0.7,
+                ),
+            )
+        except Exception as e:
+            elapsed = time.time() - start_time
+            logger.error(f"[suggest_dimensions_multi] Failed after {elapsed:.1f}s: {e}")
+            raise
+
+        elapsed = time.time() - start_time
+        logger.info(f"[suggest_dimensions_multi] Completed in {elapsed:.1f}s")
+
+        # Extract text response
+        text = ""
+        if response.candidates:
+            for candidate in response.candidates:
+                if candidate.content and candidate.content.parts:
+                    for part in candidate.content.parts:
+                        if hasattr(part, "text") and part.text:
+                            text += part.text
+
+        # Parse JSON response
+        try:
+            data = json.loads(text)
+            dimensions = data.get("dimensions", [])
+            return dimensions
+        except json.JSONDecodeError as e:
+            logger.warning(f"[suggest_dimensions_multi] JSON parse failed: {e}")
+            return []
+
     async def generate_concept_image(
         self,
         dimension: dict,
         aspect_ratio: str = "1:1",
+        source_image_bytes: bytes | None = None,
+        source_image_mime_type: str = "image/jpeg",
     ) -> ImageResult:
         """Generate a pure concept image for a design dimension.
 
         Args:
             dimension: Design dimension dict with name, axis, description, generation_prompt
             aspect_ratio: Output aspect ratio
+            source_image_bytes: Optional source image to reference when generating concept
+            source_image_mime_type: MIME type of source image
 
         Returns:
             ImageResult with generated concept image
@@ -1177,7 +1210,15 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
         start_time = time.time()
         print(f"[→] Generating concept image for '{dimension.get('name', 'unknown')}'...")
 
-        # Use the same image generation path as regular images
+        # If source image provided, use multimodal generation to reference it
+        if source_image_bytes:
+            return await self.generate_image(
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+                reference_images=[(source_image_bytes, source_image_mime_type)],
+            )
+
+        # Fall back to text-only generation
         return await self.generate_image(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
@@ -1204,62 +1245,21 @@ Return ONLY a JSON object mapping each axis to its tags (no markdown, no explana
         Returns:
             DesignTokenExtraction with name, text (prompt fragment), style_tags, and category
         """
-        model_name = self.DEFAULT_FAST_TEXT_MODEL
-        start_time = time.time()
-
-        logger.info(f"Extracting design token using {model_name}")
-
-        # Build context from annotation and liked tags
+        # Build user context
         user_context = ""
         if annotation:
             user_context += f"USER'S ANNOTATION: {annotation}\n"
         if liked_tags:
             user_context += f"LIKED DESIGN TAGS: {', '.join(liked_tags)}\n"
 
-        prompt = f"""Analyze this image and extract a reusable design token (prompt fragment).
-
-{user_context}
-
-TASK: Based on the image and what the user appreciates about it, create a condensed prompt fragment
-that captures the essence of the visual style, mood, or technique. This fragment will be used to
-guide future image generation.
-
-RULES:
-1. The 'name' should be short and evocative (2-4 words), like "Golden Hour Warmth" or "Moody Noir"
-2. The 'text' should be a 1-2 sentence prompt fragment describing the visual qualities
-3. Include 3-6 'style_tags' for categorization and searchability
-4. Set 'category' to one of: lighting, mood, composition, color, texture, or mixed
-
-Focus on extracting the specific visual qualities the user seems to appreciate based on their
-annotation and liked tags. If no explicit preferences are given, analyze the image's most
-distinctive and reusable visual characteristics."""
-
-        config = types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=DesignTokenExtraction,
+        prompt = self._load_prompt("design_token_extraction").format(
+            user_context=user_context
         )
 
-        contents = [
-            types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type),
-            prompt,
-        ]
-
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=model_name,
-                contents=contents,
-                config=config,
-            )
-
-            elapsed = time.time() - start_time
-
-            # Parse the structured response
-            result = DesignTokenExtraction.model_validate_json(response.text)
-
-            logger.info(f"Extracted design token '{result.name}' in {elapsed:.1f}s")
-            return result
-
-        except Exception as e:
-            elapsed = time.time() - start_time
-            logger.error(f"Design token extraction failed after {elapsed:.1f}s: {e}")
-            raise
+        return await self._generate_structured(
+            prompt=prompt,
+            response_schema=DesignTokenExtraction,
+            model=self.DEFAULT_FAST_TEXT_MODEL,
+            images=[(image_bytes, image_mime_type, None)],
+            operation_name="extract_design_token",
+        )

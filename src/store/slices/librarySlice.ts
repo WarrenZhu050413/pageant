@@ -1,26 +1,22 @@
 import type { StateCreator } from 'zustand'
-import type { LibraryItem, Collection, Story } from '../../types'
+import type { DesignToken, Collection } from '../../types'
 
 export interface LibrarySlice {
   // State
-  libraryItems: LibraryItem[]
+  designTokens: DesignToken[]
   collections: Collection[]
-  stories: Story[]
 
   // Actions (state-only, no API calls - those remain in main store)
-  setLibraryItems: (items: LibraryItem[]) => void
+  setDesignTokens: (tokens: DesignToken[]) => void
   setCollections: (collections: Collection[]) => void
-  setStories: (stories: Story[]) => void
 }
 
 export const createLibrarySlice: StateCreator<LibrarySlice> = (set) => ({
   // Initial state
-  libraryItems: [],
+  designTokens: [],
   collections: [],
-  stories: [],
 
   // Actions
-  setLibraryItems: (items) => set({ libraryItems: items }),
+  setDesignTokens: (tokens) => set({ designTokens: tokens }),
   setCollections: (collections) => set({ collections }),
-  setStories: (stories) => set({ stories }),
 })

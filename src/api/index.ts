@@ -1,28 +1,26 @@
 import type {
   Prompt,
   Collection,
-  Story,
   Settings,
   GenerateRequest,
   GenerateResponse,
   UploadResponse,
-  ImageData,
   LikedAxes,
   DesignPreferences,
   DesignAxis,
   DesignDimension,
-  LibraryItem,
-  LibraryItemType,
+  DesignToken,
   GeneratePromptsRequest,
   GeneratePromptsResponse,
   GenerateFromPromptsRequest,
   PolishPromptsRequest,
   PolishPromptsResponse,
-  PolishAnnotationsResponse,
   AnalyzeDimensionsResponse,
   GenerateConceptResponse,
-  ExtractDesignTokenRequest,
-  ExtractDesignTokenResponse,
+  SuggestDimensionsResponse,
+  CreateTokenRequest,
+  CreateTokenResponse,
+  GenerateTokenConceptResponse,
 } from '../types';
 import {
   request,
@@ -33,9 +31,24 @@ import {
 
 const API_BASE = '/api';
 
-// Prompts
-export const fetchPrompts = makeListFetcher<Prompt>('/prompts', 'prompts');
-export const fetchPrompt = makeItemFetcher<Prompt>('/prompts');
+// Transform prompt from API snake_case to frontend camelCase
+function transformPrompt(prompt: Prompt & { base_prompt?: string }): Prompt {
+  const { base_prompt, ...rest } = prompt;
+  return {
+    ...rest,
+    basePrompt: base_prompt || rest.basePrompt,
+  };
+}
+
+// Prompts (with snake_case to camelCase transformation)
+export async function fetchPrompts(): Promise<Prompt[]> {
+  const response = await request<{ prompts: (Prompt & { base_prompt?: string })[] }>('/prompts');
+  return (response.prompts || []).map(transformPrompt);
+}
+export async function fetchPrompt(id: string): Promise<Prompt> {
+  const response = await request<Prompt & { base_prompt?: string }>(`/prompts/${id}`);
+  return transformPrompt(response);
+}
 export const deletePrompt = makeDeleteFetcher('/prompts');
 
 // Generation
@@ -159,43 +172,13 @@ export async function updateImageNotes(
   });
 }
 
-// Polish Annotations
-export async function polishAnnotations(
-  imageIds: string[]
-): Promise<PolishAnnotationsResponse> {
-  return request<PolishAnnotationsResponse>('/polish-annotations', {
-    method: 'POST',
-    body: JSON.stringify({ image_ids: imageIds }),
-  });
-}
-
 export const deleteImage = makeDeleteFetcher('/images');
-
-// Favorites
-export const fetchFavorites = makeListFetcher<ImageData>('/favorites', 'favorites');
-
-export async function toggleFavorite(imageId: string): Promise<{ is_favorite: boolean }> {
-  return request<{ is_favorite: boolean }>('/favorites', {
-    method: 'POST',
-    body: JSON.stringify({ image_id: imageId }),
-  });
-}
 
 // Batch operations
 export async function batchDelete(imageIds: string[]): Promise<void> {
   await request('/batch/delete', {
     method: 'POST',
     body: JSON.stringify({ image_ids: imageIds }),
-  });
-}
-
-export async function batchFavorite(
-  imageIds: string[],
-  favorite: boolean
-): Promise<void> {
-  await request('/batch/favorite', {
-    method: 'POST',
-    body: JSON.stringify({ image_ids: imageIds, favorite }),
   });
 }
 
@@ -208,39 +191,44 @@ export async function batchDeletePrompts(
   });
 }
 
-// Design Library
-export const fetchLibraryItems = makeListFetcher<LibraryItem>('/library', 'items');
-export const deleteLibraryItem = makeDeleteFetcher('/library');
+// Design Tokens
+export const fetchTokens = makeListFetcher<DesignToken>('/tokens', 'tokens');
+export const deleteToken = makeDeleteFetcher('/tokens');
 
-export async function createLibraryItem(data: {
-  type: LibraryItemType;
-  name: string;
-  description?: string;
-  text?: string;
-  style_tags?: string[];
-  prompt?: string;
-  category?: string;
-  tags?: string[];
-}): Promise<LibraryItem> {
-  const response = await request<{ item: LibraryItem }>('/library', {
+export async function createToken(data: CreateTokenRequest): Promise<DesignToken> {
+  const response = await request<CreateTokenResponse>('/tokens', {
     method: 'POST',
     body: JSON.stringify(data),
   });
-  return response.item;
+  if (!response.token) {
+    throw new Error(response.error || 'Failed to create token');
+  }
+  return response.token;
 }
 
-export async function useLibraryItem(id: string): Promise<LibraryItem> {
-  const response = await request<{ item: LibraryItem }>(`/library/${id}/use`, { method: 'POST' });
-  return response.item;
+export async function useToken(id: string): Promise<DesignToken> {
+  const response = await request<{ token: DesignToken }>(`/tokens/${id}/use`, { method: 'POST' });
+  return response.token;
 }
 
-// Design Token Extraction
-export async function extractDesignToken(
-  data: ExtractDesignTokenRequest
-): Promise<ExtractDesignTokenResponse> {
-  return request<ExtractDesignTokenResponse>('/extract-design-token', {
+export async function generateTokenConcept(
+  tokenId: string,
+  aspectRatio: string = '1:1'
+): Promise<GenerateTokenConceptResponse> {
+  return request<GenerateTokenConceptResponse>(`/tokens/${tokenId}/generate-concept`, {
     method: 'POST',
-    body: JSON.stringify(data),
+    body: JSON.stringify({ aspect_ratio: aspectRatio }),
+  });
+}
+
+// Dimension Extraction (for Design Tokens)
+export async function suggestDimensions(
+  imageIds: string[],
+  count: number = 5
+): Promise<SuggestDimensionsResponse> {
+  return request<SuggestDimensionsResponse>('/extract/suggest-dimensions', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds, count }),
   });
 }
 
@@ -291,35 +279,6 @@ export async function removeFromCollection(
 
 export const deleteCollection = makeDeleteFetcher('/collections');
 
-// Stories (fetchStories returns array directly, not wrapped)
-export async function fetchStories(): Promise<Story[]> {
-  return request<Story[]>('/stories');
-}
-
-export const fetchStory = makeItemFetcher<Story>('/stories');
-
-export async function createStory(data: {
-  title: string;
-  description?: string;
-}): Promise<Story> {
-  return request<Story>('/stories', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function updateStory(
-  id: string,
-  data: { title?: string; description?: string }
-): Promise<Story> {
-  return request<Story>(`/stories/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data),
-  });
-}
-
-export const deleteStory = makeDeleteFetcher('/stories');
-
 // Settings
 export const fetchSettings = makeItemFetcher<Settings>('/settings');
 
@@ -362,10 +321,6 @@ export async function uploadImages(files: File[]): Promise<UploadResponse> {
 }
 
 // Export
-export function getExportFavoritesUrl(): string {
-  return `${API_BASE}/export/favorites`;
-}
-
 export function getExportGalleryUrl(): string {
   return `${API_BASE}/export/gallery`;
 }
@@ -395,6 +350,17 @@ export async function toggleAxisLike(
   return request(`/images/${imageId}/like-axis`, {
     method: 'PATCH',
     body: JSON.stringify({ axis, tag, liked }),
+  });
+}
+
+export async function toggleDimensionLike(
+  imageId: string,
+  axis: string,
+  liked: boolean
+): Promise<{ success: boolean; liked_dimension_axes: string[] }> {
+  return request(`/images/${imageId}/like-dimension`, {
+    method: 'PATCH',
+    body: JSON.stringify({ axis, liked }),
   });
 }
 
@@ -504,8 +470,8 @@ export async function deleteSession(
 }
 
 export async function fetchPromptsForSession(sessionId: string): Promise<Prompt[]> {
-  const response = await request<{ prompts: Prompt[] }>(`/prompts?session_id=${sessionId}`);
-  return response.prompts || [];
+  const response = await request<{ prompts: (Prompt & { base_prompt?: string })[] }>(`/prompts?session_id=${sessionId}`);
+  return (response.prompts || []).map(transformPrompt);
 }
 
 export async function addPromptsToSession(

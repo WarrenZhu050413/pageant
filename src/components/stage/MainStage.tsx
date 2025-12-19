@@ -17,6 +17,7 @@ import { GridView } from './GridView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 import { PromptVariationsView } from './PromptVariationsView';
+import { TokenGalleryView } from './TokenGalleryView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
@@ -71,6 +72,11 @@ export function MainStage() {
   // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
+  }
+
+  // Token gallery takes over full stage when in that mode
+  if (viewMode === 'token-gallery') {
+    return <TokenGalleryView />;
   }
 
   // Show read-only variations view when toggled

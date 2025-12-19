@@ -23,7 +23,7 @@ export function useKeyboardShortcuts() {
   } = useStore();
 
   // Track pending delete state
-  const pendingDeleteRef = useRef<{ imageId: string; timeout: NodeJS.Timeout } | null>(null);
+  const pendingDeleteRef = useRef<{ imageId: string; timeout: ReturnType<typeof setTimeout> } | null>(null);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {

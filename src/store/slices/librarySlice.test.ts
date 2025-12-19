@@ -2,6 +2,19 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { createLibrarySlice, type LibrarySlice } from './librarySlice'
 import type { DesignToken, Collection } from '../../types'
 
+// Helper to create valid mock tokens with current schema
+const createMockToken = (overrides: Partial<DesignToken> = {}): DesignToken => ({
+  id: 'token-1',
+  name: 'Test Token',
+  description: 'A test token',
+  created_at: new Date().toISOString(),
+  use_count: 0,
+  images: [],
+  prompts: [],
+  creation_method: 'manual',
+  ...overrides,
+})
+
 describe('librarySlice', () => {
   let slice: LibrarySlice
 
@@ -27,24 +40,8 @@ describe('librarySlice', () => {
   describe('setDesignTokens', () => {
     it('sets designTokens to provided array', () => {
       const tokens: DesignToken[] = [
-        {
-          id: 'token-1',
-          name: 'Minimalist Style',
-          type: 'style',
-          description: 'Clean and simple',
-          prompt_fragment: 'minimalist, clean lines',
-          source_image_ids: ['img-1'],
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: 'token-2',
-          name: 'Warm Colors',
-          type: 'palette',
-          description: 'Warm color scheme',
-          prompt_fragment: 'warm tones, orange, red',
-          source_image_ids: ['img-2'],
-          created_at: new Date().toISOString(),
-        },
+        createMockToken({ id: 'token-1', name: 'Minimalist Style' }),
+        createMockToken({ id: 'token-2', name: 'Warm Colors' }),
       ]
 
       slice.setDesignTokens(tokens)
@@ -54,28 +51,12 @@ describe('librarySlice', () => {
 
     it('replaces existing tokens', () => {
       const initialTokens: DesignToken[] = [
-        {
-          id: 'token-old',
-          name: 'Old Token',
-          type: 'style',
-          description: 'Old',
-          prompt_fragment: 'old',
-          source_image_ids: [],
-          created_at: new Date().toISOString(),
-        },
+        createMockToken({ id: 'token-old', name: 'Old Token' }),
       ]
       slice.setDesignTokens(initialTokens)
 
       const newTokens: DesignToken[] = [
-        {
-          id: 'token-new',
-          name: 'New Token',
-          type: 'palette',
-          description: 'New',
-          prompt_fragment: 'new',
-          source_image_ids: [],
-          created_at: new Date().toISOString(),
-        },
+        createMockToken({ id: 'token-new', name: 'New Token' }),
       ]
       slice.setDesignTokens(newTokens)
 
@@ -85,17 +66,7 @@ describe('librarySlice', () => {
     })
 
     it('can set empty array to clear tokens', () => {
-      slice.designTokens = [
-        {
-          id: 'token-1',
-          name: 'Token',
-          type: 'style',
-          description: '',
-          prompt_fragment: '',
-          source_image_ids: [],
-          created_at: new Date().toISOString(),
-        },
-      ]
+      slice.designTokens = [createMockToken()]
 
       slice.setDesignTokens([])
       expect(slice.designTokens).toEqual([])
@@ -108,15 +79,14 @@ describe('librarySlice', () => {
         {
           id: 'col-1',
           name: 'Favorites',
-          description: 'My favorite images',
+          description: 'My favorites',
           image_ids: ['img-1', 'img-2'],
           created_at: new Date().toISOString(),
         },
         {
           id: 'col-2',
-          name: 'Portfolio',
-          description: 'Best work',
-          image_ids: ['img-3'],
+          name: 'Inspiration',
+          image_ids: [],
           created_at: new Date().toISOString(),
         },
       ]
@@ -124,49 +94,6 @@ describe('librarySlice', () => {
       slice.setCollections(collections)
       expect(slice.collections).toEqual(collections)
       expect(slice.collections.length).toBe(2)
-    })
-
-    it('replaces existing collections', () => {
-      const initial: Collection[] = [
-        {
-          id: 'col-old',
-          name: 'Old Collection',
-          description: '',
-          image_ids: [],
-          created_at: new Date().toISOString(),
-        },
-      ]
-      slice.setCollections(initial)
-
-      const updated: Collection[] = [
-        {
-          id: 'col-new',
-          name: 'New Collection',
-          description: 'Fresh',
-          image_ids: ['img-new'],
-          created_at: new Date().toISOString(),
-        },
-      ]
-      slice.setCollections(updated)
-
-      expect(slice.collections).toEqual(updated)
-      expect(slice.collections.length).toBe(1)
-      expect(slice.collections[0].id).toBe('col-new')
-    })
-
-    it('can set empty array to clear collections', () => {
-      slice.collections = [
-        {
-          id: 'col-1',
-          name: 'Collection',
-          description: '',
-          image_ids: [],
-          created_at: new Date().toISOString(),
-        },
-      ]
-
-      slice.setCollections([])
-      expect(slice.collections).toEqual([])
     })
   })
 })

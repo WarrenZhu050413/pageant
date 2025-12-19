@@ -516,13 +516,12 @@ export function SettingsTab() {
         <div className="space-y-2">
           {[
             { keys: ['←', '→'], action: 'Navigate images' },
+            { keys: ['+', '−'], action: 'Adjust image count' },
             { keys: ['1'], action: 'Single view' },
             { keys: ['2'], action: 'Grid view' },
-            { keys: ['F'], action: 'Toggle favorite' },
+            { keys: ['A'], action: 'Add to context' },
             { keys: ['G'], action: 'Go to Generate' },
             { keys: ['S'], action: 'Select mode' },
-            { keys: ['B'], action: 'Batch mode' },
-            { keys: ['⌘', 'S'], action: 'Save as template' },
             { keys: ['Esc'], action: 'Exit mode' },
           ].map(({ keys, action }) => (
             <div key={action} className="flex items-center justify-between">

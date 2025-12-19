@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 
 // Mock the store
 const mockUseStore = vi.fn()
@@ -164,7 +165,8 @@ describe('DesignAnnotation', () => {
       expect(textarea.value).toBe('Existing annotation text')
     })
 
-    it('should show save button when annotation changes', () => {
+    it('should show save button when annotation changes', async () => {
+      const user = userEvent.setup()
       const mockImage = createMockImage('img-1', {
         annotation: 'Original text',
       })
@@ -185,13 +187,15 @@ describe('DesignAnnotation', () => {
       render(<DesignAnnotation />)
 
       const textarea = screen.getByPlaceholderText('What stands out in this image?')
-      fireEvent.change(textarea, { target: { value: 'New annotation' } })
+      await user.clear(textarea)
+      await user.type(textarea, 'New annotation')
 
       // Save button should appear
       expect(screen.getByText('↵ save')).toBeInTheDocument()
     })
 
-    it('should call updateImageNotes when Enter is pressed (without Shift)', () => {
+    it('should call updateImageNotes when Enter is pressed (without Shift)', async () => {
+      const user = userEvent.setup()
       const updateImageNotes = vi.fn().mockResolvedValue(undefined)
       const mockImage = createMockImage('img-1', {
         annotation: 'Original',
@@ -215,15 +219,17 @@ describe('DesignAnnotation', () => {
       render(<DesignAnnotation />)
 
       const textarea = screen.getByPlaceholderText('What stands out in this image?')
-      fireEvent.change(textarea, { target: { value: 'New text' } })
+      await user.clear(textarea)
+      await user.type(textarea, 'New text')
 
       // Press Enter (without Shift)
-      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false })
+      await user.keyboard('{Enter}')
 
       expect(updateImageNotes).toHaveBeenCalledWith('img-1', '', 'New text')
     })
 
-    it('should not save when Shift+Enter is pressed (new line)', () => {
+    it('should not save when Shift+Enter is pressed (new line)', async () => {
+      const user = userEvent.setup()
       const updateImageNotes = vi.fn().mockResolvedValue(undefined)
       const mockImage = createMockImage('img-1', {
         annotation: 'Original',
@@ -246,10 +252,11 @@ describe('DesignAnnotation', () => {
       render(<DesignAnnotation />)
 
       const textarea = screen.getByPlaceholderText('What stands out in this image?')
-      fireEvent.change(textarea, { target: { value: 'New text' } })
+      await user.clear(textarea)
+      await user.type(textarea, 'New text')
 
       // Press Shift+Enter (should insert newline, not save)
-      fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true })
+      await user.keyboard('{Shift>}{Enter}{/Shift}')
 
       expect(updateImageNotes).not.toHaveBeenCalled()
     })
@@ -313,7 +320,8 @@ describe('DesignAnnotation', () => {
       expect(screen.getByText('serene')).toBeInTheDocument()
     })
 
-    it('should toggle tag like state when clicked', () => {
+    it('should toggle tag like state when clicked', async () => {
+      const user = userEvent.setup()
       const toggleAxisLike = vi.fn()
       const mockImage = createMockImage('img-1', {
         annotations: {
@@ -339,7 +347,7 @@ describe('DesignAnnotation', () => {
       render(<DesignAnnotation />)
 
       const tagButton = screen.getByText('minimalist')
-      fireEvent.click(tagButton)
+      await user.click(tagButton)
 
       expect(toggleAxisLike).toHaveBeenCalledWith('img-1', 'style', 'minimalist', true)
     })
@@ -433,7 +441,8 @@ describe('DesignAnnotation', () => {
       expect(screen.queryByText('Texture')).not.toBeInTheDocument()
     })
 
-    it('should expand dimension description when clicked', () => {
+    it('should expand dimension description when clicked', async () => {
+      const user = userEvent.setup()
       const mockImage = createMockImage('img-1', {
         design_dimensions: {
           visual_weight: { name: 'Visual Weight', description: 'Heavy elements create grounding' },
@@ -460,13 +469,14 @@ describe('DesignAnnotation', () => {
 
       // Click dimension name to expand
       const dimensionButton = screen.getByText('Visual Weight')
-      fireEvent.click(dimensionButton)
+      await user.click(dimensionButton)
 
       // Description should now be visible
       expect(screen.getByText('Heavy elements create grounding')).toBeInTheDocument()
     })
 
-    it('should toggle dimension like state when heart is clicked', () => {
+    it('should toggle dimension like state when heart is clicked', async () => {
+      const user = userEvent.setup()
       const toggleDimensionLike = vi.fn()
       const mockImage = createMockImage('img-1', {
         design_dimensions: {
@@ -497,7 +507,7 @@ describe('DesignAnnotation', () => {
       expect(heartButton).toBeInTheDocument()
 
       if (heartButton) {
-        fireEvent.click(heartButton)
+        await user.click(heartButton)
         expect(toggleDimensionLike).toHaveBeenCalledWith('img-1', 'visual_weight', true)
       }
     })

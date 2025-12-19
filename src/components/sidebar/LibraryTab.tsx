@@ -1,104 +1,249 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Plus, Trash2, Type, Palette, FileText, ChevronDown, Bookmark } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import {
+  Trash2,
+  ChevronDown,
+  Sparkles,
+  Image as ImageIcon,
+  FileText,
+  LayoutGrid,
+  Square,
+  CheckSquare,
+  X,
+} from 'lucide-react';
 import { useStore } from '../../store';
-import { Button, Badge, Dialog, Input, Textarea } from '../ui';
-import type { LibraryItem, LibraryItemType } from '../../types';
+import { getImageUrl } from '../../api';
+import { Button, Badge, Dialog } from '../ui';
+import { TokenDetailView } from '../stage/TokenDetailView';
+import type { DesignToken } from '../../types';
 
-const TYPE_CONFIG: Record<LibraryItemType, { label: string; icon: React.ReactNode; color: string }> = {
-  fragment: { label: 'Fragment', icon: <Type size={12} />, color: 'text-accent' },
-  preset: { label: 'Preset', icon: <Palette size={12} />, color: 'text-brass' },
-  template: { label: 'Template', icon: <FileText size={12} />, color: 'text-ink-secondary' },
-  'design-token': { label: 'Token', icon: <Bookmark size={12} />, color: 'text-success' },
-};
-
-interface LibraryItemCardProps {
-  item: LibraryItem;
-  onInsert: (item: LibraryItem) => void;
+interface TokenCardProps {
+  token: DesignToken;
+  isSelectionMode: boolean;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  onInsert: (token: DesignToken) => void;
   onDelete: (id: string) => void;
+  onClick: () => void;
 }
 
-function LibraryItemCard({ item, onInsert, onDelete }: LibraryItemCardProps) {
-  const config = TYPE_CONFIG[item.type];
+function TokenCard({
+  token,
+  isSelectionMode,
+  isSelected,
+  onToggleSelect,
+  onInsert,
+  onDelete,
+  onClick,
+}: TokenCardProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
-  // Get the insertable content - design-tokens also have text
-  const content = item.type === 'fragment' || item.type === 'design-token'
-    ? item.text
-    : item.type === 'template'
-      ? item.prompt
-      : null;
-  const styleTags = item.type === 'preset' || item.type === 'design-token' ? item.style_tags : null;
+  // Get display content
+  const hasPrompts = token.prompts && token.prompts.length > 0;
+  const hasImages = token.images && token.images.length > 0;
+  const hasConcept = !!token.concept_image_path;
+
+  const handleCardClick = () => {
+    if (isSelectionMode) {
+      onToggleSelect();
+    } else {
+      onClick();
+    }
+  };
 
   return (
-    <div className="group border border-border rounded-lg p-3 hover:border-border-strong transition-colors">
+    <div
+      onClick={handleCardClick}
+      className={clsx(
+        'group border rounded-lg p-3 transition-colors cursor-pointer',
+        isSelected
+          ? 'border-brass bg-brass/5'
+          : 'border-border hover:border-border-strong'
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
+        {/* Selection checkbox */}
+        {isSelectionMode && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect();
+            }}
+            className="mt-0.5 shrink-0"
+          >
+            {isSelected ? (
+              <CheckSquare size={16} className="text-brass" />
+            ) : (
+              <Square size={16} className="text-ink-muted" />
+            )}
+          </button>
+        )}
+
         <div className="flex-1 min-w-0">
+          {/* Header with name and category */}
           <div className="flex items-center gap-2 mb-1">
-            <span className={clsx('flex-shrink-0', config.color)}>{config.icon}</span>
-            <span className="text-sm font-medium text-ink truncate">{item.name}</span>
+            <Sparkles size={12} className="flex-shrink-0 text-brass" />
+            <span className="text-sm font-medium text-ink truncate">
+              {token.name}
+            </span>
+            {token.category && (
+              <span className="text-[0.6rem] px-1.5 py-0.5 bg-canvas-subtle text-ink-muted rounded capitalize">
+                {token.category}
+              </span>
+            )}
           </div>
 
-          {/* Preview content */}
-          {content && (
-            <p className="text-xs text-ink-muted line-clamp-2 mb-2">{content}</p>
+          {/* Description */}
+          {token.description && (
+            <p className="text-xs text-ink-muted line-clamp-2 mb-2">
+              {token.description}
+            </p>
           )}
 
-          {/* Style tags for presets */}
-          {styleTags && styleTags.length > 0 && (
+          {/* Concept image thumbnail */}
+          {hasConcept && (
+            <div className="mb-2">
+              <img
+                src={getImageUrl(token.concept_image_path!)}
+                alt={token.name}
+                className="w-16 h-16 rounded-lg object-cover border border-border"
+              />
+            </div>
+          )}
+
+          {/* Tags */}
+          {token.tags && token.tags.length > 0 && (
             <div className="flex flex-wrap gap-1 mb-2">
-              {styleTags.slice(0, 4).map((tag) => (
+              {token.tags.slice(0, 4).map((tag) => (
                 <Badge key={tag} variant="brass" className="text-[0.6rem]">
                   {tag}
                 </Badge>
               ))}
-              {styleTags.length > 4 && (
-                <span className="text-[0.6rem] text-ink-muted">+{styleTags.length - 4}</span>
+              {token.tags.length > 4 && (
+                <span className="text-[0.6rem] text-ink-muted">
+                  +{token.tags.length - 4}
+                </span>
               )}
             </div>
           )}
 
-          {/* Expandable full content */}
-          {content && content.length > 100 && (
+          {/* Content indicators */}
+          <div className="flex items-center gap-2 text-[0.6rem] text-ink-muted">
+            {hasImages && (
+              <span className="flex items-center gap-0.5">
+                <ImageIcon size={10} />
+                {token.images.length} image{token.images.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {hasPrompts && (
+              <span className="flex items-center gap-0.5">
+                <FileText size={10} />
+                {token.prompts.length} prompt
+                {token.prompts.length !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+
+          {/* Expandable details */}
+          {(hasPrompts || (hasImages && token.images.length > 0)) && (
             <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="flex items-center gap-1 text-[0.6rem] text-ink-muted hover:text-ink"
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsExpanded(!isExpanded);
+              }}
+              className="flex items-center gap-1 text-[0.6rem] text-ink-muted hover:text-ink mt-1"
             >
-              <ChevronDown size={10} className={clsx('transition-transform', isExpanded && 'rotate-180')} />
-              {isExpanded ? 'Show less' : 'Show more'}
+              <ChevronDown
+                size={10}
+                className={clsx('transition-transform', isExpanded && 'rotate-180')}
+              />
+              {isExpanded ? 'Show less' : 'Show details'}
             </button>
           )}
 
-          {isExpanded && content && (
-            <div className="mt-2 p-2 rounded bg-canvas-subtle">
-              <p className="text-xs text-ink-secondary whitespace-pre-wrap">{content}</p>
+          {isExpanded && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="mt-2 p-2 rounded bg-canvas-subtle space-y-2"
+            >
+              {/* Prompts */}
+              {hasPrompts && (
+                <div>
+                  <span className="text-[0.6rem] text-ink-tertiary uppercase">
+                    Prompts
+                  </span>
+                  <div className="mt-1 space-y-1">
+                    {token.prompts.map((prompt, i) => (
+                      <p key={i} className="text-xs text-ink-secondary">
+                        {prompt}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Source images */}
+              {hasImages && (
+                <div>
+                  <span className="text-[0.6rem] text-ink-tertiary uppercase">
+                    Source Images
+                  </span>
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {token.images.slice(0, 6).map(
+                      (img) =>
+                        img.image_path && (
+                          <img
+                            key={img.id}
+                            src={getImageUrl(img.image_path)}
+                            alt=""
+                            className="w-10 h-10 rounded object-cover border border-border"
+                          />
+                        )
+                    )}
+                    {token.images.length > 6 && (
+                      <span className="text-xs text-ink-muted self-center">
+                        +{token.images.length - 6} more
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <Button
-            size="sm"
-            variant="brass"
-            onClick={() => onInsert(item)}
-            className="text-xs px-2 py-1"
-          >
-            Insert
-          </Button>
-          <button
-            onClick={() => onDelete(item.id)}
-            className="p-1 text-ink-muted hover:text-error transition-colors"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
+        {/* Actions - only show when not in selection mode */}
+        {!isSelectionMode && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Button
+              size="sm"
+              variant="brass"
+              onClick={(e) => {
+                e.stopPropagation();
+                onInsert(token);
+              }}
+              className="text-xs px-2 py-1"
+            >
+              Insert
+            </Button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(token.id);
+              }}
+              className="p-1 text-ink-muted hover:text-error transition-colors"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Use count */}
-      {item.use_count > 0 && (
+      {token.use_count > 0 && (
         <div className="mt-2 text-[0.6rem] text-ink-muted">
-          Used {item.use_count} time{item.use_count !== 1 ? 's' : ''}
+          Used {token.use_count} time{token.use_count !== 1 ? 's' : ''}
         </div>
       )}
     </div>
@@ -106,78 +251,102 @@ function LibraryItemCard({ item, onInsert, onDelete }: LibraryItemCardProps) {
 }
 
 export function LibraryTab() {
-  const libraryItems = useStore((s) => s.libraryItems);
-  const createLibraryItem = useStore((s) => s.createLibraryItem);
-  const deleteLibraryItem = useStore((s) => s.deleteLibraryItem);
-  const useLibraryItem = useStore((s) => s.useLibraryItem);
+  const designTokens = useStore((s) => s.designTokens);
+  const deleteToken = useStore((s) => s.deleteToken);
+  const markTokenUsed = useStore((s) => s.useToken);
   const setRightTab = useStore((s) => s.setRightTab);
+  const setViewMode = useStore((s) => s.setViewMode);
 
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [createType, setCreateType] = useState<LibraryItemType>('fragment');
-  const [name, setName] = useState('');
-  const [content, setContent] = useState('');
-  const [styleTags, setStyleTags] = useState('');
-  const [filter, setFilter] = useState<LibraryItemType | 'all'>('all');
+  const [filter, setFilter] = useState<string>('all');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [selectedTokenId, setSelectedTokenId] = useState<string | null>(null);
 
-  // Group items by type
-  const groupedItems = useMemo(() => {
-    const filtered = filter === 'all' ? libraryItems : libraryItems.filter((i) => i.type === filter);
-    return {
-      fragments: filtered.filter((i) => i.type === 'fragment'),
-      presets: filtered.filter((i) => i.type === 'preset'),
-      templates: filtered.filter((i) => i.type === 'template'),
-      designTokens: filtered.filter((i) => i.type === 'design-token'),
-    };
-  }, [libraryItems, filter]);
+  // Selection mode state
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [isBatchDeleteOpen, setIsBatchDeleteOpen] = useState(false);
 
-  const handleInsert = async (item: LibraryItem) => {
-    await useLibraryItem(item.id);
+  // Get unique categories for filtering
+  const categories = useMemo(() => {
+    const cats = new Set<string>();
+    designTokens.forEach((t) => {
+      if (t.category) cats.add(t.category);
+    });
+    return Array.from(cats).sort();
+  }, [designTokens]);
 
-    // Dispatch event with the content to insert
-    // design-token and fragment both use text field
-    const insertContent = item.type === 'fragment' || item.type === 'design-token'
-      ? item.text
-      : item.type === 'template'
-        ? item.prompt
-        : item.style_tags?.join(', ');
+  // Filter tokens by category
+  const filteredTokens = useMemo(() => {
+    if (filter === 'all') return designTokens;
+    return designTokens.filter((t) => t.category === filter);
+  }, [designTokens, filter]);
 
-    if (insertContent) {
-      window.dispatchEvent(new CustomEvent('library-insert', {
-        detail: { content: insertContent, type: item.type, item }
-      }));
+  // Get the selected token for detail view
+  const selectedToken = useMemo(
+    () => designTokens.find((t) => t.id === selectedTokenId) || null,
+    [designTokens, selectedTokenId]
+  );
+
+  const handleToggleSelectionMode = () => {
+    if (isSelectionMode) {
+      setSelectedIds(new Set());
+    }
+    setIsSelectionMode(!isSelectionMode);
+  };
+
+  const handleToggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === filteredTokens.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredTokens.map((t) => t.id)));
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    for (const id of selectedIds) {
+      await deleteToken(id);
+    }
+    setSelectedIds(new Set());
+    setIsBatchDeleteOpen(false);
+    setIsSelectionMode(false);
+  };
+
+  const handleInsert = async (token: DesignToken) => {
+    await markTokenUsed(token.id);
+
+    // Build insertable content from prompts and tags
+    const content = [...token.prompts, ...(token.tags || [])].join(', ');
+
+    if (content) {
+      window.dispatchEvent(
+        new CustomEvent('library-insert', {
+          detail: { content, type: 'design-token', item: token },
+        })
+      );
       // Switch to Generate tab
       setRightTab('generate');
     }
   };
 
-  const handleCreate = async () => {
-    if (!name.trim()) return;
-
-    const data: Parameters<typeof createLibraryItem>[0] = {
-      type: createType,
-      name: name.trim(),
-    };
-
-    if (createType === 'fragment') {
-      data.text = content;
-    } else if (createType === 'preset') {
-      data.style_tags = styleTags.split(',').map((t) => t.trim()).filter(Boolean);
-    } else if (createType === 'template') {
-      data.prompt = content;
-    }
-
-    await createLibraryItem(data);
-    setIsCreateDialogOpen(false);
-    setName('');
-    setContent('');
-    setStyleTags('');
+  const handleDelete = async () => {
+    if (!deleteConfirmId) return;
+    await deleteToken(deleteConfirmId);
+    setDeleteConfirmId(null);
   };
 
-  const handleDelete = async (id: string) => {
-    await deleteLibraryItem(id);
-  };
-
-  const totalCount = libraryItems.length;
+  const totalCount = designTokens.length;
+  const allSelected =
+    filteredTokens.length > 0 && selectedIds.size === filteredTokens.length;
 
   return (
     <div className="p-4 space-y-4">
@@ -185,210 +354,169 @@ export function LibraryTab() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium text-ink">Design Library</h3>
-          <p className="text-xs text-ink-muted">{totalCount} item{totalCount !== 1 ? 's' : ''}</p>
-        </div>
-        <Button
-          size="sm"
-          variant="brass"
-          leftIcon={<Plus size={12} />}
-          onClick={() => setIsCreateDialogOpen(true)}
-        >
-          Add
-        </Button>
-      </div>
-
-      {/* Filter tabs */}
-      <div className="flex gap-1 p-1 rounded-lg bg-canvas-subtle">
-        {(['all', 'fragment', 'preset', 'template', 'design-token'] as const).map((type) => (
-          <button
-            key={type}
-            onClick={() => setFilter(type)}
-            className={clsx(
-              'flex-1 px-2 py-1.5 text-xs font-medium rounded-md transition-colors',
-              filter === type
-                ? 'bg-surface text-ink shadow-sm'
-                : 'text-ink-muted hover:text-ink'
-            )}
-          >
-            {type === 'all' ? 'All' : TYPE_CONFIG[type].label + 's'}
-          </button>
-        ))}
-      </div>
-
-      {/* Items list */}
-      {totalCount === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-sm text-ink-secondary mb-2">No items yet</p>
           <p className="text-xs text-ink-muted">
-            Save prompt fragments, style presets, and full templates for quick reuse.
+            {totalCount} token{totalCount !== 1 ? 's' : ''}
           </p>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Fragments */}
-          {groupedItems.fragments.length > 0 && filter !== 'preset' && filter !== 'template' && filter !== 'design-token' && (
-            <section>
-              {filter === 'all' && (
-                <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
-                  Fragments
-                </h4>
-              )}
-              <div className="space-y-2">
-                {groupedItems.fragments.map((item) => (
-                  <LibraryItemCard
-                    key={item.id}
-                    item={item}
-                    onInsert={handleInsert}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleToggleSelectionMode}
+            className={clsx(isSelectionMode && 'text-brass')}
+          >
+            {isSelectionMode ? <X size={14} /> : 'Select'}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            leftIcon={<LayoutGrid size={14} />}
+            onClick={() => setViewMode('token-gallery')}
+            disabled={totalCount === 0}
+          >
+            Gallery
+          </Button>
+        </div>
+      </div>
 
-          {/* Presets */}
-          {groupedItems.presets.length > 0 && filter !== 'fragment' && filter !== 'template' && filter !== 'design-token' && (
-            <section>
-              {filter === 'all' && (
-                <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
-                  Style Presets
-                </h4>
-              )}
-              <div className="space-y-2">
-                {groupedItems.presets.map((item) => (
-                  <LibraryItemCard
-                    key={item.id}
-                    item={item}
-                    onInsert={handleInsert}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Templates */}
-          {groupedItems.templates.length > 0 && filter !== 'fragment' && filter !== 'preset' && filter !== 'design-token' && (
-            <section>
-              {filter === 'all' && (
-                <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
-                  Templates
-                </h4>
-              )}
-              <div className="space-y-2">
-                {groupedItems.templates.map((item) => (
-                  <LibraryItemCard
-                    key={item.id}
-                    item={item}
-                    onInsert={handleInsert}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
-
-          {/* Design Tokens */}
-          {groupedItems.designTokens.length > 0 && filter !== 'fragment' && filter !== 'preset' && filter !== 'template' && (
-            <section>
-              {filter === 'all' && (
-                <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-2">
-                  Design Tokens
-                </h4>
-              )}
-              <div className="space-y-2">
-                {groupedItems.designTokens.map((item) => (
-                  <LibraryItemCard
-                    key={item.id}
-                    item={item}
-                    onInsert={handleInsert}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
-            </section>
+      {/* Selection mode actions */}
+      {isSelectionMode && (
+        <div className="flex items-center justify-between p-2 bg-canvas-subtle rounded-lg">
+          <button
+            onClick={handleSelectAll}
+            className="flex items-center gap-1.5 text-xs text-ink-secondary hover:text-ink"
+          >
+            {allSelected ? (
+              <CheckSquare size={14} className="text-brass" />
+            ) : (
+              <Square size={14} />
+            )}
+            {allSelected ? 'Deselect all' : 'Select all'}
+          </button>
+          {selectedIds.size > 0 && (
+            <Button
+              size="sm"
+              variant="danger"
+              leftIcon={<Trash2 size={12} />}
+              onClick={() => setIsBatchDeleteOpen(true)}
+            >
+              Delete ({selectedIds.size})
+            </Button>
           )}
         </div>
       )}
 
-      {/* Create Dialog */}
+      {/* Category filter (only show if we have categories) */}
+      {categories.length > 0 && (
+        <div className="flex gap-1 p-1 rounded-lg bg-canvas-subtle overflow-x-auto">
+          <button
+            onClick={() => setFilter('all')}
+            className={clsx(
+              'flex-shrink-0 px-2 py-1.5 text-xs font-medium rounded-md transition-colors',
+              filter === 'all'
+                ? 'bg-surface text-ink shadow-sm'
+                : 'text-ink-muted hover:text-ink'
+            )}
+          >
+            All
+          </button>
+          {categories.map((cat) => (
+            <button
+              key={cat}
+              onClick={() => setFilter(cat)}
+              className={clsx(
+                'flex-shrink-0 px-2 py-1.5 text-xs font-medium rounded-md transition-colors capitalize',
+                filter === cat
+                  ? 'bg-surface text-ink shadow-sm'
+                  : 'text-ink-muted hover:text-ink'
+              )}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Tokens list */}
+      {totalCount === 0 ? (
+        <div className="text-center py-8">
+          <Sparkles size={24} className="mx-auto text-ink-muted mb-2" />
+          <p className="text-sm text-ink-secondary mb-2">No design tokens yet</p>
+          <p className="text-xs text-ink-muted">
+            Select images and use "Extract Token" to save design dimensions for
+            reuse.
+          </p>
+        </div>
+      ) : filteredTokens.length === 0 ? (
+        <div className="text-center py-4">
+          <p className="text-sm text-ink-muted">No tokens in this category</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filteredTokens.map((token) => (
+            <TokenCard
+              key={token.id}
+              token={token}
+              isSelectionMode={isSelectionMode}
+              isSelected={selectedIds.has(token.id)}
+              onToggleSelect={() => handleToggleSelect(token.id)}
+              onInsert={handleInsert}
+              onDelete={(id) => setDeleteConfirmId(id)}
+              onClick={() => setSelectedTokenId(token.id)}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Single delete confirmation dialog */}
       <Dialog
-        isOpen={isCreateDialogOpen}
-        onClose={() => setIsCreateDialogOpen(false)}
-        title="Add to Library"
+        isOpen={!!deleteConfirmId}
+        onClose={() => setDeleteConfirmId(null)}
+        title="Delete Token"
       >
-        <div className="space-y-4">
-          {/* Type selector */}
-          <div>
-            <label className="text-xs font-medium text-ink-secondary block mb-2">Type</label>
-            <div className="flex gap-2">
-              {(['fragment', 'preset', 'template'] as const).map((type) => (
-                <button
-                  key={type}
-                  onClick={() => setCreateType(type)}
-                  className={clsx(
-                    'flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors',
-                    createType === type
-                      ? 'bg-brass text-surface'
-                      : 'bg-canvas-subtle text-ink-secondary hover:bg-canvas-muted'
-                  )}
-                >
-                  {TYPE_CONFIG[type].icon}
-                  {TYPE_CONFIG[type].label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Name */}
-          <Input
-            label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder={createType === 'fragment' ? 'e.g., Warm lighting' : createType === 'preset' ? 'e.g., Elegant minimal' : 'e.g., Product shot base'}
-          />
-
-          {/* Content based on type */}
-          {createType === 'fragment' && (
-            <Textarea
-              label="Text"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="e.g., warm wood tones, soft lighting, natural shadows"
-              className="min-h-[80px]"
-            />
-          )}
-
-          {createType === 'preset' && (
-            <Input
-              label="Style Tags (comma-separated)"
-              value={styleTags}
-              onChange={(e) => setStyleTags(e.target.value)}
-              placeholder="e.g., sans-serif, elegant, minimal, cool"
-            />
-          )}
-
-          {createType === 'template' && (
-            <Textarea
-              label="Full Prompt"
-              value={content}
-              onChange={(e) => setContent(e.target.value)}
-              placeholder="Enter the complete prompt template..."
-              className="min-h-[120px]"
-            />
-          )}
-
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="ghost" onClick={() => setIsCreateDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="brass" onClick={handleCreate} disabled={!name.trim()}>
-              Add to Library
-            </Button>
-          </div>
+        <p className="text-sm text-ink-secondary mb-6">
+          Are you sure you want to delete this design token? This action cannot
+          be undone.
+        </p>
+        <div className="flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => setDeleteConfirmId(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleDelete}>
+            Delete
+          </Button>
         </div>
       </Dialog>
+
+      {/* Batch delete confirmation dialog */}
+      <Dialog
+        isOpen={isBatchDeleteOpen}
+        onClose={() => setIsBatchDeleteOpen(false)}
+        title="Delete Selected Tokens"
+      >
+        <p className="text-sm text-ink-secondary mb-6">
+          Are you sure you want to delete {selectedIds.size} design token
+          {selectedIds.size !== 1 ? 's' : ''}? This action cannot be undone.
+        </p>
+        <div className="flex justify-end gap-3">
+          <Button variant="ghost" onClick={() => setIsBatchDeleteOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="danger" onClick={handleBatchDelete}>
+            Delete {selectedIds.size} Token{selectedIds.size !== 1 ? 's' : ''}
+          </Button>
+        </div>
+      </Dialog>
+
+      {/* Token detail modal */}
+      <AnimatePresence>
+        {selectedToken && (
+          <TokenDetailView
+            token={selectedToken}
+            onClose={() => setSelectedTokenId(null)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

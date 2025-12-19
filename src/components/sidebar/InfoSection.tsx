@@ -118,12 +118,12 @@ export function InfoSection() {
         {isExpanded && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
+            animate={{ height: '30vh', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.2 }}
-            className="overflow-hidden max-h-[50vh]"
+            className="overflow-hidden"
           >
-            <div className="px-4 pb-4 overflow-y-auto max-h-[calc(50vh-2rem)]">
+            <div className="px-4 pb-4 h-full overflow-y-auto">
               {/* Original User Prompt - Collapsible */}
               {showOriginalPrompt && (
                 <div className="mb-3">

@@ -75,14 +75,18 @@ class MetadataManager:
 
                         for prompt_text, imgs in prompt_groups.items():
                             prompt_id = f"prompt-{uuid.uuid4().hex[:8]}"
-                            data["prompts"].append({
-                                "id": prompt_id,
-                                "prompt": prompt_text,
-                                "title": imgs[0].get("title", "Untitled"),
-                                "category": imgs[0].get("category", "Custom"),
-                                "created_at": imgs[0].get("generated_at", datetime.now().isoformat()),
-                                "images": imgs,
-                            })
+                            data["prompts"].append(
+                                {
+                                    "id": prompt_id,
+                                    "prompt": prompt_text,
+                                    "title": imgs[0].get("title", "Untitled"),
+                                    "category": imgs[0].get("category", "Custom"),
+                                    "created_at": imgs[0].get(
+                                        "generated_at", datetime.now().isoformat()
+                                    ),
+                                    "images": imgs,
+                                }
+                            )
                         data["images"] = []  # Clear old structure
 
                 # Migration: ensure Favorites collection exists
@@ -107,8 +111,8 @@ class MetadataManager:
         """Create the default Favorites collection."""
         return {
             "id": "coll-favorites",
-            "name": "⭐ Favorites",
-            "description": "Your favorite images",
+            "name": "Favorites",
+            "description": "",
             "image_ids": [],
             "created_at": datetime.now().isoformat(),
         }
@@ -165,8 +169,7 @@ class MetadataManager:
             dict: The prompt data if found, None otherwise
         """
         return next(
-            (p for p in metadata.get("prompts", []) if p.get("id") == prompt_id),
-            None
+            (p for p in metadata.get("prompts", []) if p.get("id") == prompt_id), None
         )
 
     def delete_image_file(

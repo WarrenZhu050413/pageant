@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Check, Heart } from 'lucide-react';
+import { Check, Heart, Sparkles, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
+import { toast } from '../../store/toastStore';
 import { SUGGESTED_TAGS, type DesignAxis, type DesignDimension } from '../../types';
 
 // Helper to find which axis a tag belongs to
@@ -47,10 +48,13 @@ export function DesignAnnotation() {
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
   const toggleDimensionLike = useStore((s) => s.toggleDimensionLike);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
+  const createToken = useStore((s) => s.createToken);
 
   const [annotation, setAnnotation] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [expandedDimension, setExpandedDimension] = useState<string | null>(null);
+  const [extractingAxes, setExtractingAxes] = useState<Set<string>>(new Set());
 
   const currentPrompt = useMemo(
     () => prompts.find((p) => p.id === currentPromptId) || null,
@@ -97,9 +101,10 @@ export function DesignAnnotation() {
     );
   }, [currentImage?.annotations]);
 
-  // Sync annotation with current image
+  // Sync annotation with current image and reset expanded dimension
   useEffect(() => {
     setAnnotation(currentImage?.annotation || '');
+    setExpandedDimension(null);
   }, [currentImage?.id, currentImage?.annotation]);
 
   const handleTagClick = (tag: string) => {
@@ -127,6 +132,44 @@ export function DesignAnnotation() {
     toggleDimensionLike(currentImage.id, axis, !isLiked);
   };
 
+  // Handle inline extraction of a dimension as a design token (non-blocking, allows concurrent extractions)
+  const handleInlineExtract = async (axis: string, dim: DesignDimension) => {
+    if (!currentImage) return;
+
+    // Check if this specific axis is already being extracted
+    if (extractingAxes.has(axis)) return;
+
+    // Add this axis to the extracting set
+    setExtractingAxes((prev) => new Set(prev).add(axis));
+
+    try {
+      const token = await createToken({
+        name: dim.name,
+        description: dim.description,
+        image_ids: [currentImage.id],
+        prompts: [dim.generation_prompt],
+        creation_method: 'ai-extraction',
+        dimension: dim,
+        generate_concept: true,
+        category: axis,
+        tags: dim.tags,
+      });
+
+      if (token) {
+        toast.success(`Token "${dim.name}" created`);
+      }
+    } catch (error) {
+      toast.error(`Failed to create token: ${(error as Error).message}`);
+    } finally {
+      // Remove this axis from the extracting set
+      setExtractingAxes((prev) => {
+        const next = new Set(prev);
+        next.delete(axis);
+        return next;
+      });
+    }
+  };
+
   // Get design dimensions from current image (limit to 3 most important)
   const dimensions = useMemo(() => {
     if (!currentImage?.design_dimensions) return [];
@@ -140,7 +183,7 @@ export function DesignAnnotation() {
   const hasChanges = annotation !== (currentImage.annotation || '');
 
   return (
-    <div className="px-6 py-5">
+    <div className="px-6 py-5 h-52 overflow-y-auto">
       {/* Three Column Layout: Notes | Design Tags | Dimensions */}
       <div className="flex gap-6">
         {/* Left Column: Notes */}
@@ -235,42 +278,77 @@ export function DesignAnnotation() {
           )}
         </div>
 
-        {/* Right Column: Design Dimensions - compact list */}
-        {hasDimensions && (
-          <div className="w-56 shrink-0">
-            <div className="space-y-1">
+        {/* Right Column: Design Dimensions - click to expand */}
+        <div className="w-64 shrink-0">
+          {hasDimensions ? (
+            <div className="divide-y divide-border/30">
               {dimensions.map(([axis, dim]) => {
                 const liked = isDimensionLiked(axis, currentImage.liked_dimension_axes);
+                const isExpanded = expandedDimension === axis;
+                const isExtracting = extractingAxes.has(axis);
                 return (
-                  <button
-                    key={axis}
-                    onClick={() => handleDimensionLikeClick(axis)}
-                    className={clsx(
-                      'w-full px-2.5 py-1.5 rounded-md text-left transition-all',
-                      'flex items-center gap-2 group',
-                      liked
-                        ? 'bg-brass/15 text-brass-dark'
-                        : 'bg-canvas-subtle hover:bg-canvas-muted text-ink-secondary'
+                  <div key={axis} className="py-1.5 first:pt-0 last:pb-0">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDimensionLikeClick(axis);
+                        }}
+                        className={clsx(
+                          'p-1 rounded transition-colors shrink-0',
+                          liked
+                            ? 'text-brass'
+                            : 'text-ink-muted/40 hover:text-brass/60'
+                        )}
+                        title="Like this dimension"
+                      >
+                        <Heart size={12} fill={liked ? 'currentColor' : 'none'} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleInlineExtract(axis, dim);
+                        }}
+                        disabled={isExtracting}
+                        className={clsx(
+                          'p-1 rounded transition-colors shrink-0',
+                          isExtracting
+                            ? 'text-brass animate-pulse'
+                            : 'text-ink-muted/40 hover:text-brass/60'
+                        )}
+                        title="Extract as design token"
+                      >
+                        {isExtracting ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <Sparkles size={12} />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setExpandedDimension(isExpanded ? null : axis)}
+                        className={clsx(
+                          'flex-1 text-left text-xs transition-colors truncate',
+                          liked ? 'text-brass-dark font-medium' : 'text-ink-secondary hover:text-ink'
+                        )}
+                      >
+                        {dim.name}
+                      </button>
+                    </div>
+                    {isExpanded && (
+                      <p className="mt-1 ml-14 text-[0.65rem] text-ink-muted leading-snug">
+                        {dim.description}
+                      </p>
                     )}
-                    title={dim.description}
-                  >
-                    <Heart
-                      size={12}
-                      className={clsx(
-                        'shrink-0 transition-colors',
-                        liked ? 'text-brass' : 'text-ink-muted/50 group-hover:text-brass/60'
-                      )}
-                      fill={liked ? 'currentColor' : 'none'}
-                    />
-                    <span className="text-xs leading-tight truncate">
-                      {dim.name}
-                    </span>
-                  </button>
+                  </div>
                 );
               })}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="text-xs text-ink-muted/50 italic">
+              Dimensions appear on new generations
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

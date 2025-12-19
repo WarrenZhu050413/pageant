@@ -160,9 +160,11 @@ class PromptVariation(BaseModel):
     """A single prompt variation with optional per-variation context assignment."""
     id: str
     text: str
+    title: str = ""  # Short title for this variation (2-5 words)
     mood: str = ""
     type: str = ""
     design: dict[str, list[str]] = {}  # Design tags by axis (colors, composition, etc.)
+    design_dimensions: list[dict] = []  # 3-4 substantial design dimensions from AI
     # Per-variation context image assignment
     recommended_context_ids: list[str] = []  # Image IDs to use for THIS variation
     context_reasoning: str | None = None  # Why these images were chosen
@@ -247,27 +249,6 @@ class PolishPromptsResponse(BaseModel):
     """Response with polished variations."""
     success: bool
     polished_variations: list[PolishedVariationResponse] = []
-    error: str | None = None
-
-
-# === Polish Annotations (Image Annotation Refinement) ===
-class PolishAnnotationsRequest(BaseModel):
-    """Request for polishing image annotations."""
-    image_ids: list[str]
-
-
-class PolishedAnnotationItem(BaseModel):
-    """A single polished annotation result."""
-    image_id: str
-    original_annotation: str
-    polished_annotation: str
-
-
-class PolishAnnotationsResponse(BaseModel):
-    """Response with polished annotations."""
-    success: bool
-    polished: list[PolishedAnnotationItem] = []
-    skipped: list[str] = []  # Image IDs skipped (empty annotations)
     error: str | None = None
 
 
@@ -595,11 +576,12 @@ def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[byt
     return context_images
 
 
-def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple[str, bytes, str, str | None, dict | None]]:
+def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple[str, bytes, str, str | None, dict | None, list[str] | None]]:
     """Load context images with IDs for per-variation assignment.
 
-    Returns list of (image_id, bytes, mime_type, annotation, confirmed_dimensions) tuples.
+    Returns list of (image_id, bytes, mime_type, annotation, confirmed_dimensions, liked_dimension_axes) tuples.
     confirmed_dimensions is a dict of axis -> DesignDimension for dimensions with confirmed=True.
+    liked_dimension_axes is a list of axis names the user has liked.
     """
     pool = []
     for img_id in image_ids:
@@ -620,12 +602,18 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
                 if not confirmed_dims:
                     confirmed_dims = None
 
+            # Extract liked dimension axes
+            liked_dimension_axes = img_data.get("liked_dimension_axes")
+            if liked_dimension_axes and not liked_dimension_axes:
+                liked_dimension_axes = None  # Don't include empty list
+
             pool.append((
                 img_id,
                 img_path.read_bytes(),
                 img_data.get("mime_type", "image/png"),
                 annotation.strip() if annotation else None,
                 confirmed_dims,
+                liked_dimension_axes,
             ))
     return pool
 
@@ -684,9 +672,11 @@ async def generate_prompt_variations_stream(
                         variations.append({
                             "id": f"var-{uuid.uuid4().hex[:8]}",
                             "text": scene["description"],
+                            "title": scene.get("title", ""),
                             "mood": scene["mood"],
                             "type": scene["type"],
                             "design": scene.get("design", {}),
+                            "design_dimensions": scene.get("design_dimensions", []),
                             "recommended_context_ids": scene.get("recommended_context_ids", []),
                             "context_reasoning": scene.get("context_reasoning"),
                         })
@@ -694,7 +684,7 @@ async def generate_prompt_variations_stream(
                     # Convert annotation suggestions
                     annotation_suggestions = []
                     if event.get("annotation_suggestions"):
-                        annotation_map = {img_id: ann for img_id, _, _, ann, _ in (context_image_pool or [])}
+                        annotation_map = {item[0]: item[3] for item in (context_image_pool or [])}
                         for sug in event["annotation_suggestions"]:
                             annotation_suggestions.append({
                                 "image_id": sug["image_id"],
@@ -752,7 +742,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     if req.context_image_ids:
         context_image_pool = _load_context_image_pool(metadata, req.context_image_ids)
         if context_image_pool:
-            pool_summary = [(img_id, ann[:30] if ann else "(no annotation)") for img_id, _, _, ann, _ in context_image_pool]
+            pool_summary = [(item[0], item[3][:30] if item[3] else "(no annotation)") for item in context_image_pool]
             logger.info(f"[CONTEXT TRACE] Phase 1 - Loaded {len(context_image_pool)} context image(s) as pool:")
             for img_id, ann_preview in pool_summary:
                 logger.info(f"  - {img_id}: {ann_preview}...")
@@ -781,12 +771,16 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
         # Convert SceneVariation objects to response model with per-variation context
         variations = []
         for scene in scene_variations[:count]:
+            # Convert design dimensions to list of dicts
+            dims = [dim.model_dump() for dim in scene.design_dimensions] if scene.design_dimensions else []
             variations.append(PromptVariation(
                 id=f"var-{uuid.uuid4().hex[:8]}",
                 text=scene.description,
+                title=scene.title,
                 mood=scene.mood,
                 type=scene.type,
                 design=scene.design.model_dump() if scene.design else {},
+                design_dimensions=dims,
                 recommended_context_ids=scene.recommended_context_ids or [],
                 context_reasoning=scene.context_reasoning,
             ))
@@ -795,7 +789,7 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
         annotation_suggestion_responses = []
         if annotation_suggestions:
             # Build a map of image_id -> original annotation from the pool
-            annotation_map = {img_id: ann for img_id, _, _, ann, _ in (context_image_pool or [])}
+            annotation_map = {item[0]: item[3] for item in (context_image_pool or [])}
             for sug in annotation_suggestions:
                 annotation_suggestion_responses.append(AnnotationSuggestionResponse(
                     image_id=sug.image_id,
@@ -921,14 +915,23 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
     for i, result in enumerate(results):
         if result.get("success"):
             del result["success"]
-            # Add mood and design from original prompt data if available
+            # Add mood, title, and design from original prompt data if available
             if i < len(req.prompts):
                 result["mood"] = req.prompts[i].get("mood", "")
+                result["variation_title"] = req.prompts[i].get("title", "")  # Short variation title
                 result["variation_type"] = "user-edited"
                 # Add design tags if passed from frontend
                 if "design" in req.prompts[i]:
                     result["design_tags"] = _flatten_design(req.prompts[i]["design"])
                     result["annotations"] = req.prompts[i]["design"]
+                # Add design dimensions if passed from frontend
+                if "design_dimensions" in req.prompts[i]:
+                    # Convert list to dict keyed by axis for easy access
+                    dims_list = req.prompts[i]["design_dimensions"]
+                    if dims_list:
+                        result["design_dimensions"] = {
+                            dim["axis"]: dim for dim in dims_list
+                        }
             images.append(result)
         else:
             errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
@@ -1032,94 +1035,6 @@ async def polish_prompt_variations(req: PolishPromptsRequest):
         return PolishPromptsResponse(
             success=False,
             error=str(e),
-        )
-
-
-@app.post("/api/polish-annotations", response_model=PolishAnnotationsResponse)
-async def polish_image_annotations(req: PolishAnnotationsRequest):
-    """Polish/refine image annotations for better AI context.
-
-    - Skips images with empty annotations (respects user choice not to annotate)
-    - Refines existing text to be more precise and evocative
-    - Preserves user's intent while improving clarity
-    - Uses fast text model for quick turnaround
-    """
-    if not req.image_ids:
-        return PolishAnnotationsResponse(success=False, error="No image IDs provided")
-
-    logger.info(f"Polish annotations request: {len(req.image_ids)} images")
-
-    metadata = load_metadata()
-
-    # Collect annotations to polish (skip empty)
-    to_polish = []
-    skipped = []
-
-    for image_id in req.image_ids:
-        img_data, img_path = _find_image_by_id(metadata, image_id)
-        if not img_data:
-            skipped.append(image_id)
-            continue
-
-        # Support both old "caption" field and new "annotation" field
-        annotation = (img_data.get("annotation") or img_data.get("caption", "") or "").strip()
-        if not annotation:
-            skipped.append(image_id)
-            continue
-
-        to_polish.append({
-            "image_id": image_id,
-            "annotation": annotation,
-            "image_path": img_path,
-        })
-
-    if not to_polish:
-        return PolishAnnotationsResponse(
-            success=True,
-            polished=[],
-            skipped=skipped,
-        )
-
-    try:
-        # Polish annotations using gemini service
-        polished_results = await gemini.polish_annotations(to_polish)
-
-        # Update metadata with polished annotations
-        for item in polished_results:
-            for prompt in metadata.get("prompts", []):
-                for img in prompt.get("images", []):
-                    if img["id"] == item.image_id:
-                        img["annotation"] = item.polished_annotation
-                        # Remove old "caption" field if present (migration)
-                        img.pop("caption", None)
-                        break
-
-        save_metadata(metadata)
-
-        # Convert to response format
-        polished_response = [
-            PolishedAnnotationItem(
-                image_id=item.image_id,
-                original_annotation=item.original_annotation,
-                polished_annotation=item.polished_annotation,
-            )
-            for item in polished_results
-        ]
-
-        logger.info(f"Successfully polished {len(polished_response)} annotations, skipped {len(skipped)}")
-
-        return PolishAnnotationsResponse(
-            success=True,
-            polished=polished_response,
-            skipped=skipped,
-        )
-
-    except Exception as e:
-        logger.error(f"Polish annotations failed: {e}")
-        return PolishAnnotationsResponse(
-            success=False,
-            error=str(e),
-            skipped=skipped,
         )
 
 
@@ -1507,180 +1422,245 @@ async def list_images():
 
 
 # ============================================================
-# Design Library (Fragments, Presets, Templates)
+# Design Tokens
 # ============================================================
 
-class LibraryItemRequest(BaseModel):
-    type: str  # 'fragment', 'preset', 'template'
+class SuggestDimensionsRequest(BaseModel):
+    """Request for suggesting design dimensions from multiple images."""
+    image_ids: list[str]
+    count: int = 5
+
+
+class DesignDimensionData(BaseModel):
+    """A design dimension for token creation."""
+    axis: str
     name: str
-    description: str = ""
-    text: str | None = None  # For fragments
-    style_tags: list[str] | None = None  # For presets
-    prompt: str | None = None  # For templates
-    category: str = ""
+    description: str
+    tags: list[str]
+    generation_prompt: str
+    commonality: str | None = None
+
+
+class CreateTokenRequest(BaseModel):
+    """Request for creating a design token."""
+    name: str
+    description: str | None = None
+    image_ids: list[str]
+    prompts: list[str] = []
+    creation_method: Literal["ai-extraction", "manual"]
+
+    # For AI extraction only
+    dimension: DesignDimensionData | None = None
+    generate_concept: bool = False
+
+    # Categorization
+    category: str | None = None
     tags: list[str] = []
 
 
-class ExtractDesignTokenRequest(BaseModel):
-    """Request for extracting a design token from an image."""
-    image_id: str
-    annotation: str | None = None  # Override image's annotation
-    liked_tags: list[str] | None = None  # Override image's liked_axes
+def _build_token_image(img_data: dict) -> dict:
+    """Build a DesignTokenImage from image data."""
+    return {
+        "id": img_data["id"],
+        "annotation": img_data.get("annotation"),
+        "liked_axes": img_data.get("liked_axes"),
+        "image_path": img_data.get("image_path"),
+    }
 
 
-@app.get("/api/library")
-async def list_library_items():
-    """List all design library items."""
+def _find_image_data(metadata: dict, image_id: str) -> tuple[dict | None, Path | None]:
+    """Find image data and path by ID."""
+    for prompt_data in metadata.get("prompts", []):
+        for img in prompt_data.get("images", []):
+            if img["id"] == image_id:
+                return img, IMAGES_DIR / img["image_path"]
+    return None, None
+
+
+@app.get("/api/tokens")
+async def list_tokens():
+    """List all design tokens."""
     metadata = load_metadata()
-    return {"items": metadata.get("library", [])}
+    return {"tokens": metadata.get("tokens", [])}
 
 
-@app.post("/api/library")
-async def create_library_item(req: LibraryItemRequest):
-    """Create a new library item (fragment, preset, or template)."""
-    if req.type not in ("fragment", "preset", "template"):
-        raise HTTPException(status_code=400, detail="Invalid type. Must be fragment, preset, or template")
-
+@app.post("/api/tokens")
+async def create_token(req: CreateTokenRequest):
+    """Create a new design token (manual or from extraction)."""
     metadata = load_metadata()
-    if "library" not in metadata:
-        metadata["library"] = []
+    if "tokens" not in metadata:
+        metadata["tokens"] = []
 
-    item_id = f"lib-{uuid.uuid4().hex[:8]}"
-    item = {
-        "id": item_id,
-        "type": req.type,
+    # Build token images from image IDs
+    token_images = []
+    for image_id in req.image_ids:
+        img_data, _ = _find_image_data(metadata, image_id)
+        if img_data:
+            token_images.append(_build_token_image(img_data))
+
+    if not token_images:
+        raise HTTPException(status_code=400, detail="No valid images found")
+
+    token_id = f"tok-{uuid.uuid4().hex[:8]}"
+    now = datetime.now().isoformat()
+
+    token = {
+        "id": token_id,
         "name": req.name,
         "description": req.description,
-        "created_at": datetime.now().isoformat(),
+        "created_at": now,
         "use_count": 0,
+        "images": token_images,
+        "prompts": req.prompts,
+        "creation_method": req.creation_method,
         "category": req.category,
         "tags": req.tags,
     }
 
-    # Type-specific fields
-    if req.type == "fragment":
-        item["text"] = req.text or ""
-    elif req.type == "preset":
-        item["style_tags"] = req.style_tags or []
-    elif req.type == "template":
-        item["prompt"] = req.prompt or ""
-
-    metadata["library"].append(item)
-    save_metadata(metadata)
-    logger.info(f"Created library item: {item_id} - {req.name} ({req.type})")
-    return {"success": True, "item": item}
-
-
-@app.delete("/api/library/{item_id}")
-async def delete_library_item(item_id: str):
-    """Delete a library item."""
-    metadata = load_metadata()
-    library = metadata.get("library", [])
-    for i, item in enumerate(library):
-        if item["id"] == item_id:
-            library.pop(i)
-            save_metadata(metadata)
-            logger.info(f"Deleted library item: {item_id}")
-            return {"success": True}
-    raise HTTPException(status_code=404, detail="Library item not found")
-
-
-@app.post("/api/library/{item_id}/use")
-async def use_library_item(item_id: str):
-    """Increment use count for a library item."""
-    metadata = load_metadata()
-    for item in metadata.get("library", []):
-        if item["id"] == item_id:
-            item["use_count"] = item.get("use_count", 0) + 1
-            item["last_used"] = datetime.now().isoformat()
-            save_metadata(metadata)
-            return {"success": True, "item": item}
-    raise HTTPException(status_code=404, detail="Library item not found")
-
-
-@app.post("/api/extract-design-token")
-async def extract_design_token(req: ExtractDesignTokenRequest):
-    """Extract a reusable design token from an image.
-
-    Uses the user's annotation and liked tags to generate a condensed prompt
-    fragment that captures what they appreciate about the image.
-    """
-    metadata = load_metadata()
-
-    # Find the image and its parent prompt
-    img_data = None
-    prompt_id = None
-    img_path = None
-
-    for prompt_data in metadata.get("prompts", []):
-        for img in prompt_data.get("images", []):
-            if img["id"] == req.image_id:
-                img_data = img
-                prompt_id = prompt_data["id"]
-                img_path = IMAGES_DIR / img["image_path"]
-                break
-        if img_data:
-            break
-
-    if not img_data:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    # Get annotation: explicit > from image
-    annotation = req.annotation
-    if annotation is None:
-        annotation = img_data.get("annotation") or img_data.get("caption", "")
-
-    # Get liked_tags: explicit > flattened from liked_axes
-    liked_tags = req.liked_tags
-    if liked_tags is None:
-        liked_axes = img_data.get("liked_axes", {})
-        liked_tags = []
-        for axis, tags in liked_axes.items():
-            liked_tags.extend(tags)
-
-    # Extract design token using Gemini
-    try:
-        image_bytes = img_path.read_bytes()
-        mime_type = img_data.get("mime_type", "image/png")
-
-        extraction = await gemini.extract_design_token(
-            image_bytes=image_bytes,
-            image_mime_type=mime_type,
-            annotation=annotation,
-            liked_tags=liked_tags,
-        )
-
-        # Create library item
-        if "library" not in metadata:
-            metadata["library"] = []
-
-        item_id = f"lib-{uuid.uuid4().hex[:8]}"
-        item = {
-            "id": item_id,
-            "type": "design-token",
-            "name": extraction.name,
-            "text": extraction.text,
-            "style_tags": extraction.style_tags,
-            "category": extraction.category,
-            "source_image_id": req.image_id,
-            "source_prompt_id": prompt_id,
-            "extracted_from": {
-                "annotation": annotation if annotation else None,
-                "liked_tags": liked_tags if liked_tags else None,
-            },
-            "created_at": datetime.now().isoformat(),
-            "use_count": 0,
+    # Add extraction metadata for AI-extracted tokens
+    if req.creation_method == "ai-extraction" and req.dimension:
+        token["extraction"] = {
+            "dimension": req.dimension.model_dump(),
+            "generation_prompt": req.dimension.generation_prompt,
         }
+        # Add dimension prompt to token prompts
+        if req.dimension.generation_prompt and req.dimension.generation_prompt not in req.prompts:
+            token["prompts"].append(req.dimension.generation_prompt)
+        # Use dimension axis as category if not specified
+        if not req.category:
+            token["category"] = req.dimension.axis
+        # Use dimension tags if not specified
+        if not req.tags:
+            token["tags"] = req.dimension.tags
 
-        metadata["library"].append(item)
-        save_metadata(metadata)
-        logger.info(f"Extracted design token: {item_id} - {extraction.name}")
+    # Generate concept image if requested
+    if req.generate_concept and req.dimension:
+        try:
+            dimension_dict = req.dimension.model_dump()
+            result = await gemini.generate_concept_image(
+                dimension=dimension_dict,
+                aspect_ratio="1:1",
+            )
+            if result.images:
+                # Save concept image
+                concept_filename = f"concept-{uuid.uuid4().hex[:8]}.jpg"
+                concept_path = IMAGES_DIR / concept_filename
+                # Decode base64 string to bytes before writing
+                image_data = base64.b64decode(result.images[0]["data"])
+                concept_path.write_bytes(image_data)
+                token["concept_image_path"] = concept_filename
+                token["concept_image_id"] = f"concept-{token_id}"
+                logger.info(f"Generated concept image for token: {concept_filename}")
+        except Exception as e:
+            logger.warning(f"Failed to generate concept image: {e}")
+            # Continue without concept image
 
-        return {"success": True, "item": item}
+    metadata["tokens"].append(token)
+    save_metadata(metadata)
+    logger.info(f"Created token: {token_id} - {req.name} ({req.creation_method})")
+    return {"success": True, "token": token}
 
+
+@app.delete("/api/tokens/{token_id}")
+async def delete_token(token_id: str):
+    """Delete a design token."""
+    metadata = load_metadata()
+    tokens = metadata.get("tokens", [])
+    for i, token in enumerate(tokens):
+        if token["id"] == token_id:
+            tokens.pop(i)
+            save_metadata(metadata)
+            logger.info(f"Deleted token: {token_id}")
+            return {"success": True}
+    raise HTTPException(status_code=404, detail="Token not found")
+
+
+@app.post("/api/tokens/{token_id}/use")
+async def use_token(token_id: str):
+    """Increment use count for a token."""
+    metadata = load_metadata()
+    for token in metadata.get("tokens", []):
+        if token["id"] == token_id:
+            token["use_count"] = token.get("use_count", 0) + 1
+            token["last_used"] = datetime.now().isoformat()
+            save_metadata(metadata)
+            return {"success": True, "token": token}
+    raise HTTPException(status_code=404, detail="Token not found")
+
+
+@app.post("/api/tokens/{token_id}/generate-concept")
+async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
+    """Generate a concept image for an existing token."""
+    metadata = load_metadata()
+    for token in metadata.get("tokens", []):
+        if token["id"] == token_id:
+            extraction = token.get("extraction")
+            if not extraction:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Token has no extraction dimension - cannot generate concept"
+                )
+
+            try:
+                result = await gemini.generate_concept_image(
+                    dimension=extraction.get("dimension", {}),
+                    aspect_ratio=aspect_ratio,
+                )
+                if result.images:
+                    concept_filename = f"concept-{uuid.uuid4().hex[:8]}.jpg"
+                    concept_path = IMAGES_DIR / concept_filename
+                    # Decode base64 string to bytes before writing
+                    image_data = base64.b64decode(result.images[0]["data"])
+                    concept_path.write_bytes(image_data)
+                    token["concept_image_path"] = concept_filename
+                    token["concept_image_id"] = f"concept-{token_id}"
+                    save_metadata(metadata)
+                    logger.info(f"Generated concept image: {concept_filename}")
+                    return {
+                        "success": True,
+                        "concept_image_path": concept_filename,
+                        "concept_image_id": token["concept_image_id"],
+                    }
+                return {"success": False, "error": "No image generated"}
+            except Exception as e:
+                logger.error(f"Concept generation failed: {e}")
+                return {"success": False, "error": str(e)}
+
+    raise HTTPException(status_code=404, detail="Token not found")
+
+
+@app.post("/api/extract/suggest-dimensions")
+async def suggest_dimensions(req: SuggestDimensionsRequest):
+    """Suggest design dimensions common across multiple images.
+
+    Uses Flash model for speed. Returns dimensions suitable for
+    creating design tokens.
+    """
+    if not req.image_ids:
+        return {"success": False, "error": "No image IDs provided", "dimensions": []}
+
+    metadata = load_metadata()
+
+    # Load images
+    images = []
+    for image_id in req.image_ids:
+        img_data, img_path = _find_image_data(metadata, image_id)
+        if img_data and img_path and img_path.exists():
+            mime_type = img_data.get("mime_type", "image/png")
+            images.append((img_path.read_bytes(), mime_type))
+
+    if not images:
+        return {"success": False, "error": "No valid images found", "dimensions": []}
+
+    try:
+        dimensions = await gemini.suggest_dimensions_multi(
+            images=images,
+            count=req.count,
+        )
+        return {"success": True, "dimensions": dimensions}
     except Exception as e:
-        logger.error(f"Design token extraction failed: {e}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"Dimension suggestion failed: {e}")
+        return {"success": False, "error": str(e), "dimensions": []}
 
 
 # ============================================================
@@ -1794,51 +1774,63 @@ async def export_gallery_html():
 
 
 # ============================================================
-# TASTE EXPORT: Portable Visual Taste Profiles
+# TASTE EXPORT: Portable Design Token Library
 # ============================================================
 
 try:
-    from backend.taste_exporter import compile_taste_export
+    from backend.taste_exporter import compile_taste_export, export_to_dict
 except ImportError:
-    from taste_exporter import compile_taste_export
-from dataclasses import asdict
+    from taste_exporter import compile_taste_export, export_to_dict
 
 
 @app.get("/api/export/taste")
-async def export_taste_profile(include_images: bool = False, top_n: int = 20):
-    """Export portable visual taste profile as JSON.
+async def export_taste_profile(include_images: bool = False):
+    """Export all design tokens as JSON.
 
-    Computes axis weights on-the-fly from liked_axes data if not pre-compiled.
+    Returns the full design token library with optional base64-encoded images.
     """
     metadata = load_metadata()
 
     export = compile_taste_export(
         metadata,
         include_images=include_images,
-        top_n_exemplars=top_n,
+        images_dir=IMAGES_DIR if include_images else None,
     )
 
-    return asdict(export)
+    return export_to_dict(export)
 
 
 @app.get("/api/export/taste/zip")
-async def export_taste_with_images(top_n: int = 20):
-    """Export taste profile + exemplar images as ZIP."""
+async def export_taste_with_images():
+    """Export design tokens + images as ZIP."""
     metadata = load_metadata()
 
-    export = compile_taste_export(metadata, top_n_exemplars=top_n)
+    export = compile_taste_export(
+        metadata,
+        include_images=False,  # We'll add images to ZIP separately
+        images_dir=None,
+    )
 
     # Create ZIP with JSON + images
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         # Add manifest
-        zf.writestr("taste-profile.json", json.dumps(asdict(export), indent=2))
+        zf.writestr("taste-profile.json", json.dumps(export_to_dict(export), indent=2))
 
-        # Add exemplar images
-        for exemplar in export.exemplars["images"]:
-            img_path = IMAGES_DIR / exemplar["filename"]
-            if img_path.exists():
-                zf.write(img_path, f"exemplars/{exemplar['filename']}")
+        # Add token images
+        for token in export.tokens:
+            # Add source images
+            for img in token.images:
+                if img.image_path:
+                    img_path = IMAGES_DIR / img.image_path
+                    if img_path.exists():
+                        zf.write(img_path, f"images/{img.image_path}")
+
+            # Add concept image
+            if token.concept_image_path:
+                concept_path = IMAGES_DIR / token.concept_image_path
+                if concept_path.exists():
+                    zf.write(concept_path, f"concepts/{token.concept_image_path}")
 
     zip_buffer.seek(0)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1847,7 +1839,7 @@ async def export_taste_with_images(top_n: int = 20):
         content=zip_buffer.getvalue(),
         media_type="application/zip",
         headers={
-            "Content-Disposition": f'attachment; filename="taste-profile-{timestamp}.zip"'
+            "Content-Disposition": f'attachment; filename="design-tokens-{timestamp}.zip"'
         }
     )
 
@@ -2539,6 +2531,44 @@ async def toggle_axis_like(image_id: str, req: LikeAxisRequest):
                 save_metadata(metadata)
                 logger.info(f"Updated axis preference for {image_id}: {req.axis}[{req.tag}]={req.liked}")
                 return {"id": image_id, "liked_axes": img["liked_axes"]}
+
+    raise HTTPException(status_code=404, detail="Image not found")
+
+
+class LikeDimensionRequest(BaseModel):
+    axis: str  # The dimension axis (colors, composition, layout, aesthetic)
+    liked: bool  # True to add, False to remove
+
+
+@app.patch("/api/images/{image_id}/like-dimension")
+async def toggle_dimension_like(image_id: str, req: LikeDimensionRequest):
+    """Toggle dimension preference for a specific axis on an image.
+
+    liked_dimension_axes is an array of axis strings that the user has liked.
+    Supports multiple likes per image.
+    """
+    metadata = load_metadata()
+
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == image_id:
+                if "liked_dimension_axes" not in img:
+                    img["liked_dimension_axes"] = []
+
+                liked_axes = img["liked_dimension_axes"]
+
+                if req.liked:
+                    # Add axis if not present
+                    if req.axis not in liked_axes:
+                        liked_axes.append(req.axis)
+                else:
+                    # Remove axis if present
+                    if req.axis in liked_axes:
+                        liked_axes.remove(req.axis)
+
+                save_metadata(metadata)
+                logger.info(f"Updated dimension preference for {image_id}: {req.axis}={req.liked}, now liked: {liked_axes}")
+                return {"success": True, "liked_dimension_axes": liked_axes}
 
     raise HTTPException(status_code=404, detail="Image not found")
 

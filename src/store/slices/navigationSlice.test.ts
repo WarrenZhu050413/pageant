@@ -67,8 +67,8 @@ describe('navigationSlice', () => {
 
   describe('setRightTab', () => {
     it('updates rightTab', () => {
-      slice.setRightTab('info')
-      expect(slice.rightTab).toBe('info')
+      slice.setRightTab('settings')
+      expect(slice.rightTab).toBe('settings')
     })
   })
 
@@ -90,6 +90,27 @@ describe('navigationSlice', () => {
     it('updates currentImageIndex', () => {
       slice.setCurrentImageIndex(3)
       expect(slice.currentImageIndex).toBe(3)
+    })
+  })
+
+  describe('no-auto-navigation policy', () => {
+    // Documents the intentional behavior change: after generation,
+    // we do NOT auto-navigate to new images. User must manually select them.
+    // This is implemented in the main store's generate() function.
+    it('navigation state should not change unless explicitly set', () => {
+      // Set initial navigation state
+      slice.currentPromptId = 'original-prompt-123'
+      slice.currentImageIndex = 2
+
+      // Navigation functions only change state when explicitly called
+      // (the generate function no longer sets currentPromptId)
+      expect(slice.currentPromptId).toBe('original-prompt-123')
+      expect(slice.currentImageIndex).toBe(2)
+
+      // Only explicit setCurrentPrompt changes the state
+      slice.setCurrentPrompt('new-prompt')
+      expect(slice.currentPromptId).toBe('new-prompt')
+      expect(slice.currentImageIndex).toBe(0) // Reset on new prompt
     })
   })
 })

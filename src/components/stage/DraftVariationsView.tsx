@@ -376,16 +376,6 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                           {variation.title}
                         </span>
                       )}
-                      {variation.mood && (
-                        <Badge variant="secondary" size="sm" className="shrink-0">
-                          {variation.mood}
-                        </Badge>
-                      )}
-                      {variation.type && variation.type !== 'faithful' && (
-                        <Badge variant="outline" size="sm" className="shrink-0">
-                          {variation.type}
-                        </Badge>
-                      )}
                       {/* Edited indicator */}
                       {variation.isEdited && (
                         <Badge variant="outline" size="sm" className="text-warning border-warning/30 bg-warning-muted shrink-0">
@@ -496,41 +486,62 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                     </div>
                   </div>
 
-                  {/* Design tags - clickable to emphasize */}
-                  {variation.design && Object.keys(variation.design).length > 0 && (
+                  {/* Design tags and dimensions */}
+                  {(variation.design && Object.keys(variation.design).length > 0) ||
+                   (variation.design_dimensions && variation.design_dimensions.length > 0) ? (
                     <div className="px-3 pb-3 pt-1 border-t border-border/30">
-                      <div className="space-y-1.5">
-                        {Object.entries(variation.design).map(([axis, tags]) => (
-                          <div key={axis} className="flex items-start gap-2">
-                            <span className="text-[0.6rem] text-ink-muted w-16 shrink-0 pt-0.5 capitalize">
-                              {axis}:
-                            </span>
-                            <div className="flex flex-wrap gap-1">
-                              {(tags as string[]).map((tag) => {
-                                const isEmphasized = variation.emphasizedTags?.includes(tag);
-                                return (
-                                  <button
-                                    key={tag}
-                                    onClick={() => toggleDraftVariationTag(draft.id, variation.id, tag)}
-                                    className={clsx(
-                                      'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.65rem] transition-all',
-                                      isEmphasized
-                                        ? 'bg-brass/20 text-brass border border-brass/40'
-                                        : 'bg-canvas-muted text-ink-tertiary border border-transparent hover:bg-canvas-muted/80'
-                                    )}
-                                    title={isEmphasized ? 'Click to de-emphasize' : 'Click to emphasize in polish'}
-                                  >
-                                    {isEmphasized && <Heart size={8} className="fill-current" />}
-                                    {tag}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                      <div className="flex gap-6">
+                        {/* Design tags - clickable to emphasize */}
+                        {variation.design && Object.keys(variation.design).length > 0 && (
+                          <div className="flex-1 space-y-1.5">
+                            {Object.entries(variation.design).map(([axis, tags]) => (
+                              <div key={axis} className="flex items-start gap-2">
+                                <span className="text-[0.6rem] text-ink-muted w-16 shrink-0 pt-0.5 capitalize">
+                                  {axis}:
+                                </span>
+                                <div className="flex flex-wrap gap-1">
+                                  {(tags as string[]).map((tag) => {
+                                    const isEmphasized = variation.emphasizedTags?.includes(tag);
+                                    return (
+                                      <button
+                                        key={tag}
+                                        onClick={() => toggleDraftVariationTag(draft.id, variation.id, tag)}
+                                        className={clsx(
+                                          'inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[0.65rem] transition-all',
+                                          isEmphasized
+                                            ? 'bg-brass/20 text-brass border border-brass/40'
+                                            : 'bg-canvas-muted text-ink-tertiary border border-transparent hover:bg-canvas-muted/80'
+                                        )}
+                                        title={isEmphasized ? 'Click to de-emphasize' : 'Click to emphasize in polish'}
+                                      >
+                                        {isEmphasized && <Heart size={8} className="fill-current" />}
+                                        {tag}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
+
+                        {/* Design dimensions - right side */}
+                        {variation.design_dimensions && variation.design_dimensions.length > 0 && (
+                          <div className="w-56 shrink-0 space-y-1.5">
+                            {variation.design_dimensions.slice(0, 3).map((dim) => (
+                              <div
+                                key={dim.name}
+                                className="text-[0.65rem] text-ink-secondary"
+                                title={dim.description}
+                              >
+                                <span className="text-ink">{dim.name}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
-                  )}
+                  ) : null}
 
                   {/* Per-variation context images with inline annotation suggestions */}
                   {variation.recommended_context_ids && variation.recommended_context_ids.length > 0 && (

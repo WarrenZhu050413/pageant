@@ -8,7 +8,6 @@ import {
   Image as ImageIcon,
   Upload,
   FolderUp,
-  Sparkles,
   ChevronDown,
   Zap,
   Settings2,
@@ -41,9 +40,8 @@ export function GenerateTab() {
     const saved = localStorage.getItem(IMAGE_COUNT_KEY);
     return saved ? parseInt(saved, 10) : 4;
   });
+  const [countInput, setCountInput] = useState<string | null>(null); // Temporary input while editing
   const [showDropdown, setShowDropdown] = useState(false);
-  const [customCountInput, setCustomCountInput] = useState<string | null>(null); // For editing 5+ input
-  const [selectedConceptIds, setSelectedConceptIds] = useState<string[]>([]);
   const [showImagePicker, setShowImagePicker] = useState(false);
   const [editingContextImageId, setEditingContextImageId] = useState<string | null>(null);
 
@@ -67,28 +65,28 @@ export function GenerateTab() {
   const selectedIds = useStore((s) => s.selectedIds);
   const collections = useStore((s) => s.collections);
   const getCurrentImage = useStore((s) => s.getCurrentImage);
-  const designTokens = useStore((s) => s.designTokens);
   const settings = useStore((s) => s.settings);
-
-  // Get design tokens from library
-  const concepts = designTokens;
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Initialize Advanced Options from saved settings
+  // Initialize Advanced Options from saved settings (intentional sync from external state)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (settings?.image_size) setImageSize(settings.image_size);
   }, [settings?.image_size]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (settings?.aspect_ratio) setAspectRatio(settings.aspect_ratio);
   }, [settings?.aspect_ratio]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (settings?.seed != null) setSeed(settings.seed.toString());
   }, [settings?.seed]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (settings?.safety_level) setSafetyLevel(settings.safety_level);
   }, [settings?.safety_level]);
 
@@ -108,6 +106,28 @@ export function GenerateTab() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Global +/- keyboard shortcuts for image count
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Skip if typing in an input/textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+
+      if (e.key === '=' || e.key === '+') {
+        e.preventDefault();
+        updateCount(Math.min(99, count + 1));
+      } else if (e.key === '-') {
+        e.preventDefault();
+        updateCount(Math.max(1, count - 1));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [count]);
 
   // Listen for library insert events
   useEffect(() => {
@@ -131,24 +151,6 @@ export function GenerateTab() {
     return () => window.removeEventListener('library-insert', handleLibraryInsert as EventListener);
   }, []);
 
-  // Toggle concept selection
-  const toggleConcept = (id: string) => {
-    setSelectedConceptIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
-  };
-
-  // Get prompts/tags from selected design tokens
-  const getSelectedConceptTags = () => {
-    const selected = concepts.filter((c) => selectedConceptIds.includes(c.id));
-    const allTags: string[] = [];
-    selected.forEach((token) => {
-      if (token.tags) allTags.push(...token.tags);
-      if (token.prompts) allTags.push(...token.prompts);
-    });
-    return [...new Set(allTags)];
-  };
-
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -163,15 +165,8 @@ export function GenerateTab() {
     })
     .filter(Boolean);
 
-  // Build final prompt with selected concepts
-  const buildFinalPrompt = () => {
-    let finalPrompt = prompt.trim();
-    const conceptTags = getSelectedConceptTags();
-    if (conceptTags.length > 0) {
-      finalPrompt = `${finalPrompt}\n\nDesign concepts: ${conceptTags.join(', ')}`;
-    }
-    return finalPrompt;
-  };
+  // Build final prompt
+  const buildFinalPrompt = () => prompt.trim();
 
   // Build image generation params from advanced options
   const buildImageParams = () => ({
@@ -197,7 +192,6 @@ export function GenerateTab() {
     setTitle('');
     setPrompt('');
     setShowDropdown(false);
-    setSelectedConceptIds([]);
     // Reset advanced options to settings values (not empty)
     setImageSize(settings?.image_size || '');
     setAspectRatio(settings?.aspect_ratio || '');
@@ -222,7 +216,6 @@ export function GenerateTab() {
     setTitle('');
     setPrompt('');
     setShowDropdown(false);
-    setSelectedConceptIds([]);
     // Reset advanced options to settings values (not empty)
     setImageSize(settings?.image_size || '');
     setAspectRatio(settings?.aspect_ratio || '');
@@ -276,114 +269,84 @@ export function GenerateTab() {
         placeholder="Auto-generate from prompt"
       />
 
-      {/* Count */}
-      <div className="space-y-1.5">
-        <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
-          Number of Images
+      {/* Count - Inline Editable Number */}
+      <div className="flex items-center gap-3">
+        <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
+          Images
         </label>
-        <div className="flex gap-2">
-          {[1, 2, 3, 4, 5].map((n) => (
-            <button
-              key={n}
-              onClick={() => updateCount(n)}
-              className={clsx(
-                'flex-1 py-2 rounded-lg text-sm font-medium',
-                'transition-all duration-150',
-                count === n
-                  ? 'bg-brass text-surface'
-                  : 'bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle'
-              )}
-            >
-              {n}
-            </button>
-          ))}
-          {/* 5+ custom input - always show label with expandable input */}
+        <div className="relative group flex items-center border border-border/50 rounded-lg">
+          {/* Tooltip */}
           <div
             className={clsx(
-              'flex-1 flex items-center gap-1.5 py-2 px-3 rounded-lg text-sm font-medium',
-              'transition-all duration-150',
-              count > 5
-                ? 'bg-brass text-surface'
-                : 'bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle cursor-pointer'
+              'absolute top-full left-1/2 -translate-x-1/2 mt-2 px-2.5 py-1.5',
+              'text-xs bg-[var(--color-tooltip-bg)] text-[var(--color-tooltip-text)] rounded-lg shadow-lg',
+              'opacity-0 group-hover:opacity-100 pointer-events-none',
+              'transition-opacity duration-150 whitespace-nowrap z-[100]'
             )}
-            onClick={() => {
-              if (count <= 5) updateCount(6);
-            }}
           >
-            <span className="shrink-0">5+</span>
-            {count > 5 && (
-              <input
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={customCountInput !== null ? customCountInput : count}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setCustomCountInput(raw); // Allow any value while typing (including empty)
-                  const val = parseInt(raw, 10);
-                  if (!isNaN(val) && val >= 1) updateCount(val);
-                }}
-                onFocus={() => setCustomCountInput(count.toString())}
-                onBlur={(e) => {
-                  // On blur, if empty or invalid, reset to 6
-                  const val = parseInt(e.target.value, 10);
-                  if (isNaN(val) || val < 1) updateCount(6);
-                  setCustomCountInput(null); // Clear local state, use count directly
-                }}
-                onClick={(e) => e.stopPropagation()}
-                className={clsx(
-                  'w-12 bg-transparent text-center font-medium',
-                  'border-none outline-none'
-                )}
-                autoFocus
-              />
-            )}
+            <div className="font-medium">Image count</div>
+            <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
+              Press <kbd className="px-1 py-0.5 rounded bg-white/10 border border-white/20 font-mono">+</kbd> / <kbd className="px-1 py-0.5 rounded bg-white/10 border border-white/20 font-mono">−</kbd> anywhere
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => updateCount(Math.max(1, count - 1))}
+            disabled={count <= 1}
+            className={clsx(
+              'w-9 h-8 rounded-l-lg flex items-center justify-center',
+              'bg-canvas-muted text-ink-secondary',
+              'hover:bg-canvas-subtle hover:text-ink transition-colors',
+              'disabled:opacity-40 disabled:cursor-not-allowed'
+            )}
+          >
+            <ChevronDown size={16} className="rotate-90" />
+          </button>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={countInput ?? count}
+            onChange={(e) => {
+              const raw = e.target.value;
+              setCountInput(raw);
+              const val = parseInt(raw, 10);
+              if (!isNaN(val) && val >= 1 && val <= 99) updateCount(val);
+            }}
+            onFocus={() => setCountInput(count.toString())}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                (e.target as HTMLInputElement).blur();
+              }
+            }}
+            onBlur={() => {
+              const val = parseInt(countInput ?? '', 10);
+              if (isNaN(val) || val < 1) updateCount(1);
+              else if (val > 99) updateCount(99);
+              setCountInput(null);
+            }}
+            className={clsx(
+              'w-14 h-8 text-center text-sm font-medium tabular-nums cursor-text',
+              'bg-surface text-ink border-x border-border/50',
+              'hover:bg-surface-raised transition-colors',
+              'focus:outline-none focus:bg-surface-raised'
+            )}
+          />
+          <button
+            type="button"
+            onClick={() => updateCount(Math.min(99, count + 1))}
+            disabled={count >= 99}
+            className={clsx(
+              'w-9 h-8 rounded-r-lg flex items-center justify-center',
+              'bg-canvas-muted text-ink-secondary',
+              'hover:bg-canvas-subtle hover:text-ink transition-colors',
+              'disabled:opacity-40 disabled:cursor-not-allowed'
+            )}
+          >
+            <ChevronDown size={16} className="-rotate-90" />
+          </button>
         </div>
       </div>
-
-      {/* Design Concepts Picker */}
-      {concepts.length > 0 && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
-              Design Concepts
-            </label>
-            {selectedConceptIds.length > 0 && (
-              <button
-                onClick={() => setSelectedConceptIds([])}
-                className="text-xs text-ink-muted hover:text-error transition-colors"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {concepts.map((concept) => (
-              <button
-                key={concept.id}
-                onClick={() => toggleConcept(concept.id)}
-                className={clsx(
-                  'px-3 py-1.5 rounded-full text-xs font-medium transition-colors',
-                  selectedConceptIds.includes(concept.id)
-                    ? 'bg-brass text-surface'
-                    : 'bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle'
-                )}
-              >
-                <span className="flex items-center gap-1.5">
-                  <Sparkles size={10} />
-                  {concept.name}
-                </span>
-              </button>
-            ))}
-          </div>
-          {selectedConceptIds.length > 0 && (
-            <p className="text-[0.65rem] text-ink-muted">
-              {getSelectedConceptTags().join(', ')}
-            </p>
-          )}
-        </div>
-      )}
 
       {/* Context Images */}
       <div className="space-y-2">
@@ -789,6 +752,7 @@ export function GenerateTab() {
           type="file"
           accept="image/*"
           multiple
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           {...({ webkitdirectory: 'true' } as any)}
           onChange={handleFileUpload}
           className="hidden"

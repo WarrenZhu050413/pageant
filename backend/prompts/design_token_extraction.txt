@@ -1,0 +1,17 @@
+Analyze this image and extract a reusable design token (prompt fragment).
+
+{user_context}
+
+TASK: Based on the image and what the user appreciates about it, create a condensed prompt fragment
+that captures the essence of the visual style, mood, or technique. This fragment will be used to
+guide future image generation.
+
+RULES:
+1. The 'name' should be short and evocative (2-4 words), like "Golden Hour Warmth" or "Moody Noir"
+2. The 'text' should be a 1-2 sentence prompt fragment describing the visual qualities
+3. Include 3-6 'style_tags' for categorization and searchability
+4. Set 'category' to one of: lighting, mood, composition, color, texture, or mixed
+
+Focus on extracting the specific visual qualities the user seems to appreciate based on their
+annotation and liked tags. If no explicit preferences are given, analyze the image's most
+distinctive and reusable visual characteristics.
