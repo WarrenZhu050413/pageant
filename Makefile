@@ -98,9 +98,9 @@ install:
 	@mkdir -p generated_images
 	bun install
 	uv sync
+	@make seed
 	@echo ""
 	@echo "✓ Setup complete! Run 'make dev' to start."
-	@echo "  (Recommended: 'make seed' to load sample design tokens)"
 
 seed:
 	@echo "Loading sample design tokens..."
