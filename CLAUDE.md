@@ -117,6 +117,8 @@ Multiple comments are fine as the plan evolves.
 - Ensure `bun run build` passes
 
 #### 4. Commit & Close
+**IMPORTANT: Always commit BEFORE closing the issue.** Never close an issue without first committing the related changes.
+
 Commit with issue reference:
 ```bash
 git commit -m "Short description
