@@ -84,6 +84,11 @@ class MetadataManager:
                                 "images": imgs,
                             })
                         data["images"] = []  # Clear old structure
+
+                # Migration: ensure Favorites collection exists
+                if self.ensure_favorites_collection(data):
+                    self.save(data)  # Persist the migration
+
                 return data
 
         # Return default structure for new metadata
@@ -94,9 +99,33 @@ class MetadataManager:
             "favorites": [],
             "templates": [],
             "stories": [],
-            "collections": [],
+            "collections": [self._default_favorites_collection()],
             "sessions": [],
         }
+
+    def _default_favorites_collection(self) -> dict:
+        """Create the default Favorites collection."""
+        return {
+            "id": "coll-favorites",
+            "name": "⭐ Favorites",
+            "description": "Your favorite images",
+            "image_ids": [],
+            "created_at": datetime.now().isoformat(),
+        }
+
+    def ensure_favorites_collection(self, data: dict) -> bool:
+        """Ensure the Favorites collection exists. Returns True if added."""
+        if "collections" not in data:
+            data["collections"] = []
+
+        # Check if Favorites collection already exists
+        for coll in data["collections"]:
+            if coll.get("name") == "⭐ Favorites":
+                return False
+
+        # Add Favorites collection
+        data["collections"].insert(0, self._default_favorites_collection())
+        return True
 
     def save(self, data: dict) -> None:
         """Save metadata to disk.
