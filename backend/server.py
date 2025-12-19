@@ -1537,9 +1537,28 @@ async def create_token(req: CreateTokenRequest):
     if req.generate_concept and req.dimension:
         try:
             dimension_dict = req.dimension.model_dump()
+
+            # Get source image to reference during concept generation
+            source_image_bytes = None
+            source_mime_type = "image/jpeg"
+            if token_images:
+                first_image = token_images[0]
+                if first_image.get("image_path"):
+                    source_path = IMAGES_DIR / first_image["image_path"]
+                    if source_path.exists():
+                        source_image_bytes = source_path.read_bytes()
+                        # Determine mime type from extension
+                        ext = source_path.suffix.lower()
+                        if ext == ".png":
+                            source_mime_type = "image/png"
+                        elif ext in (".jpg", ".jpeg"):
+                            source_mime_type = "image/jpeg"
+
             result = await gemini.generate_concept_image(
                 dimension=dimension_dict,
                 aspect_ratio="1:1",
+                source_image_bytes=source_image_bytes,
+                source_image_mime_type=source_mime_type,
             )
             if result.images:
                 # Save concept image
@@ -1601,10 +1620,29 @@ async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
                     detail="Token has no extraction dimension - cannot generate concept"
                 )
 
+            # Get source image from token to reference during generation
+            source_image_bytes = None
+            source_mime_type = "image/jpeg"
+            token_images = token.get("images", [])
+            if token_images:
+                first_image = token_images[0]
+                image_path = first_image.get("image_path")
+                if image_path:
+                    source_path = IMAGES_DIR / image_path
+                    if source_path.exists():
+                        source_image_bytes = source_path.read_bytes()
+                        ext = source_path.suffix.lower()
+                        if ext == ".png":
+                            source_mime_type = "image/png"
+                        elif ext in (".jpg", ".jpeg"):
+                            source_mime_type = "image/jpeg"
+
             try:
                 result = await gemini.generate_concept_image(
                     dimension=extraction.get("dimension", {}),
                     aspect_ratio=aspect_ratio,
+                    source_image_bytes=source_image_bytes,
+                    source_image_mime_type=source_mime_type,
                 )
                 if result.images:
                     concept_filename = f"concept-{uuid.uuid4().hex[:8]}.jpg"

@@ -1210,18 +1210,15 @@ If any image's caption is inadequate for generation context, suggest improvement
         start_time = time.time()
         print(f"[→] Generating concept image for '{dimension.get('name', 'unknown')}'...")
 
-        # If source image provided, use multimodal generation to reference it
+        # If source image provided, use it as context for the generation
+        context_images = None
         if source_image_bytes:
-            return await self.generate_image(
-                prompt=prompt,
-                aspect_ratio=aspect_ratio,
-                reference_images=[(source_image_bytes, source_image_mime_type)],
-            )
+            context_images = [(source_image_bytes, source_image_mime_type, "Source image to extract design dimension from")]
 
-        # Fall back to text-only generation
         return await self.generate_image(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
+            context_images=context_images,
         )
 
     async def extract_design_token(
