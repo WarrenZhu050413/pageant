@@ -5,6 +5,9 @@ from pathlib import Path
 
 import pytest
 
+# Use anyio for async tests (it's already a pytest plugin in our setup)
+pytestmark = pytest.mark.anyio
+
 
 class TestMetadataManagerLoadSave:
     """Test basic load and save functionality."""
@@ -348,6 +351,160 @@ class TestMetadataManagerContextManager:
             saved = json.load(f)
         assert len(saved["prompts"]) == 1
         assert saved["prompts"][0]["id"] == "before-error"
+
+
+class TestMetadataManagerAsyncAtomic:
+    """Test async atomic() context manager functionality."""
+
+    async def test_atomic_loads_metadata(self, tmp_path):
+        """atomic() loads metadata on entry."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        metadata = {
+            "prompts": [{"id": "p1", "prompt": "Test"}],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+        async with manager.atomic() as data:
+            assert data["prompts"][0]["id"] == "p1"
+
+    async def test_atomic_saves_on_exit(self, tmp_path):
+        """atomic() saves metadata on exit."""
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        manager = MetadataManager(metadata_path, images_dir)
+        async with manager.atomic() as data:
+            data["prompts"].append({"id": "new-prompt", "prompt": "Added"})
+
+        # Verify file was saved
+        with open(metadata_path) as f:
+            saved = json.load(f)
+        assert len(saved["prompts"]) == 1
+        assert saved["prompts"][0]["id"] == "new-prompt"
+
+    async def test_atomic_concurrent_writes_preserve_all_data(self, tmp_path):
+        """Concurrent atomic() calls should serialize writes, preserving all data.
+
+        This is the key test for the race condition fix. Multiple coroutines
+        writing to metadata concurrently should not overwrite each other.
+        """
+        import asyncio
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        # Start with empty prompts
+        initial_metadata = {
+            "prompts": [],
+            "favorites": [],
+            "templates": [],
+            "stories": [],
+            "collections": [],
+            "sessions": [],
+            "tokens": [],
+        }
+        with open(metadata_path, "w") as f:
+            json.dump(initial_metadata, f)
+
+        manager = MetadataManager(metadata_path, images_dir)
+
+        async def add_token(token_id: str, delay: float = 0):
+            """Simulate a concept generation: read, delay (simulating API call), write."""
+            # Simulate slow Gemini API call BEFORE acquiring lock
+            await asyncio.sleep(delay)
+
+            # Now acquire lock and write
+            async with manager.atomic() as data:
+                if "tokens" not in data:
+                    data["tokens"] = []
+                data["tokens"].append({"id": token_id, "name": f"Token {token_id}"})
+
+        # Launch 5 concurrent writes with slight stagger
+        tasks = [
+            add_token("token-1", delay=0.01),
+            add_token("token-2", delay=0.02),
+            add_token("token-3", delay=0.01),
+            add_token("token-4", delay=0.03),
+            add_token("token-5", delay=0.02),
+        ]
+        await asyncio.gather(*tasks)
+
+        # Verify ALL tokens were saved (no overwrites)
+        with open(metadata_path) as f:
+            saved = json.load(f)
+
+        token_ids = {t["id"] for t in saved["tokens"]}
+        assert token_ids == {"token-1", "token-2", "token-3", "token-4", "token-5"}, (
+            f"Expected all 5 tokens, got {token_ids}. Race condition detected!"
+        )
+
+    async def test_atomic_does_not_block_event_loop(self, tmp_path):
+        """atomic() should not block the event loop while waiting for lock.
+
+        This verifies that other coroutines can run while one coroutine
+        holds the lock.
+        """
+        import asyncio
+        from metadata_manager import MetadataManager
+
+        images_dir = tmp_path / "generated_images"
+        images_dir.mkdir()
+        metadata_path = images_dir / "metadata.json"
+
+        manager = MetadataManager(metadata_path, images_dir)
+
+        events = []
+
+        async def worker_with_lock(worker_id: str):
+            """Worker that holds the lock for a bit."""
+            async with manager.atomic() as data:
+                events.append(f"{worker_id}-acquired")
+                await asyncio.sleep(0.05)  # Hold lock briefly
+                data["prompts"].append({"id": worker_id})
+                events.append(f"{worker_id}-released")
+
+        async def other_work():
+            """Other async work that should NOT be blocked."""
+            await asyncio.sleep(0.01)
+            events.append("other-work-done")
+
+        # Start worker that will hold lock
+        task1 = asyncio.create_task(worker_with_lock("worker-1"))
+        await asyncio.sleep(0.01)  # Let worker-1 acquire lock
+
+        # Start other work and second worker
+        task2 = asyncio.create_task(other_work())
+        task3 = asyncio.create_task(worker_with_lock("worker-2"))
+
+        await asyncio.gather(task1, task2, task3)
+
+        # other_work should complete while worker-1 holds the lock
+        # (because lock waiting happens in thread pool, not blocking event loop)
+        assert "other-work-done" in events, "Event loop was blocked!"
+
+        # Verify the order shows worker-1 completed before worker-2 started
+        worker1_released_idx = events.index("worker-1-released")
+        worker2_acquired_idx = events.index("worker-2-acquired")
+        assert worker1_released_idx < worker2_acquired_idx, (
+            "Lock serialization failed - worker-2 acquired before worker-1 released"
+        )
 
 
 class TestMetadataManagerDeleteImage:

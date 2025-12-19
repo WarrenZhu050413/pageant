@@ -9,15 +9,15 @@ import { ExtractionDialog } from './ExtractionDialog';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
-  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentPromptId) || null,
-    [prompts, currentPromptId]
+    () => prompts.find((p) => p.id === currentGenerationId) || null,
+    [prompts, currentGenerationId]
   );
 
   const currentCollection = useMemo(

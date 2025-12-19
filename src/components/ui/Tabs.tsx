@@ -6,6 +6,7 @@ interface Tab {
   label: string;
   icon?: React.ReactNode;
   shortcut?: string;
+  badge?: number;  // Optional badge count to show
 }
 
 interface TabsProps {
@@ -45,6 +46,11 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
           >
             {tab.icon}
             {tab.label}
+            {tab.badge !== undefined && tab.badge > 0 && (
+              <span className="ml-1 px-1 min-w-[1rem] text-center text-[0.5rem] font-semibold rounded-full bg-brass text-white">
+                {tab.badge > 9 ? '9+' : tab.badge}
+              </span>
+            )}
             {tab.shortcut && (
               <kbd className={clsx(
                 'ml-0.5 px-1 py-0.5 text-[0.5rem] font-mono rounded',

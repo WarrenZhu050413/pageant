@@ -11,3 +11,4 @@ logs/
 .archive/
 .annotations/
 **/.annotations/
+metadata.lock

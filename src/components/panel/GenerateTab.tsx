@@ -61,7 +61,7 @@ export function GenerateTab() {
   const generate = useStore((s) => s.generate);
   const generateVariations = useStore((s) => s.generateVariations);
   const uploadImages = useStore((s) => s.uploadImages);
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const selectedIds = useStore((s) => s.selectedIds);
   const collections = useStore((s) => s.collections);
   const getCurrentImage = useStore((s) => s.getCurrentImage);

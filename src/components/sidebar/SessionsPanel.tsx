@@ -11,7 +11,7 @@ export function SessionsPanel() {
   const createSession = useStore((s) => s.createSession);
   const switchSession = useStore((s) => s.switchSession);
   const deleteSession = useStore((s) => s.deleteSession);
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
 
   const [isOpen, setIsOpen] = useState(false);
   const [isCreating, setIsCreating] = useState(false);

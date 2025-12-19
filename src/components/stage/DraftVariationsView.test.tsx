@@ -9,7 +9,7 @@ import '@testing-library/jest-dom';
 // Mock the store
 const mockStore = {
   streamingText: '',
-  prompts: [] as Array<{ id: string; images: Array<{ id: string }> }>,
+  generations: [] as Array<{ id: string; images: Array<{ id: string }> }>,
   deleteDraft: vi.fn(),
   generateFromDraft: vi.fn(),
   updateDraftVariation: vi.fn(),

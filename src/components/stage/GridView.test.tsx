@@ -58,9 +58,9 @@ describe('GridView', () => {
   })
 
   const createMockState = (overrides = {}) => ({
-    prompts: [],
+    generations: [],
     collections: [],
-    currentPromptId: null,
+    currentGenerationId: null,
     currentCollectionId: null,
     setCurrentImageIndex: vi.fn(),
     setViewMode: vi.fn(),
@@ -78,8 +78,8 @@ describe('GridView', () => {
   describe('empty state', () => {
     it('should show "No prompt selected" when no prompt or collection', () => {
       const mockState = createMockState({
-        prompts: [],
-        currentPromptId: null,
+        generations: [],
+        currentGenerationId: null,
         currentCollectionId: null,
       })
 
@@ -97,9 +97,9 @@ describe('GridView', () => {
     it('should show "Empty collection" when viewing empty collection', () => {
       const mockCollection = createMockCollection('col-1', [])
       const mockState = createMockState({
-        prompts: [],
+        generations: [],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'col-1',
       })
 
@@ -125,8 +125,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images, { title: 'Test Title' })
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -149,9 +149,9 @@ describe('GridView', () => {
       const mockCollection = createMockCollection('col-1', ['img-1', 'img-2'])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
+        generations: [mockPrompt],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'col-1',
       })
 
@@ -173,8 +173,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -197,8 +197,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -222,8 +222,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectionMode: 'none',
         setCurrentImageIndex,
         setViewMode,
@@ -253,8 +253,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectionMode: 'select',
         toggleSelection,
         setCurrentImageIndex,
@@ -283,8 +283,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectionMode: 'select',
         selectedIds: new Set<string>(),
       })
@@ -308,8 +308,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectionMode: 'select',
         selectedIds: new Set(['img-1']),
       })
@@ -331,8 +331,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectionMode: 'select',
         selectedIds: new Set(['img-1']),
       })
@@ -359,9 +359,9 @@ describe('GridView', () => {
       const mockCollection = createMockCollection('col-1', ['img-1'])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
+        generations: [mockPrompt],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'col-1',
       })
 
@@ -384,9 +384,9 @@ describe('GridView', () => {
       const mockCollection = createMockCollection('col-1', ['img-1'])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
+        generations: [mockPrompt],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'col-1',
         removeFromCurrentCollection,
       })
@@ -411,8 +411,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         currentCollectionId: null,
       })
 
@@ -435,8 +435,8 @@ describe('GridView', () => {
       const mockPrompt = createMockPrompt('prompt-1', images)
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {

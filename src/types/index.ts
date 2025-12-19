@@ -104,26 +104,32 @@ export interface ImageData {
   annotations?: Record<string, string[]>;  // @deprecated - use design_dimensions
 }
 
-export interface Prompt {
+// Generation - a batch of generated images from a prompt
+// Renamed from "Prompt" for clarity - this represents the generation result, not just the input
+export interface Generation {
   id: string;
-  prompt: string;
+  prompt: string;  // The text prompt used for generation
   title: string;
   created_at: string;
   images: ImageData[];
   // Reference images used for generation
   input_image_id?: string;
   context_image_ids?: string[];
-  parent_prompt_id?: string;
+  parent_generation_id?: string;
   session_id?: string;
   _pending?: boolean;
   _count?: number;
-  // The original base prompt that generated variations for this prompt
+  // The original base prompt that generated variations for this generation
   basePrompt?: string;
   // Concept image metadata
   is_concept?: boolean;      // True if this is a concept image (design token)
   concept_axis?: string;     // Which axis this concept represents (e.g., "lighting")
   source_image_id?: string;  // Image ID the concept was derived from
 }
+
+// Legacy alias - Backend uses "Prompt", frontend uses "Generation"
+// The API layer (src/api/index.ts) bridges these terminologies
+export type Prompt = Generation;
 
 // Draft prompt - ungenerated variations ready for editing
 export interface DraftPrompt {
@@ -169,6 +175,7 @@ export interface DesignToken {
   // Optional concept image (AI-generated to represent the dimension)
   concept_image_id?: string;     // Reference to a generated concept image
   concept_image_path?: string;   // Direct path for export
+  concept_prompt_id?: string;    // Reference to full Prompt entry for navigation
 
   // Creation metadata
   creation_method: 'ai-extraction' | 'manual';
@@ -345,19 +352,6 @@ export interface AnalyzeDimensionsResponse {
   error?: string;
 }
 
-export interface GenerateConceptRequest {
-  image_id: string;
-  dimension: DesignDimension;
-  aspect_ratio?: string;
-}
-
-export interface GenerateConceptResponse {
-  success: boolean;
-  prompt_id: string;  // The new concept prompt
-  images: ImageData[];
-  error?: string;
-}
-
 export interface UpdateDimensionsRequest {
   dimensions: Record<string, DesignDimension>;
 }
@@ -418,7 +412,7 @@ export interface UploadResponse {
 }
 
 // UI State types
-export type ViewMode = 'single' | 'grid' | 'token-gallery';
+export type ViewMode = 'single' | 'grid';
 export type LeftTab = 'prompts' | 'collections' | 'all-images' | 'library';
 export type RightTab = 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select';

@@ -17,14 +17,13 @@ import { GridView } from './GridView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 import { PromptVariationsView } from './PromptVariationsView';
-import { TokenGalleryView } from './TokenGalleryView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
   const draftPrompts = useStore((s) => s.draftPrompts);
-  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentDraftId = useStore((s) => s.currentDraftId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
@@ -32,13 +31,13 @@ export function MainStage() {
   const setViewMode = useStore((s) => s.setViewMode);
   const selectionMode = useStore((s) => s.selectionMode);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
-  const pendingPrompts = useStore((s) => s.pendingPrompts);
+  const pendingGenerations = useStore((s) => s.pendingGenerations);
   const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentPromptId) || null,
-    [prompts, currentPromptId]
+    () => prompts.find((p) => p.id === currentGenerationId) || null,
+    [prompts, currentGenerationId]
   );
 
   const currentDraft = useMemo(
@@ -64,7 +63,7 @@ export function MainStage() {
       .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
   }, [prompts, currentCollection]);
 
-  const hasPending = pendingPrompts.size > 0;
+  const hasPending = pendingGenerations.size > 0;
 
   // State for viewing variations of generated prompt
   const [showingVariations, setShowingVariations] = useState(false);
@@ -72,11 +71,6 @@ export function MainStage() {
   // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
-  }
-
-  // Token gallery takes over full stage when in that mode
-  if (viewMode === 'token-gallery') {
-    return <TokenGalleryView />;
   }
 
   // Show read-only variations view when toggled

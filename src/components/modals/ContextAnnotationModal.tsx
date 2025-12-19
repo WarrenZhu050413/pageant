@@ -13,7 +13,7 @@ interface ContextAnnotationModalProps {
 }
 
 export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnnotationModalProps) {
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const contextAnnotationOverrides = useStore((s) => s.contextAnnotationOverrides);
   const setContextAnnotationOverride = useStore((s) => s.setContextAnnotationOverride);
   const clearContextAnnotationOverride = useStore((s) => s.clearContextAnnotationOverride);

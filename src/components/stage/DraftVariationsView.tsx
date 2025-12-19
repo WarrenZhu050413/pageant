@@ -40,7 +40,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const generateFromDraft = useStore((s) => s.generateFromDraft);
   const deleteDraft = useStore((s) => s.deleteDraft);
   const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const streamingText = useStore((s) => s.streamingText);
 
   // Check if THIS draft is generating images
@@ -312,10 +312,10 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
           <div className="flex flex-col items-center justify-center py-8 text-ink-tertiary w-full">
             <Loader2 className="w-8 h-8 animate-spin mb-3" />
             <p className="text-sm mb-3">Generating prompt variations...</p>
-            {/* Show streaming text as it arrives - uses full width */}
+            {/* Show streaming text as it arrives - fills most of stage */}
             {streamingText && (
-              <div className="w-full self-stretch px-4">
-                <div className="w-full bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary max-h-48 overflow-y-auto">
+              <div className="w-full self-stretch px-4 flex justify-center">
+                <div className="w-full max-w-4xl bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary max-h-48 overflow-y-auto">
                   <span className="opacity-50">Receiving:</span>
                   <pre className="w-full min-w-0 whitespace-pre-wrap break-words mt-1">{streamingText.slice(-500)}</pre>
                 </div>
@@ -585,9 +585,26 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                               <div className="flex-1 min-w-0">
                                 {/* Show current annotation */}
                                 {img?.annotation && (
-                                  <p className="text-[0.65rem] text-ink-secondary line-clamp-3" title={img.annotation}>
+                                  <p className="text-[0.65rem] text-ink-secondary line-clamp-2" title={img.annotation}>
                                     "{img.annotation}"
                                   </p>
+                                )}
+                                {/* Show liked axes preferences - compact horizontal layout */}
+                                {img?.liked_axes && Object.keys(img.liked_axes).length > 0 && (
+                                  <div className="flex flex-wrap gap-0.5 mt-0.5">
+                                    {Object.entries(img.liked_axes).flatMap(([axis, tags]) =>
+                                      (tags as string[]).map((tag) => (
+                                        <span
+                                          key={`${axis}-${tag}`}
+                                          className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[0.55rem] bg-brass/10 text-brass"
+                                          title={`${axis}: ${tag}`}
+                                        >
+                                          <Heart size={5} className="fill-current" />
+                                          {tag}
+                                        </span>
+                                      ))
+                                    )}
+                                  </div>
                                 )}
                                 {/* Auto-applied suggestion: show "Applied" with Revert option */}
                                 {suggestion && !isReverted && (

@@ -1,9 +1,10 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { Check, Heart, Sparkles, Loader2 } from 'lucide-react';
+import { Check, Heart, Sparkles, Loader2, CheckCircle } from 'lucide-react';
 import { useStore } from '../../store';
 import { toast } from '../../store/toastStore';
-import { SUGGESTED_TAGS, type DesignAxis, type DesignDimension } from '../../types';
+import { SUGGESTED_TAGS, type DesignAxis, type DesignDimension, type DesignToken } from '../../types';
+import { TokenDetailView } from './TokenDetailView';
 
 // Helper to find which axis a tag belongs to
 function findAxisForTag(
@@ -40,25 +41,28 @@ function isDimensionLiked(axis: string, likedDimensionAxes: string[] | undefined
 }
 
 export function DesignAnnotation() {
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
-  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const toggleAxisLike = useStore((s) => s.toggleAxisLike);
   const toggleDimensionLike = useStore((s) => s.toggleDimensionLike);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
   const createToken = useStore((s) => s.createToken);
+  const designTokens = useStore((s) => s.designTokens);
 
   const [annotation, setAnnotation] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [expandedDimension, setExpandedDimension] = useState<string | null>(null);
-  const [extractingAxes, setExtractingAxes] = useState<Set<string>>(new Set());
+  // Track extractions by imageId-axis to be image-specific
+  const [extractingKeys, setExtractingKeys] = useState<Set<string>>(new Set());
+  const [selectedToken, setSelectedToken] = useState<DesignToken | null>(null);
 
   const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentPromptId) || null,
-    [prompts, currentPromptId]
+    () => prompts.find((p) => p.id === currentGenerationId) || null,
+    [prompts, currentGenerationId]
   );
 
   const currentCollection = useMemo(
@@ -132,15 +136,36 @@ export function DesignAnnotation() {
     toggleDimensionLike(currentImage.id, axis, !isLiked);
   };
 
+  // Find existing token for a specific image + axis combination
+  const findTokenForImageAxis = useCallback(
+    (imageId: string, axis: string): DesignToken | undefined => {
+      return designTokens.find(
+        (token) =>
+          token.category === axis &&
+          token.images.some((img) => img.id === imageId)
+      );
+    },
+    [designTokens]
+  );
+
   // Handle inline extraction of a dimension as a design token (non-blocking, allows concurrent extractions)
   const handleInlineExtract = async (axis: string, dim: DesignDimension) => {
     if (!currentImage) return;
 
-    // Check if this specific axis is already being extracted
-    if (extractingAxes.has(axis)) return;
+    const extractionKey = `${currentImage.id}-${axis}`;
 
-    // Add this axis to the extracting set
-    setExtractingAxes((prev) => new Set(prev).add(axis));
+    // Check if this specific image+axis is already being extracted
+    if (extractingKeys.has(extractionKey)) return;
+
+    // Check if token already exists - if so, open it instead
+    const existingToken = findTokenForImageAxis(currentImage.id, axis);
+    if (existingToken) {
+      setSelectedToken(existingToken);
+      return;
+    }
+
+    // Add this key to the extracting set
+    setExtractingKeys((prev) => new Set(prev).add(extractionKey));
 
     try {
       const token = await createToken({
@@ -161,10 +186,10 @@ export function DesignAnnotation() {
     } catch (error) {
       toast.error(`Failed to create token: ${(error as Error).message}`);
     } finally {
-      // Remove this axis from the extracting set
-      setExtractingAxes((prev) => {
+      // Remove this key from the extracting set
+      setExtractingKeys((prev) => {
         const next = new Set(prev);
-        next.delete(axis);
+        next.delete(extractionKey);
         return next;
       });
     }
@@ -182,6 +207,10 @@ export function DesignAnnotation() {
   const hasDimensions = dimensions.length > 0;
   const hasChanges = annotation !== (currentImage.annotation || '');
 
+  // Check if there are any liked tags (for visual affordance)
+  const hasLikedTags = currentImage.liked_axes && Object.values(currentImage.liked_axes).some(tags => tags?.length > 0);
+  const hasLikedDimensions = currentImage.liked_dimension_axes && currentImage.liked_dimension_axes.length > 0;
+
   return (
     <div className="px-6 py-5 h-52 overflow-y-auto">
       {/* Three Column Layout: Notes | Design Tags | Dimensions */}
@@ -198,7 +227,7 @@ export function DesignAnnotation() {
                   handleSave();
                 }
               }}
-              placeholder="What stands out in this image?"
+              placeholder="What stands out in this image? Write to send to AI."
               rows={3}
               className={clsx(
                 'w-full px-3 py-2 rounded-lg resize-none',
@@ -270,6 +299,12 @@ export function DesignAnnotation() {
                   </div>
                 </div>
               ))}
+              {/* Visual affordance: show when liked tags will be sent to AI */}
+              {hasLikedTags && (
+                <p className="text-[0.6rem] text-brass/80 mt-2 ml-16">
+                  ♥ preferences sent to AI when used as context
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-xs text-ink-muted/50 italic py-2">
@@ -285,7 +320,11 @@ export function DesignAnnotation() {
               {dimensions.map(([axis, dim]) => {
                 const liked = isDimensionLiked(axis, currentImage.liked_dimension_axes);
                 const isExpanded = expandedDimension === axis;
-                const isExtracting = extractingAxes.has(axis);
+                const extractionKey = `${currentImage.id}-${axis}`;
+                const isExtracting = extractingKeys.has(extractionKey);
+                const existingToken = findTokenForImageAxis(currentImage.id, axis);
+                const hasToken = !!existingToken;
+
                 return (
                   <div key={axis} className="py-1.5 first:pt-0 last:pb-0">
                     <div className="flex items-center gap-1">
@@ -307,19 +346,33 @@ export function DesignAnnotation() {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleInlineExtract(axis, dim);
+                          if (hasToken) {
+                            setSelectedToken(existingToken);
+                          } else {
+                            handleInlineExtract(axis, dim);
+                          }
                         }}
                         disabled={isExtracting}
                         className={clsx(
                           'p-1 rounded transition-colors shrink-0',
                           isExtracting
                             ? 'text-brass animate-pulse'
-                            : 'text-ink-muted/40 hover:text-brass/60'
+                            : hasToken
+                              ? 'text-success hover:text-success/80'
+                              : 'text-ink-muted/40 hover:text-brass/60'
                         )}
-                        title="Extract as design token"
+                        title={
+                          isExtracting
+                            ? 'Extracting...'
+                            : hasToken
+                              ? 'View token (already extracted)'
+                              : 'Extract as design token'
+                        }
                       >
                         {isExtracting ? (
                           <Loader2 size={12} className="animate-spin" />
+                        ) : hasToken ? (
+                          <CheckCircle size={12} />
                         ) : (
                           <Sparkles size={12} />
                         )}
@@ -342,6 +395,12 @@ export function DesignAnnotation() {
                   </div>
                 );
               })}
+              {/* Visual affordance: show when liked dimensions will be sent to AI */}
+              {hasLikedDimensions && (
+                <p className="text-[0.6rem] text-brass/80 mt-2">
+                  ♥ preferences sent to AI when used as context
+                </p>
+              )}
             </div>
           ) : (
             <p className="text-xs text-ink-muted/50 italic">
@@ -350,6 +409,14 @@ export function DesignAnnotation() {
           )}
         </div>
       </div>
+
+      {/* Token detail modal */}
+      {selectedToken && (
+        <TokenDetailView
+          token={selectedToken}
+          onClose={() => setSelectedToken(null)}
+        />
+      )}
     </div>
   );
 }

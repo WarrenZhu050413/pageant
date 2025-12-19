@@ -18,7 +18,7 @@ interface ImagePickerModalProps {
 }
 
 export function ImagePickerModal({ isOpen, onClose, onConfirm }: ImagePickerModalProps) {
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const rawCollections = useStore((s) => s.collections);
 
   // Sort collections with Favorites at top

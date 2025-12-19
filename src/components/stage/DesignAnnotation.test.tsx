@@ -37,14 +37,16 @@ describe('DesignAnnotation', () => {
   })
 
   const createMockState = (overrides = {}) => ({
-    prompts: [],
+    generations: [],
     collections: [],
-    currentPromptId: null,
+    currentGenerationId: null,
     currentCollectionId: null,
     currentImageIndex: 0,
     toggleAxisLike: vi.fn(),
     toggleDimensionLike: vi.fn(),
     updateImageNotes: vi.fn().mockResolvedValue(undefined),
+    createToken: vi.fn().mockResolvedValue(undefined),
+    designTokens: [],
     ...overrides,
   })
 
@@ -55,8 +57,8 @@ describe('DesignAnnotation', () => {
   describe('empty state', () => {
     it('should return null when no current image', () => {
       const mockState = createMockState({
-        prompts: [],
-        currentPromptId: null,
+        generations: [],
+        currentGenerationId: null,
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -77,8 +79,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -100,8 +102,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -124,8 +126,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -137,7 +139,7 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?')
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.')
       expect(textarea).toBeInTheDocument()
     })
 
@@ -148,8 +150,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -161,7 +163,7 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?') as HTMLTextAreaElement
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.') as HTMLTextAreaElement
       expect(textarea.value).toBe('Existing annotation text')
     })
 
@@ -173,8 +175,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -186,7 +188,7 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?')
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.')
       await user.clear(textarea)
       await user.type(textarea, 'New annotation')
 
@@ -204,8 +206,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         updateImageNotes,
       })
 
@@ -218,7 +220,7 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?')
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.')
       await user.clear(textarea)
       await user.type(textarea, 'New text')
 
@@ -237,8 +239,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         updateImageNotes,
       })
 
@@ -251,7 +253,7 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?')
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.')
       await user.clear(textarea)
       await user.type(textarea, 'New text')
 
@@ -270,8 +272,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -296,8 +298,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -332,8 +334,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         toggleAxisLike,
       })
 
@@ -364,8 +366,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -391,8 +393,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -419,8 +421,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -451,8 +453,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -487,8 +489,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         toggleDimensionLike,
       })
 
@@ -524,8 +526,8 @@ describe('DesignAnnotation', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -538,7 +540,7 @@ describe('DesignAnnotation', () => {
       render(<DesignAnnotation />)
 
       // All three sections should be present
-      expect(screen.getByPlaceholderText('What stands out in this image?')).toBeInTheDocument() // Notes
+      expect(screen.getByPlaceholderText('What stands out in this image? Write to send to AI.')).toBeInTheDocument() // Notes
       expect(screen.getByText('modern')).toBeInTheDocument() // Tags
       expect(screen.getByText('Balance')).toBeInTheDocument() // Dimensions
     })
@@ -557,9 +559,9 @@ describe('DesignAnnotation', () => {
       }
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
+        generations: [mockPrompt],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'collection-1',
       })
 
@@ -572,8 +574,254 @@ describe('DesignAnnotation', () => {
 
       render(<DesignAnnotation />)
 
-      const textarea = screen.getByPlaceholderText('What stands out in this image?') as HTMLTextAreaElement
+      const textarea = screen.getByPlaceholderText('What stands out in this image? Write to send to AI.') as HTMLTextAreaElement
       expect(textarea.value).toBe('Collection image annotation')
+    })
+  })
+
+  describe('dimension extraction', () => {
+    const createMockDimension = (overrides = {}) => ({
+      name: 'Visual Weight',
+      axis: 'composition',
+      description: 'Heavy elements at bottom',
+      generation_prompt: 'Generate with visual weight',
+      tags: ['grounded', 'heavy'],
+      ...overrides,
+    })
+
+    const createMockToken = (id: string, overrides = {}) => ({
+      id,
+      name: 'Test Token',
+      description: 'A test token',
+      created_at: new Date().toISOString(),
+      use_count: 0,
+      images: [],
+      generations: [],
+      creation_method: 'ai-extraction' as const,
+      category: 'composition',
+      ...overrides,
+    })
+
+    it('should call createToken when extraction button is clicked', async () => {
+      const user = userEvent.setup()
+      const createToken = vi.fn().mockResolvedValue({ id: 'token-1', name: 'Visual Weight' })
+      const mockDimension = createMockDimension()
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        createToken,
+        designTokens: [],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Find the extraction button (sparkles icon button)
+      const extractButton = screen.getByTitle('Extract as design token')
+      await user.click(extractButton)
+
+      expect(createToken).toHaveBeenCalledWith({
+        name: 'Visual Weight',
+        description: 'Heavy elements at bottom',
+        image_ids: ['img-1'],
+        prompts: ['Generate with visual weight'],
+        creation_method: 'ai-extraction',
+        dimension: mockDimension,
+        generate_concept: true,
+        category: 'composition',
+        tags: ['grounded', 'heavy'],
+      })
+    })
+
+    it('should show checkmark icon when token already exists for dimension', () => {
+      const mockDimension = createMockDimension()
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      // Token exists for this image+axis
+      const existingToken = createMockToken('token-1', {
+        category: 'composition',
+        images: [{ id: 'img-1', image_path: 'img-1.jpg' }],
+      })
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        designTokens: [existingToken],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Should show "View token" instead of "Extract"
+      expect(screen.getByTitle('View token (already extracted)')).toBeInTheDocument()
+      expect(screen.queryByTitle('Extract as design token')).not.toBeInTheDocument()
+    })
+
+    it('should not call createToken when token already exists', async () => {
+      const user = userEvent.setup()
+      const createToken = vi.fn()
+      const mockDimension = createMockDimension()
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      const existingToken = createMockToken('token-1', {
+        category: 'composition',
+        images: [{ id: 'img-1', image_path: 'img-1.jpg' }],
+      })
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        createToken,
+        designTokens: [existingToken],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Click the view token button
+      const viewButton = screen.getByTitle('View token (already extracted)')
+      await user.click(viewButton)
+
+      // Should NOT call createToken
+      expect(createToken).not.toHaveBeenCalled()
+    })
+
+    it('should show sparkles for dimensions without existing tokens', () => {
+      const mockDimension = createMockDimension()
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      // Token exists but for DIFFERENT image
+      const existingToken = createMockToken('token-1', {
+        category: 'composition',
+        images: [{ id: 'img-OTHER', image_path: 'img-other.jpg' }],
+      })
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        designTokens: [existingToken],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Should show extract button (not view token) since token is for different image
+      expect(screen.getByTitle('Extract as design token')).toBeInTheDocument()
+      expect(screen.queryByTitle('View token (already extracted)')).not.toBeInTheDocument()
+    })
+
+    it('should show sparkles when token exists for different axis', () => {
+      const mockDimension = createMockDimension({ axis: 'composition' })
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      // Token exists for same image but DIFFERENT axis
+      const existingToken = createMockToken('token-1', {
+        category: 'lighting', // Different axis
+        images: [{ id: 'img-1', image_path: 'img-1.jpg' }],
+      })
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        designTokens: [existingToken],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Should show extract button since token is for different axis
+      expect(screen.getByTitle('Extract as design token')).toBeInTheDocument()
+    })
+
+    it('should match token by both image ID and category axis', () => {
+      const mockDimension = createMockDimension({ axis: 'composition' })
+      const mockImage = createMockImage('img-1', {
+        design_dimensions: {
+          composition: mockDimension,
+        },
+      })
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+
+      // Token matches both image AND axis
+      const matchingToken = createMockToken('token-1', {
+        category: 'composition',
+        images: [{ id: 'img-1', image_path: 'img-1.jpg' }],
+      })
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        designTokens: [matchingToken],
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<DesignAnnotation />)
+
+      // Should show checkmark since token matches both image and axis
+      expect(screen.getByTitle('View token (already extracted)')).toBeInTheDocument()
     })
   })
 })

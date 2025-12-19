@@ -1,7 +1,18 @@
+/**
+ * Zustand Store - Application state management
+ *
+ * NAMING CONVENTION:
+ * - Frontend uses "Generation" terminology (generations, currentGenerationId, etc.)
+ * - Backend uses "Prompt" terminology (/api/prompts, metadata["prompts"])
+ * - The API layer (src/api/index.ts) bridges these, calling backend "prompts" endpoints
+ *   but the store treats the returned data as Generation[]
+ *
+ * See src/types/index.ts where `Prompt` is defined as a legacy alias for `Generation`.
+ */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type {
-  Prompt,
+  Generation,
   Collection,
   Settings,
   Session,
@@ -22,24 +33,25 @@ import type {
 import * as api from '../api';
 import { toast } from './toastStore';
 
-interface PendingPrompt {
+interface PendingGeneration {
   title?: string;  // Optional - will be auto-generated if not provided
   count: number;
 }
 
 interface AppStore {
   // Data
-  prompts: Prompt[];
+  generations: Generation[];
   designTokens: DesignToken[];
   collections: Collection[];
   settings: Settings | null;
 
   // Navigation
-  currentPromptId: string | null;
+  currentGenerationId: string | null;
   currentImageIndex: number;
   viewMode: ViewMode;
   leftTab: LeftTab;
   rightTab: RightTab;
+  generationFilter: 'all' | 'concepts';
 
   // Selection
   selectionMode: SelectionMode;
@@ -50,7 +62,7 @@ interface AppStore {
 
   // UI State
   isGenerating: boolean;
-  pendingPrompts: Map<string, PendingPrompt>;
+  pendingGenerations: Map<string, PendingGeneration>;
   error: string | null;
 
   // Sessions (persisted)
@@ -78,15 +90,20 @@ interface AppStore {
   // Collection Viewing
   currentCollectionId: string | null;
 
+  // Library "unread" tracking (persisted)
+  lastSeenLibraryAt: string | null;  // ISO timestamp of when user last viewed Library tab
+  markLibrarySeen: () => void;
+  getNewTokenCount: () => number;
+
   // Actions
   initialize: () => Promise<void>;
   refreshData: () => Promise<void>;
-  refreshPrompts: () => Promise<void>;
+  refreshGenerations: () => Promise<void>;
   refreshCollections: () => Promise<void>;
   refreshDesignTokens: () => Promise<void>;
 
-  // Prompt navigation
-  setCurrentPrompt: (id: string | null) => void;
+  // Generation navigation
+  setCurrentGeneration: (id: string | null) => void;
   setCurrentImageIndex: (index: number) => void;
   nextImage: () => void;
   prevImage: () => void;
@@ -95,6 +112,7 @@ interface AppStore {
   setViewMode: (mode: ViewMode) => void;
   setLeftTab: (tab: LeftTab) => void;
   setRightTab: (tab: RightTab) => void;
+  setGenerationFilter: (filter: 'all' | 'concepts') => void;
 
   // Selection
   setSelectionMode: (mode: SelectionMode) => void;
@@ -155,15 +173,15 @@ interface AppStore {
 
   // Delete
   deleteImage: (imageId: string) => Promise<void>;
-  deletePrompt: (promptId: string) => Promise<void>;
+  deleteGeneration: (generationId: string) => Promise<void>;
   batchDelete: () => Promise<void>;
-  batchDeletePrompts: (promptIds: string[]) => Promise<void>;
+  batchDeleteGenerations: (generationIds: string[]) => Promise<void>;
 
-  // Prompt selection (for bulk operations)
-  selectedPromptIds: Set<string>;
-  togglePromptSelection: (id: string) => void;
-  selectAllPrompts: () => void;
-  clearPromptSelection: () => void;
+  // Generation selection (for bulk operations)
+  selectedGenerationIds: Set<string>;
+  toggleGenerationSelection: (id: string) => void;
+  selectAllGenerations: () => void;
+  clearGenerationSelection: () => void;
 
   // Image notes
   updateImageNotes: (imageId: string, notes: string, annotation?: string) => Promise<void>;
@@ -185,6 +203,7 @@ interface AppStore {
   setCurrentCollection: (id: string | null) => void;
   getCurrentCollection: () => Collection | null;
   getCurrentCollectionImages: () => ImageData[];
+  getConceptImages: () => ImageData[];
   removeFromCollection: (collectionId: string, imageId: string) => Promise<void>;
   removeFromCurrentCollection: (imageId: string) => Promise<void>;
 
@@ -222,7 +241,6 @@ interface AppStore {
   // Design Dimensions (Rich AI Analysis)
   pendingAnalysis: Set<string>;  // Image IDs currently being analyzed
   analyzeDimensions: (imageId: string) => Promise<DesignDimension[]>;
-  generateConcept: (imageId: string, dimension: DesignDimension) => Promise<void>;
   confirmDimension: (imageId: string, axis: string) => Promise<void>;
   updateImageDimensions: (imageId: string, dimensions: Record<string, DesignDimension>) => Promise<void>;
   toggleDimensionLike: (imageId: string, axis: string, liked: boolean) => Promise<void>;
@@ -245,25 +263,26 @@ interface AppStore {
   clearError: () => void;
 
   // Helpers
-  getCurrentPrompt: () => Prompt | null;
+  getCurrentGeneration: () => Generation | null;
   getCurrentImage: () => ImageData | null;
-  getAllImages: () => { image: ImageData; promptId: string; promptTitle: string }[];
+  getAllImages: () => { image: ImageData; generationId: string; generationTitle: string }[];
 }
 
 export const useStore = create<AppStore>()(
   persist(
     (set, get) => ({
       // Initial state
-      prompts: [],
+      generations: [],
       designTokens: [],
       collections: [],
       settings: null,
 
-      currentPromptId: null,
+      currentGenerationId: null,
       currentImageIndex: 0,
       viewMode: 'single',
       leftTab: 'prompts',
       rightTab: 'generate',
+      generationFilter: 'all',
 
       selectionMode: 'none',
       selectedIds: new Set(),
@@ -271,7 +290,7 @@ export const useStore = create<AppStore>()(
       contextAnnotationOverrides: {},
 
       isGenerating: false,
-      pendingPrompts: new Map(),
+      pendingGenerations: new Map(),
       error: null,
 
       sessions: [],
@@ -295,8 +314,11 @@ export const useStore = create<AppStore>()(
       // Collection Viewing
       currentCollectionId: null,
 
-      // Prompt selection for bulk operations
-      selectedPromptIds: new Set(),
+      // Library "unread" tracking
+      lastSeenLibraryAt: null,
+
+      // Generation selection for bulk operations
+      selectedGenerationIds: new Set(),
 
       // Design Axis System
       designPreferences: null,
@@ -317,7 +339,7 @@ export const useStore = create<AppStore>()(
       // Initialize app
       initialize: async () => {
         try {
-          const [prompts, designTokens, collections, settings, sessions] = await Promise.all([
+          const [generations, designTokens, collections, settings, sessions] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
@@ -333,20 +355,20 @@ export const useStore = create<AppStore>()(
             created_at: s.created_at,
           }));
 
-          // Find the newest prompt by created_at (matches sidebar sort order)
-          const newestPrompt = prompts.length > 0
-            ? prompts.reduce((latest, p) =>
-                new Date(p.created_at) > new Date(latest.created_at) ? p : latest
+          // Find the newest generation by created_at (matches sidebar sort order)
+          const newestGeneration = generations.length > 0
+            ? generations.reduce((latest, g) =>
+                new Date(g.created_at) > new Date(latest.created_at) ? g : latest
               )
             : null;
 
           set({
-            prompts,
+            generations,
             designTokens,
             collections,
             settings,
             sessions: sessionsTyped,
-            currentPromptId: newestPrompt?.id || null,
+            currentGenerationId: newestGeneration?.id || null,
           });
         } catch (error) {
           set({ error: (error as Error).message });
@@ -355,22 +377,22 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [prompts, designTokens, collections] = await Promise.all([
+          const [generations, designTokens, collections] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
           ]);
 
-          set({ prompts, designTokens, collections });
+          set({ generations, designTokens, collections });
         } catch (error) {
           set({ error: (error as Error).message });
         }
       },
 
-      refreshPrompts: async () => {
+      refreshGenerations: async () => {
         try {
-          const prompts = await api.fetchPrompts();
-          set({ prompts });
+          const generations = await api.fetchPrompts();
+          set({ generations });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -394,25 +416,31 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // Prompt navigation
-      setCurrentPrompt: (id) => {
-        set({ currentPromptId: id, currentImageIndex: 0, currentCollectionId: null });
+      // Generation navigation
+      setCurrentGeneration: (id) => {
+        set({ currentGenerationId: id, currentImageIndex: 0, currentCollectionId: null });
       },
 
       setCurrentImageIndex: (index) => {
-        const prompt = get().getCurrentPrompt();
+        const { generationFilter, currentGenerationId, currentCollectionId } = get();
+        const generation = get().getCurrentGeneration();
         const collectionImages = get().getCurrentCollectionImages();
-        const images = prompt?.images || collectionImages;
+        const conceptImages = get().getConceptImages();
+        // Check concepts first (when filter active and no generation/collection selected)
+        const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+        const images = isViewingConcepts ? conceptImages : (generation?.images || collectionImages);
         if (images.length > 0 && index >= 0 && index < images.length) {
           set({ currentImageIndex: index });
         }
       },
 
       nextImage: () => {
-        const { currentImageIndex } = get();
-        const prompt = get().getCurrentPrompt();
+        const { currentImageIndex, generationFilter, currentGenerationId, currentCollectionId } = get();
+        const generation = get().getCurrentGeneration();
         const collectionImages = get().getCurrentCollectionImages();
-        const images = prompt?.images || collectionImages;
+        const conceptImages = get().getConceptImages();
+        const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+        const images = isViewingConcepts ? conceptImages : (generation?.images || collectionImages);
         if (images.length > 0 && currentImageIndex < images.length - 1) {
           set({ currentImageIndex: currentImageIndex + 1 });
         }
@@ -429,6 +457,7 @@ export const useStore = create<AppStore>()(
       setViewMode: (mode) => set({ viewMode: mode }),
       setLeftTab: (tab) => set({ leftTab: tab }),
       setRightTab: (tab) => set({ rightTab: tab }),
+      setGenerationFilter: (filter) => set({ generationFilter: filter }),
 
       // Selection
       setSelectionMode: (mode) => {
@@ -454,9 +483,12 @@ export const useStore = create<AppStore>()(
       },
 
       selectAll: () => {
-        const prompt = get().getCurrentPrompt();
+        const { generationFilter, currentGenerationId, currentCollectionId } = get();
+        const generation = get().getCurrentGeneration();
         const collectionImages = get().getCurrentCollectionImages();
-        const images = prompt?.images || collectionImages;
+        const conceptImages = get().getConceptImages();
+        const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+        const images = isViewingConcepts ? conceptImages : (generation?.images || collectionImages);
         if (images.length > 0) {
           set({ selectedIds: new Set(images.map((img) => img.id)) });
         }
@@ -517,23 +549,23 @@ export const useStore = create<AppStore>()(
 
       // Generation (supports concurrent generations)
       generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level }) => {
-        const { contextImageIds, contextAnnotationOverrides, pendingPrompts, currentSessionId, prompts } = get();
+        const { contextImageIds, contextAnnotationOverrides, pendingGenerations, currentSessionId, generations } = get();
 
-        // Create pending prompt
+        // Create pending generation
         const tempId = `pending-${Date.now()}`;
-        const newPending = new Map(pendingPrompts);
+        const newPending = new Map(pendingGenerations);
         newPending.set(tempId, { title, count: count || 4 });
 
-        // isGenerating is true if any pending prompts exist
-        set({ isGenerating: true, pendingPrompts: newPending, error: null });
+        // isGenerating is true if any pending generations exist
+        set({ isGenerating: true, pendingGenerations: newPending, error: null });
 
         // Store original annotations for images with overrides (for restoration after generation)
         const originalAnnotations: Record<string, { notes: string; annotation: string }> = {};
 
         // Helper to find image by ID
         const findImage = (imageId: string) => {
-          for (const p of prompts) {
-            const img = p.images.find((i) => i.id === imageId);
+          for (const g of generations) {
+            const img = g.images.find((i) => i.id === imageId);
             if (img) return img;
           }
           return null;
@@ -564,32 +596,32 @@ export const useStore = create<AppStore>()(
             safety_level,
           });
 
-          // Remove this pending prompt
-          const updatedPending = new Map(get().pendingPrompts);
+          // Remove this pending generation
+          const updatedPending = new Map(get().pendingGenerations);
           updatedPending.delete(tempId);
 
           await get().refreshData();
 
-          // Don't auto-navigate to new prompt - only update generation state
-          // User can click on the new prompt in the left panel to view it
+          // Don't auto-navigate to new generation - only update generation state
+          // User can click on the new generation in the left panel to view it
           set({
             isGenerating: updatedPending.size > 0,
-            pendingPrompts: updatedPending,
+            pendingGenerations: updatedPending,
             contextImageIds: [],
             contextAnnotationOverrides: {},
           });
 
           // Show success toast with option to view
-          const promptTitle = title || 'Untitled';
-          // Find the newly created prompt (should be the latest one)
-          const { prompts: updatedPrompts } = get();
-          const newPrompt = updatedPrompts.find((p) => p.title === promptTitle) || updatedPrompts[0];
-          toast.success(`"${promptTitle}" finished generating`, {
+          const generationTitle = title || 'Untitled';
+          // Find the newly created generation (should be the latest one)
+          const { generations: updatedGenerations } = get();
+          const newGeneration = updatedGenerations.find((g) => g.title === generationTitle) || updatedGenerations[0];
+          toast.success(`"${generationTitle}" finished generating`, {
             label: 'View',
             onClick: () => {
-              if (newPrompt) {
+              if (newGeneration) {
                 set({
-                  currentPromptId: newPrompt.id,
+                  currentGenerationId: newGeneration.id,
                   currentImageIndex: 0,
                   currentDraftId: null,
                 });
@@ -597,11 +629,11 @@ export const useStore = create<AppStore>()(
             },
           });
         } catch (error) {
-          const updatedPending = new Map(get().pendingPrompts);
+          const updatedPending = new Map(get().pendingGenerations);
           updatedPending.delete(tempId);
           set({
             isGenerating: updatedPending.size > 0,
-            pendingPrompts: updatedPending,
+            pendingGenerations: updatedPending,
             error: (error as Error).message,
           });
 
@@ -668,7 +700,7 @@ export const useStore = create<AppStore>()(
           streamingText: '', // Reset streaming text
           draftPrompts: [newDraft, ...draftPrompts],
           currentDraftId: draftId,
-          currentPromptId: null, // Clear current prompt to show draft view
+          currentGenerationId: null, // Clear current generation to show draft view
           // Legacy modal state (keep for backwards compat during transition)
           variationsBasePrompt: prompt,
           variationsTitle: initialTitle,
@@ -713,11 +745,11 @@ export const useStore = create<AppStore>()(
             // Auto-apply annotation suggestions: apply suggested annotations to images
             // and store original_annotation for revert capability
             if (response.annotation_suggestions && response.annotation_suggestions.length > 0) {
-              const { prompts } = get();
+              const { generations } = get();
               // Build a map of current annotations to preserve as originals
               const currentAnnotations = new Map<string, string>();
-              for (const prompt of prompts) {
-                for (const img of prompt.images) {
+              for (const generation of generations) {
+                for (const img of generation.images) {
                   if (img.annotation) {
                     currentAnnotations.set(img.id, img.annotation);
                   }
@@ -731,9 +763,9 @@ export const useStore = create<AppStore>()(
               }));
 
               // Apply suggested annotations to images
-              const updatedPrompts = prompts.map((p) => ({
-                ...p,
-                images: p.images.map((img) => {
+              const updatedGenerations = generations.map((g) => ({
+                ...g,
+                images: g.images.map((img) => {
                   const suggestion = enrichedSuggestions.find(s => s.image_id === img.id);
                   if (suggestion) {
                     return { ...img, annotation: suggestion.suggested_annotation };
@@ -742,8 +774,8 @@ export const useStore = create<AppStore>()(
                 }),
               }));
 
-              // Update prompts with applied annotations
-              set({ prompts: updatedPrompts });
+              // Update generations with applied annotations
+              set({ generations: updatedGenerations });
 
               // Also persist each annotation to the backend
               for (const sug of enrichedSuggestions) {
@@ -924,7 +956,7 @@ export const useStore = create<AppStore>()(
             label: 'View',
             onClick: () => {
               set({
-                currentPromptId: response.prompt_id,
+                currentGenerationId: response.prompt_id,
                 currentImageIndex: 0,
                 currentDraftId: null,
               });
@@ -957,7 +989,7 @@ export const useStore = create<AppStore>()(
       // Draft Prompt Actions
       setCurrentDraft: (id) => {
         if (id) {
-          set({ currentDraftId: id, currentPromptId: null });
+          set({ currentDraftId: id, currentGenerationId: null });
         } else {
           set({ currentDraftId: null });
         }
@@ -1250,12 +1282,12 @@ export const useStore = create<AppStore>()(
       },
 
       generateFromDraft: async (draftId) => {
-        const { draftPrompts, currentSessionId, generatingImageDraftIds, contextAnnotationOverrides, prompts } = get();
+        const { draftPrompts, currentSessionId, generatingImageDraftIds, contextAnnotationOverrides, generations } = get();
         const draft = draftPrompts.find((d) => d.id === draftId);
         if (!draft || draft.variations.length === 0) return;
 
         // Add to generating set (allows concurrent batch generation)
-        // Note: Don't add to pendingPrompts - the draft itself shows generating state
+        // Note: Don't add to pendingGenerations - the draft itself shows generating state
         const newGeneratingIds = new Set(generatingImageDraftIds);
         newGeneratingIds.add(draftId);
 
@@ -1270,8 +1302,8 @@ export const useStore = create<AppStore>()(
 
         // Helper to find image by ID
         const findImage = (imageId: string) => {
-          for (const p of prompts) {
-            const img = p.images.find((i) => i.id === imageId);
+          for (const g of generations) {
+            const img = g.images.find((i) => i.id === imageId);
             if (img) return img;
           }
           return null;
@@ -1322,15 +1354,15 @@ export const useStore = create<AppStore>()(
             contextAnnotationOverrides: {}, // Clear overrides after successful generation
           });
 
-          await get().refreshPrompts();
+          await get().refreshGenerations();
 
           // Show toast notification instead of auto-navigating (background generation)
-          const promptTitle = draft.title || 'Untitled';
-          toast.success(`"${promptTitle}" finished generating`, {
+          const generationTitle = draft.title || 'Untitled';
+          toast.success(`"${generationTitle}" finished generating`, {
             label: 'View',
             onClick: () => {
               set({
-                currentPromptId: response.prompt_id,
+                currentGenerationId: response.prompt_id,
                 currentImageIndex: 0,
                 currentDraftId: null,
               });
@@ -1371,13 +1403,13 @@ export const useStore = create<AppStore>()(
       },
 
       deleteDraft: (draftId) => {
-        const { draftPrompts, currentDraftId, prompts } = get();
+        const { draftPrompts, currentDraftId, generations } = get();
         set({
           draftPrompts: draftPrompts.filter((d) => d.id !== draftId),
           currentDraftId: currentDraftId === draftId ? null : currentDraftId,
-          // Navigate to first prompt if we're viewing the deleted draft
-          currentPromptId:
-            currentDraftId === draftId ? prompts[0]?.id || null : get().currentPromptId,
+          // Navigate to first generation if we're viewing the deleted draft
+          currentGenerationId:
+            currentDraftId === draftId ? generations[0]?.id || null : get().currentGenerationId,
         });
       },
 
@@ -1394,23 +1426,23 @@ export const useStore = create<AppStore>()(
 
           // Adjust current index if needed
           const { currentImageIndex } = get();
-          const prompt = get().getCurrentPrompt();
-          if (prompt && currentImageIndex >= prompt.images.length) {
-            set({ currentImageIndex: Math.max(0, prompt.images.length - 1) });
+          const generation = get().getCurrentGeneration();
+          if (generation && currentImageIndex >= generation.images.length) {
+            set({ currentImageIndex: Math.max(0, generation.images.length - 1) });
           }
         } catch (error) {
           set({ error: (error as Error).message });
         }
       },
 
-      deletePrompt: async (promptId) => {
+      deleteGeneration: async (generationId) => {
         try {
-          await api.deletePrompt(promptId);
+          await api.deletePrompt(generationId);
           await get().refreshData();
 
-          const { prompts, currentPromptId } = get();
-          if (currentPromptId === promptId) {
-            set({ currentPromptId: prompts[0]?.id || null, currentImageIndex: 0 });
+          const { generations, currentGenerationId } = get();
+          if (currentGenerationId === generationId) {
+            set({ currentGenerationId: generations[0]?.id || null, currentImageIndex: 0 });
           }
         } catch (error) {
           set({ error: (error as Error).message });
@@ -1430,56 +1462,56 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      batchDeletePrompts: async (promptIds) => {
-        if (promptIds.length === 0) return;
+      batchDeleteGenerations: async (generationIds) => {
+        if (generationIds.length === 0) return;
 
         try {
-          await api.batchDeletePrompts(promptIds);
+          await api.batchDeletePrompts(generationIds);
           await get().refreshData();
 
           // Clear selection and navigate if needed
-          const { currentPromptId, prompts } = get();
-          const newSelectedPromptIds = new Set<string>();
+          const { currentGenerationId, generations } = get();
+          const newSelectedGenerationIds = new Set<string>();
 
-          // If current prompt was deleted, navigate to first remaining
-          if (currentPromptId && promptIds.includes(currentPromptId)) {
-            const remaining = prompts.filter((p) => !promptIds.includes(p.id));
+          // If current generation was deleted, navigate to first remaining
+          if (currentGenerationId && generationIds.includes(currentGenerationId)) {
+            const remaining = generations.filter((g) => !generationIds.includes(g.id));
             set({
-              currentPromptId: remaining[0]?.id || null,
+              currentGenerationId: remaining[0]?.id || null,
               currentImageIndex: 0,
-              selectedPromptIds: newSelectedPromptIds,
+              selectedGenerationIds: newSelectedGenerationIds,
             });
           } else {
-            set({ selectedPromptIds: newSelectedPromptIds });
+            set({ selectedGenerationIds: newSelectedGenerationIds });
           }
         } catch (error) {
           set({ error: (error as Error).message });
         }
       },
 
-      // Prompt selection
-      togglePromptSelection: (id) => {
-        const { selectedPromptIds } = get();
-        const newSelected = new Set(selectedPromptIds);
+      // Generation selection
+      toggleGenerationSelection: (id) => {
+        const { selectedGenerationIds } = get();
+        const newSelected = new Set(selectedGenerationIds);
         if (newSelected.has(id)) {
           newSelected.delete(id);
         } else {
           newSelected.add(id);
         }
-        set({ selectedPromptIds: newSelected });
+        set({ selectedGenerationIds: newSelected });
       },
 
-      selectAllPrompts: () => {
-        const { prompts, draftPrompts } = get();
+      selectAllGenerations: () => {
+        const { generations, draftPrompts } = get();
         const allIds = [
-          ...prompts.map((p) => p.id),
+          ...generations.map((g) => g.id),
           ...draftPrompts.map((d) => d.id),
         ];
-        set({ selectedPromptIds: new Set(allIds) });
+        set({ selectedGenerationIds: new Set(allIds) });
       },
 
-      clearPromptSelection: () => {
-        set({ selectedPromptIds: new Set() });
+      clearGenerationSelection: () => {
+        set({ selectedGenerationIds: new Set() });
       },
 
       // Image notes
@@ -1488,14 +1520,14 @@ export const useStore = create<AppStore>()(
           await api.updateImageNotes(imageId, notes, annotation);
 
           // Update local state
-          const { prompts } = get();
-          const updatedPrompts = prompts.map((p) => ({
-            ...p,
-            images: p.images.map((img) =>
+          const { generations } = get();
+          const updatedGenerations = generations.map((g) => ({
+            ...g,
+            images: g.images.map((img) =>
               img.id === imageId ? { ...img, notes, annotation: annotation ?? img.annotation } : img
             ),
           }));
-          set({ prompts: updatedPrompts });
+          set({ generations: updatedGenerations });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -1514,8 +1546,12 @@ export const useStore = create<AppStore>()(
           }
 
           const token = await api.createToken(data);
-          const designTokens = await api.fetchTokens();
-          set({ designTokens });
+          // Refresh both tokens and generations (concept images create Generation entries)
+          const [designTokens, generations] = await Promise.all([
+            api.fetchTokens(),
+            api.fetchPrompts(),
+          ]);
+          set({ designTokens, generations });
           return token;
         } catch (error) {
           set({ error: (error as Error).message });
@@ -1526,8 +1562,9 @@ export const useStore = create<AppStore>()(
       deleteToken: async (id) => {
         try {
           await api.deleteToken(id);
-          const designTokens = await api.fetchTokens();
-          set({ designTokens });
+          // Refresh both tokens and generations since deleting a token
+          // also deletes its concept prompt (bidirectional sync)
+          await get().refreshData();
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -1563,8 +1600,12 @@ export const useStore = create<AppStore>()(
       generateTokenConcept: async (tokenId) => {
         try {
           await api.generateTokenConcept(tokenId);
-          const designTokens = await api.fetchTokens();
-          set({ designTokens });
+          // Refresh both tokens and generations (concept images create Generation entries)
+          const [designTokens, generations] = await Promise.all([
+            api.fetchTokens(),
+            api.fetchPrompts(),
+          ]);
+          set({ designTokens, generations });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -1635,10 +1676,10 @@ export const useStore = create<AppStore>()(
       },
 
       viewCollection: (id) => {
-        // Set to view collection mode - clear prompt/draft selection
+        // Set to view collection mode - clear generation/draft selection
         set({
           currentCollectionId: id,
-          currentPromptId: null,
+          currentGenerationId: null,
           currentDraftId: null,
           currentImageIndex: 0,
           leftTab: 'collections',
@@ -1649,7 +1690,7 @@ export const useStore = create<AppStore>()(
         if (id) {
           set({
             currentCollectionId: id,
-            currentPromptId: null,
+            currentGenerationId: null,
             currentDraftId: null,
             currentImageIndex: 0,
           });
@@ -1664,14 +1705,14 @@ export const useStore = create<AppStore>()(
       },
 
       getCurrentCollectionImages: () => {
-        const { prompts, collections, currentCollectionId } = get();
+        const { generations, collections, currentCollectionId } = get();
         const collection = collections.find((c) => c.id === currentCollectionId);
         if (!collection) return [];
 
-        // Build a map of all images across all prompts
+        // Build a map of all images across all generations
         const imageMap = new Map<string, ImageData>();
-        for (const prompt of prompts) {
-          for (const image of prompt.images) {
+        for (const generation of generations) {
+          for (const image of generation.images) {
             imageMap.set(image.id, image);
           }
         }
@@ -1680,6 +1721,34 @@ export const useStore = create<AppStore>()(
         return collection.image_ids
           .map((id) => imageMap.get(id))
           .filter((img): img is ImageData => img !== undefined);
+      },
+
+      getConceptImages: () => {
+        const { generations } = get();
+        // Get all images from concept generations, sorted newest first
+        const conceptGenerations = generations.filter((g) => g.is_concept);
+        const images = conceptGenerations.flatMap((generation) => generation.images);
+        return images.sort(
+          (a, b) =>
+            new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime()
+        );
+      },
+
+      // Library "unread" tracking
+      markLibrarySeen: () => {
+        set({ lastSeenLibraryAt: new Date().toISOString() });
+      },
+
+      getNewTokenCount: () => {
+        const { designTokens, lastSeenLibraryAt } = get();
+        if (!lastSeenLibraryAt) {
+          // First visit - all tokens are "new" but we'll mark them seen
+          return designTokens.length > 0 ? designTokens.length : 0;
+        }
+        const lastSeenTime = new Date(lastSeenLibraryAt).getTime();
+        return designTokens.filter(
+          (token) => new Date(token.created_at).getTime() > lastSeenTime
+        ).length;
       },
 
       removeFromCollection: async (collectionId, imageId) => {
@@ -1728,7 +1797,7 @@ export const useStore = create<AppStore>()(
           await get().refreshData();
 
           set({
-            currentPromptId: response.prompt_id,
+            currentGenerationId: response.prompt_id,
             currentImageIndex: 0,
             isGenerating: false,
           });
@@ -1770,17 +1839,17 @@ export const useStore = create<AppStore>()(
           }
         }
 
-        // Switch to new session and filter prompts
+        // Switch to new session and filter generations
         set({ currentSessionId: id });
 
         // Refresh data with session filter
         try {
-          const prompts = id ? await api.fetchPromptsForSession(id) : await api.fetchPrompts();
+          const generations = id ? await api.fetchPromptsForSession(id) : await api.fetchPrompts();
           const session = get().sessions.find((s) => s.id === id);
           set({
-            prompts,
+            generations,
             notes: session?.notes || '',
-            currentPromptId: prompts[0]?.id || null,
+            currentGenerationId: generations[0]?.id || null,
             currentImageIndex: 0,
           });
         } catch (error) {
@@ -1790,7 +1859,7 @@ export const useStore = create<AppStore>()(
 
       deleteSession: async (id) => {
         try {
-          await api.deleteSession(id, false); // Don't delete prompts, just clear session_id
+          await api.deleteSession(id, false); // Don't delete generations, just clear session_id
 
           const { sessions, currentSessionId } = get();
           const newSessions = sessions.filter((s) => s.id !== id);
@@ -1801,12 +1870,12 @@ export const useStore = create<AppStore>()(
             notes: currentSessionId === id ? '' : get().notes,
           });
 
-          // Refresh prompts if we just deleted the current session
+          // Refresh generations if we just deleted the current session
           if (currentSessionId === id) {
-            const prompts = await api.fetchPrompts();
+            const generations = await api.fetchPrompts();
             set({
-              prompts,
-              currentPromptId: prompts[0]?.id || null,
+              generations,
+              currentGenerationId: generations[0]?.id || null,
             });
           }
         } catch (error) {
@@ -1836,14 +1905,14 @@ export const useStore = create<AppStore>()(
           await api.updateDesignTags(imageId, tags);
 
           // Update local state
-          const { prompts } = get();
-          const updatedPrompts = prompts.map((p) => ({
-            ...p,
-            images: p.images.map((img) =>
+          const { generations } = get();
+          const updatedGenerations = generations.map((g) => ({
+            ...g,
+            images: g.images.map((img) =>
               img.id === imageId ? { ...img, design_tags: tags } : img
             ),
           }));
-          set({ prompts: updatedPrompts });
+          set({ generations: updatedGenerations });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -1854,10 +1923,10 @@ export const useStore = create<AppStore>()(
           await api.toggleAxisLike(imageId, axis, tag, liked);
 
           // Update local state
-          const { prompts } = get();
-          const updatedPrompts = prompts.map((p) => ({
-            ...p,
-            images: p.images.map((img) => {
+          const { generations } = get();
+          const updatedGenerations = generations.map((g) => ({
+            ...g,
+            images: g.images.map((img) => {
               if (img.id !== imageId) return img;
 
               const currentAxisTags = img.liked_axes?.[axis] || [];
@@ -1879,7 +1948,7 @@ export const useStore = create<AppStore>()(
               };
             }),
           }));
-          set({ prompts: updatedPrompts });
+          set({ generations: updatedGenerations });
 
           // Refresh preferences after toggling
           get().fetchDesignPreferences();
@@ -1937,45 +2006,13 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      generateConcept: async (imageId: string, dimension: DesignDimension) => {
-        // Use existing pendingPrompts pattern for async generation
-        const tempId = `concept-${Date.now()}`;
-        const newPending = new Map(get().pendingPrompts);
-        newPending.set(tempId, { title: `Concept: ${dimension.name}`, count: 1 });
-        set({ isGenerating: true, pendingPrompts: newPending });
-
-        try {
-          const response = await api.generateConcept(imageId, dimension);
-          if (!response.success) {
-            throw new Error(response.error || 'Concept generation failed');
-          }
-
-          // Refresh data to get the new concept prompt
-          await get().refreshData();
-
-          // Navigate to the new concept prompt
-          if (response.prompt_id) {
-            set({ currentPromptId: response.prompt_id, currentImageIndex: 0 });
-          }
-        } catch (error) {
-          set({ error: (error as Error).message });
-        } finally {
-          const updatedPending = new Map(get().pendingPrompts);
-          updatedPending.delete(tempId);
-          set({
-            isGenerating: updatedPending.size > 0,
-            pendingPrompts: updatedPending,
-          });
-        }
-      },
-
       confirmDimension: async (imageId: string, axis: string) => {
         // Get current image to find its dimensions
-        const { prompts } = get();
+        const { generations } = get();
         let currentDimensions: Record<string, DesignDimension> = {};
 
-        for (const prompt of prompts) {
-          const img = prompt.images.find((i) => i.id === imageId);
+        for (const generation of generations) {
+          const img = generation.images.find((i) => i.id === imageId);
           if (img?.design_dimensions) {
             currentDimensions = img.design_dimensions;
             break;
@@ -2007,10 +2044,10 @@ export const useStore = create<AppStore>()(
 
       toggleDimensionLike: async (imageId, axis, liked) => {
         // Optimistic update - update UI immediately
-        const { prompts } = get();
-        const updatedPrompts = prompts.map((p) => ({
-          ...p,
-          images: p.images.map((img) => {
+        const { generations } = get();
+        const updatedGenerations = generations.map((g) => ({
+          ...g,
+          images: g.images.map((img) => {
             if (img.id !== imageId) return img;
 
             const currentLikedAxes = img.liked_dimension_axes || [];
@@ -2030,7 +2067,7 @@ export const useStore = create<AppStore>()(
             };
           }),
         }));
-        set({ prompts: updatedPrompts });
+        set({ generations: updatedGenerations });
 
         // Persist to backend
         try {
@@ -2050,11 +2087,11 @@ export const useStore = create<AppStore>()(
 
         // For single image: check if it has pre-computed dimensions
         if (imageCount === 1) {
-          const { prompts } = get();
+          const { generations } = get();
           let precomputedDimensions: DesignDimension[] | null = null;
 
-          for (const prompt of prompts) {
-            const img = prompt.images.find((i) => i.id === imageIds[0]);
+          for (const generation of generations) {
+            const img = generation.images.find((i) => i.id === imageIds[0]);
             if (img?.design_dimensions) {
               // Convert Record<string, DesignDimension> to array
               precomputedDimensions = Object.values(img.design_dimensions);
@@ -2210,24 +2247,28 @@ export const useStore = create<AppStore>()(
       clearError: () => set({ error: null }),
 
       // Helpers
-      getCurrentPrompt: () => {
-        const { prompts, currentPromptId } = get();
-        return prompts.find((p) => p.id === currentPromptId) || null;
+      getCurrentGeneration: () => {
+        const { generations, currentGenerationId } = get();
+        return generations.find((g) => g.id === currentGenerationId) || null;
       },
 
       getCurrentImage: () => {
-        const prompt = get().getCurrentPrompt();
-        const { currentImageIndex } = get();
-        return prompt?.images[currentImageIndex] || null;
+        const { generationFilter, currentGenerationId, currentCollectionId, currentImageIndex } = get();
+        const generation = get().getCurrentGeneration();
+        const collectionImages = get().getCurrentCollectionImages();
+        const conceptImages = get().getConceptImages();
+        const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+        const images = isViewingConcepts ? conceptImages : (generation?.images || collectionImages);
+        return images[currentImageIndex] || null;
       },
 
       getAllImages: () => {
-        const { prompts } = get();
-        const result: { image: ImageData; promptId: string; promptTitle: string }[] = [];
+        const { generations } = get();
+        const result: { image: ImageData; generationId: string; generationTitle: string }[] = [];
 
-        prompts.forEach((p) => {
-          p.images.forEach((img) => {
-            result.push({ image: img, promptId: p.id, promptTitle: p.title });
+        generations.forEach((g) => {
+          g.images.forEach((img) => {
+            result.push({ image: img, generationId: g.id, generationTitle: g.title });
           });
         });
 
@@ -2250,6 +2291,8 @@ export const useStore = create<AppStore>()(
         // Persist draft prompts
         draftPrompts: state.draftPrompts,
         currentDraftId: state.currentDraftId,
+        // Persist library "unread" tracking
+        lastSeenLibraryAt: state.lastSeenLibraryAt,
       }),
     }
   )

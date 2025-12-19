@@ -15,7 +15,10 @@ export function useKeyboardShortcuts() {
     setRightTab,
     setLeftTab,
     getCurrentImage,
-    getCurrentPrompt,
+    getCurrentGeneration,
+    generationFilter,
+    currentGenerationId,
+    currentCollectionId,
     contextImageIds,
     setContextImages,
     openExtractionDialog,
@@ -174,9 +177,15 @@ export function useKeyboardShortcuts() {
         case 'C':
           if (!isMeta) {
             event.preventDefault();
-            const promptToCopy = getCurrentPrompt();
-            if (promptToCopy) {
-              navigator.clipboard.writeText(promptToCopy.prompt);
+            const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+            const promptToCopy = getCurrentGeneration();
+            const imageToCopy = getCurrentImage();
+            // For concepts, copy the varied_prompt from the image; otherwise copy prompt.prompt
+            const textToCopy = isViewingConcepts
+              ? imageToCopy?.varied_prompt
+              : promptToCopy?.prompt;
+            if (textToCopy) {
+              navigator.clipboard.writeText(textToCopy);
             }
           }
           break;
@@ -186,12 +195,17 @@ export function useKeyboardShortcuts() {
           if (!isMeta) {
             event.preventDefault();
             const imageToDownload = getCurrentImage();
-            const promptForDownload = getCurrentPrompt();
-            if (imageToDownload && promptForDownload) {
+            const promptForDownload = getCurrentGeneration();
+            const isViewingConceptsForDownload = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+            // Use prompt title, image variation_title, or fallback to "Design-Library"
+            const downloadTitle = promptForDownload?.title
+              || imageToDownload?.variation_title
+              || (isViewingConceptsForDownload ? 'Design-Library' : 'Image');
+            if (imageToDownload) {
               const link = document.createElement('a');
               link.href = getImageUrl(imageToDownload.image_path);
               const ext = imageToDownload.image_path.split('.').pop();
-              link.download = `${promptForDownload.title.replace(/\s+/g, '-')}-${imageToDownload.id}.${ext}`;
+              link.download = `${downloadTitle.replace(/\s+/g, '-')}-${imageToDownload.id}.${ext}`;
               document.body.appendChild(link);
               link.click();
               document.body.removeChild(link);
@@ -249,7 +263,10 @@ export function useKeyboardShortcuts() {
       setRightTab,
       setLeftTab,
       getCurrentImage,
-      getCurrentPrompt,
+      getCurrentGeneration,
+      generationFilter,
+      currentGenerationId,
+      currentCollectionId,
       contextImageIds,
       setContextImages,
       openExtractionDialog,

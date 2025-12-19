@@ -24,7 +24,7 @@ export function CollectionsTab() {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [rawCollections]);
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const deleteCollection = useStore((s) => s.deleteCollection);
   const addContextImages = useStore((s) => s.addContextImages);
   const setRightTab = useStore((s) => s.setRightTab);

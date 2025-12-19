@@ -277,21 +277,6 @@ class AnalyzeDimensionsResponse(BaseModel):
     error: str | None = None
 
 
-class GenerateConceptRequest(BaseModel):
-    """Request for generating a concept image from a dimension."""
-    image_id: str  # Source image for context
-    dimension: DesignDimension
-    aspect_ratio: AspectRatioType = "1:1"
-
-
-class GenerateConceptResponse(BaseModel):
-    """Response with generated concept image."""
-    success: bool
-    prompt_id: str | None = None  # The new concept prompt
-    images: list[dict] = []
-    error: str | None = None
-
-
 class UpdateDimensionsRequest(BaseModel):
     """Request for updating design dimensions on an image."""
     dimensions: dict[str, DesignDimension]  # axis -> dimension
@@ -547,11 +532,28 @@ def _find_image_by_id(metadata: dict, image_id: str) -> tuple[dict | None, Path 
     return None, None
 
 
-def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None, dict | None]]:
-    """Load multiple context images with preference data.
+def _format_liked_axes(liked_axes: dict | None) -> str | None:
+    """Format liked_axes dict into a human-readable string for the AI.
 
-    Returns list of (bytes, mime_type, annotation, liked_axes) tuples.
-    liked_axes is a dict of axis -> list[str] for user-liked design tags.
+    Example: {"lighting": ["Warm Lighting"], "mood": ["Serene", "Peaceful"]}
+    Returns: "User prefers in this image: Warm Lighting, Serene, Peaceful"
+    """
+    if not liked_axes:
+        return None
+    all_tags = []
+    for tags in liked_axes.values():
+        if tags:
+            all_tags.extend(tags)
+    if not all_tags:
+        return None
+    return f"User prefers in this image: {', '.join(all_tags)}"
+
+
+def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None]]:
+    """Load multiple context images with preference data for AI generation.
+
+    Returns list of (bytes, mime_type, context_description) tuples.
+    The context_description includes the user's annotation AND their liked tags.
     """
     context_images = []
     for img_id in image_ids:
@@ -560,18 +562,26 @@ def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[byt
             # Only send annotation to API (notes are user workspace only)
             # Support both old "caption" field and new "annotation" field
             annotation = img_data.get("annotation") or img_data.get("caption", "") or ""
-            context_desc = annotation.strip() if annotation else None
+            annotation = annotation.strip() if annotation else ""
 
-            # Extract liked_axes preferences
+            # Extract and format liked_axes preferences
             liked_axes = img_data.get("liked_axes", {}) or None
-            if liked_axes and not any(liked_axes.values()):
-                liked_axes = None  # Don't include empty liked_axes
+            liked_text = _format_liked_axes(liked_axes)
+
+            # Combine annotation and liked preferences into context description
+            if annotation and liked_text:
+                context_desc = f"{annotation}\n\n{liked_text}"
+            elif annotation:
+                context_desc = annotation
+            elif liked_text:
+                context_desc = liked_text
+            else:
+                context_desc = None
 
             context_images.append((
                 img_path.read_bytes(),
                 img_data.get("mime_type", "image/png"),
                 context_desc,
-                liked_axes,
             ))
     return context_images
 
@@ -582,6 +592,8 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
     Returns list of (image_id, bytes, mime_type, annotation, confirmed_dimensions, liked_dimension_axes) tuples.
     confirmed_dimensions is a dict of axis -> DesignDimension for dimensions with confirmed=True.
     liked_dimension_axes is a list of axis names the user has liked.
+
+    Note: The annotation includes both the user's text annotation AND their liked design tags.
     """
     pool = []
     for img_id in image_ids:
@@ -589,6 +601,21 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
         if img_data and img_path:
             # Support both old "caption" field and new "annotation" field
             annotation = img_data.get("annotation") or img_data.get("caption", "") or ""
+            annotation = annotation.strip() if annotation else ""
+
+            # Extract and format liked_axes preferences (from design tags)
+            liked_axes = img_data.get("liked_axes", {}) or None
+            liked_text = _format_liked_axes(liked_axes)
+
+            # Combine annotation and liked preferences
+            if annotation and liked_text:
+                combined_annotation = f"{annotation}\n\n{liked_text}"
+            elif annotation:
+                combined_annotation = annotation
+            elif liked_text:
+                combined_annotation = liked_text
+            else:
+                combined_annotation = None
 
             # Extract confirmed design dimensions
             confirmed_dims = None
@@ -611,7 +638,7 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
                 img_id,
                 img_path.read_bytes(),
                 img_data.get("mime_type", "image/png"),
-                annotation.strip() if annotation else None,
+                combined_annotation,
                 confirmed_dims,
                 liked_dimension_axes,
             ))
@@ -958,8 +985,9 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         "base_prompt": req.base_prompt,  # Original prompt that generated variations
     }
 
-    metadata["prompts"].append(prompt_entry)
-    save_metadata(metadata)
+    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
+    async with _metadata_manager.atomic() as fresh_metadata:
+        fresh_metadata["prompts"].append(prompt_entry)
 
     logger.info(f"Generated {len(images)} images from prompts, prompt_id={prompt_id}")
 
@@ -1160,9 +1188,9 @@ async def generate_images(req: GenerateRequest):
         "images": images,
     }
 
-    # Save to metadata (reload to avoid stale data)
-    metadata["prompts"].append(prompt_entry)
-    save_metadata(metadata)
+    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
+    async with _metadata_manager.atomic() as fresh_metadata:
+        fresh_metadata["prompts"].append(prompt_entry)
 
     logger.info(f"Generated {len(images)} images, prompt_id={prompt_id}" + (f", errors={len(errors)}" if errors else ""))
 
@@ -1202,8 +1230,13 @@ async def get_prompt(prompt_id: str):
 
 @app.delete("/api/prompts/{prompt_id}")
 async def delete_prompt(prompt_id: str):
-    """Delete a prompt and all its images."""
+    """Delete a prompt and all its images.
+
+    If this is a concept prompt (is_concept=True), also cleans up the
+    associated token's concept references to keep them in sync.
+    """
     metadata = load_metadata()
+    deleted_token_id = None
 
     for i, prompt in enumerate(metadata.get("prompts", [])):
         if prompt["id"] == prompt_id:
@@ -1213,11 +1246,24 @@ async def delete_prompt(prompt_id: str):
                     metadata, img["id"], img.get("image_path")
                 )
 
+            # If this is a concept prompt, clean up the linked token's references
+            if prompt.get("is_concept"):
+                tokens = metadata.get("tokens", [])
+                for token in tokens:
+                    if token.get("concept_prompt_id") == prompt_id:
+                        # Clear concept references from the token
+                        token["concept_prompt_id"] = None
+                        token["concept_image_id"] = None
+                        token["concept_image_path"] = None
+                        deleted_token_id = token["id"]
+                        logger.info(f"Cleared concept references from token: {token['id']}")
+                        break
+
             # Remove prompt
             metadata["prompts"].pop(i)
             save_metadata(metadata)
             logger.info(f"Deleted prompt: {prompt_id}")
-            return {"success": True, "deleted_id": prompt_id}
+            return {"success": True, "deleted_id": prompt_id, "updated_token_id": deleted_token_id}
 
     raise HTTPException(status_code=404, detail="Prompt not found")
 
@@ -1228,9 +1274,13 @@ class BatchDeletePromptsRequest(BaseModel):
 
 @app.post("/api/batch/delete-prompts")
 async def batch_delete_prompts(req: BatchDeletePromptsRequest):
-    """Delete multiple prompts and all their images."""
+    """Delete multiple prompts and all their images.
+
+    If any are concept prompts, cleans up the linked token references.
+    """
     metadata = load_metadata()
     deleted_ids = []
+    updated_token_ids = []
     errors = []
 
     for prompt_id in req.prompt_ids:
@@ -1244,6 +1294,18 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
                         metadata, img["id"], img.get("image_path")
                     )
 
+                # If this is a concept prompt, clean up the linked token's references
+                if prompt.get("is_concept"):
+                    tokens = metadata.get("tokens", [])
+                    for token in tokens:
+                        if token.get("concept_prompt_id") == prompt_id:
+                            token["concept_prompt_id"] = None
+                            token["concept_image_id"] = None
+                            token["concept_image_path"] = None
+                            updated_token_ids.append(token["id"])
+                            logger.info(f"Cleared concept references from token: {token['id']}")
+                            break
+
                 # Remove prompt
                 metadata["prompts"].pop(i)
                 deleted_ids.append(prompt_id)
@@ -1254,7 +1316,7 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
             errors.append(f"Prompt not found: {prompt_id}")
 
     save_metadata(metadata)
-    return {"success": True, "deleted_ids": deleted_ids, "errors": errors}
+    return {"success": True, "deleted_ids": deleted_ids, "updated_token_ids": updated_token_ids, "errors": errors}
 
 
 @app.delete("/api/images/{image_id}")
@@ -1350,8 +1412,9 @@ async def upload_images(
         "images": images,
     }
 
-    metadata["prompts"].append(prompt_entry)
-    save_metadata(metadata)
+    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
+    async with _metadata_manager.atomic() as fresh_metadata:
+        fresh_metadata["prompts"].append(prompt_entry)
 
     logger.info(f"Uploaded {len(images)} images as prompt: {prompt_id}")
 
@@ -1569,28 +1632,82 @@ async def create_token(req: CreateTokenRequest):
                 concept_path.write_bytes(image_data)
                 token["concept_image_path"] = concept_filename
                 token["concept_image_id"] = f"concept-{token_id}"
+                token["concept_prompt_id"] = f"concept-prompt-{token_id}"
+
+                # Create full Prompt entry for the concept image (same metadata as regular images)
+                # Include source image IDs as context so they appear in the Context section
+                source_image_ids = [img["id"] for img in token_images] if token_images else []
+                concept_prompt = {
+                    "id": f"concept-prompt-{token_id}",
+                    "prompt": dimension_dict.get("generation_prompt", ""),
+                    "title": f"Concept: {dimension_dict.get('name', 'Untitled')}",
+                    "created_at": now,
+                    "context_image_ids": source_image_ids,
+                    "images": [
+                        {
+                            "id": f"concept-{token_id}",
+                            "image_path": concept_filename,
+                            "mime_type": "image/jpeg",
+                            "generated_at": now,
+                            "varied_prompt": dimension_dict.get("generation_prompt", ""),
+                            "variation_title": dimension_dict.get("name", ""),
+                            "design_dimensions": {
+                                dimension_dict.get("axis", "concept"): dimension_dict
+                            },
+                        }
+                    ],
+                    "is_concept": True,
+                    "concept_axis": dimension_dict.get("axis"),
+                    "source_image_id": token_images[0]["id"] if token_images else None,
+                }
+                # Store concept prompt to add during atomic save
+                token["_concept_prompt"] = concept_prompt
                 logger.info(f"Generated concept image for token: {concept_filename}")
         except Exception as e:
             logger.warning(f"Failed to generate concept image: {e}")
             # Continue without concept image
 
-    metadata["tokens"].append(token)
-    save_metadata(metadata)
+    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
+    concept_prompt_to_add = token.pop("_concept_prompt", None)
+    async with _metadata_manager.atomic() as fresh_metadata:
+        if "tokens" not in fresh_metadata:
+            fresh_metadata["tokens"] = []
+        fresh_metadata["tokens"].append(token)
+        if concept_prompt_to_add:
+            fresh_metadata["prompts"].append(concept_prompt_to_add)
+
     logger.info(f"Created token: {token_id} - {req.name} ({req.creation_method})")
     return {"success": True, "token": token}
 
 
 @app.delete("/api/tokens/{token_id}")
 async def delete_token(token_id: str):
-    """Delete a design token."""
+    """Delete a design token and its associated concept prompt/image."""
     metadata = load_metadata()
     tokens = metadata.get("tokens", [])
+
     for i, token in enumerate(tokens):
         if token["id"] == token_id:
+            # Also delete associated concept prompt if it exists
+            concept_prompt_id = token.get("concept_prompt_id")
+            if concept_prompt_id:
+                prompts = metadata.get("prompts", [])
+                for j, prompt in enumerate(prompts):
+                    if prompt["id"] == concept_prompt_id:
+                        # Delete concept image files
+                        for img in prompt.get("images", []):
+                            _metadata_manager.delete_image_file(
+                                metadata, img["id"], img.get("image_path")
+                            )
+                        prompts.pop(j)
+                        logger.info(f"Deleted concept prompt: {concept_prompt_id}")
+                        break
+
             tokens.pop(i)
             save_metadata(metadata)
             logger.info(f"Deleted token: {token_id}")
-            return {"success": True}
+            return {"success": True, "deleted_concept_prompt": concept_prompt_id}
+
     raise HTTPException(status_code=404, detail="Token not found")
 
 
@@ -1609,62 +1726,122 @@ async def use_token(token_id: str):
 
 @app.post("/api/tokens/{token_id}/generate-concept")
 async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
-    """Generate a concept image for an existing token."""
+    """Generate a concept image for an existing token.
+
+    Uses a two-phase approach to avoid race conditions when multiple
+    concept images are generated concurrently:
+    1. Read phase: Load metadata (no lock) to get generation parameters
+    2. Generate phase: Call Gemini API (slow, no lock held)
+    3. Write phase: Use context manager with file lock to atomically update metadata
+    """
+    # Phase 1: Read token data needed for generation (no lock needed)
     metadata = load_metadata()
+    token_data = None
     for token in metadata.get("tokens", []):
         if token["id"] == token_id:
-            extraction = token.get("extraction")
-            if not extraction:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Token has no extraction dimension - cannot generate concept"
-                )
+            token_data = token
+            break
 
-            # Get source image from token to reference during generation
-            source_image_bytes = None
-            source_mime_type = "image/jpeg"
-            token_images = token.get("images", [])
-            if token_images:
-                first_image = token_images[0]
-                image_path = first_image.get("image_path")
-                if image_path:
-                    source_path = IMAGES_DIR / image_path
-                    if source_path.exists():
-                        source_image_bytes = source_path.read_bytes()
-                        ext = source_path.suffix.lower()
-                        if ext == ".png":
-                            source_mime_type = "image/png"
-                        elif ext in (".jpg", ".jpeg"):
-                            source_mime_type = "image/jpeg"
+    if token_data is None:
+        raise HTTPException(status_code=404, detail="Token not found")
 
-            try:
-                result = await gemini.generate_concept_image(
-                    dimension=extraction.get("dimension", {}),
-                    aspect_ratio=aspect_ratio,
-                    source_image_bytes=source_image_bytes,
-                    source_image_mime_type=source_mime_type,
-                )
-                if result.images:
-                    concept_filename = f"concept-{uuid.uuid4().hex[:8]}.jpg"
-                    concept_path = IMAGES_DIR / concept_filename
-                    # Decode base64 string to bytes before writing
-                    image_data = base64.b64decode(result.images[0]["data"])
-                    concept_path.write_bytes(image_data)
-                    token["concept_image_path"] = concept_filename
-                    token["concept_image_id"] = f"concept-{token_id}"
-                    save_metadata(metadata)
-                    logger.info(f"Generated concept image: {concept_filename}")
-                    return {
-                        "success": True,
-                        "concept_image_path": concept_filename,
-                        "concept_image_id": token["concept_image_id"],
-                    }
-                return {"success": False, "error": "No image generated"}
-            except Exception as e:
-                logger.error(f"Concept generation failed: {e}")
-                return {"success": False, "error": str(e)}
+    extraction = token_data.get("extraction")
+    if not extraction:
+        raise HTTPException(
+            status_code=400,
+            detail="Token has no extraction dimension - cannot generate concept"
+        )
 
-    raise HTTPException(status_code=404, detail="Token not found")
+    # Get source image from token to reference during generation
+    source_image_bytes = None
+    source_mime_type = "image/jpeg"
+    token_images = token_data.get("images", [])
+    source_image_ids = [img["id"] for img in token_images] if token_images else []
+    if token_images:
+        first_image = token_images[0]
+        image_path = first_image.get("image_path")
+        if image_path:
+            source_path = IMAGES_DIR / image_path
+            if source_path.exists():
+                source_image_bytes = source_path.read_bytes()
+                ext = source_path.suffix.lower()
+                if ext == ".png":
+                    source_mime_type = "image/png"
+                elif ext in (".jpg", ".jpeg"):
+                    source_mime_type = "image/jpeg"
+
+    dimension_dict = extraction.get("dimension", {})
+
+    # Phase 2: Generate image (slow operation, no lock held)
+    try:
+        result = await gemini.generate_concept_image(
+            dimension=dimension_dict,
+            aspect_ratio=aspect_ratio,
+            source_image_bytes=source_image_bytes,
+            source_image_mime_type=source_mime_type,
+        )
+    except Exception as e:
+        logger.error(f"Concept generation failed: {e}")
+        return {"success": False, "error": str(e)}
+
+    if not result.images:
+        return {"success": False, "error": "No image generated"}
+
+    # Save generated image to disk (before acquiring lock)
+    concept_filename = f"concept-{uuid.uuid4().hex[:8]}.jpg"
+    concept_path = IMAGES_DIR / concept_filename
+    image_data = base64.b64decode(result.images[0]["data"])
+    concept_path.write_bytes(image_data)
+
+    # Phase 3: Atomically update metadata with async file lock
+    # Uses async context manager to avoid blocking event loop while waiting for lock
+    async with _metadata_manager.atomic() as fresh_metadata:
+        # Find token again in fresh metadata (may have changed during generation)
+        for token in fresh_metadata.get("tokens", []):
+            if token["id"] == token_id:
+                token["concept_image_path"] = concept_filename
+                token["concept_image_id"] = f"concept-{token_id}"
+                token["concept_prompt_id"] = f"concept-prompt-{token_id}"
+
+                # Create full Prompt entry for the concept image
+                now = datetime.now().isoformat()
+                concept_prompt = {
+                    "id": f"concept-prompt-{token_id}",
+                    "prompt": dimension_dict.get("generation_prompt", ""),
+                    "title": f"Concept: {dimension_dict.get('name', 'Untitled')}",
+                    "created_at": now,
+                    "context_image_ids": source_image_ids,
+                    "images": [
+                        {
+                            "id": f"concept-{token_id}",
+                            "image_path": concept_filename,
+                            "mime_type": "image/jpeg",
+                            "generated_at": now,
+                            "varied_prompt": dimension_dict.get("generation_prompt", ""),
+                            "variation_title": dimension_dict.get("name", ""),
+                            "design_dimensions": {
+                                dimension_dict.get("axis", "concept"): dimension_dict
+                            },
+                        }
+                    ],
+                    "is_concept": True,
+                    "concept_axis": dimension_dict.get("axis"),
+                    "source_image_id": token_images[0]["id"] if token_images else None,
+                }
+                # Remove old concept prompt if regenerating
+                fresh_metadata["prompts"] = [
+                    p for p in fresh_metadata.get("prompts", [])
+                    if p.get("id") != f"concept-prompt-{token_id}"
+                ]
+                fresh_metadata["prompts"].append(concept_prompt)
+                break
+
+    logger.info(f"Generated concept image: {concept_filename}")
+    return {
+        "success": True,
+        "concept_image_path": concept_filename,
+        "concept_image_id": f"concept-{token_id}",
+    }
 
 
 @app.post("/api/extract/suggest-dimensions")
@@ -2007,8 +2184,9 @@ async def generate_more_like_this(image_id: str, count: int = 4):
         "images": images,
     }
 
-    metadata["prompts"].append(prompt_entry)
-    save_metadata(metadata)
+    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
+    async with _metadata_manager.atomic() as fresh_metadata:
+        fresh_metadata["prompts"].append(prompt_entry)
 
     logger.info(f"Generated {len(images)} variations, prompt_id={prompt_id}")
 
@@ -2137,9 +2315,13 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
             errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
 
     if new_images:
-        # Add new images to the prompt
-        target_prompt["images"].extend(new_images)
-        save_metadata(metadata)
+        # Atomically update fresh metadata (prevents race condition with concurrent requests)
+        async with _metadata_manager.atomic() as fresh_metadata:
+            # Find the prompt again in fresh metadata
+            for prompt in fresh_metadata.get("prompts", []):
+                if prompt["id"] == prompt_id:
+                    prompt["images"].extend(new_images)
+                    break
         logger.info(f"Added {len(new_images)} regenerated images to prompt {prompt_id}")
 
     return {
@@ -2660,75 +2842,6 @@ async def analyze_dimensions(req: AnalyzeDimensionsRequest):
     except Exception as e:
         logger.error(f"Dimension analysis failed: {e}")
         return AnalyzeDimensionsResponse(success=False, error=str(e))
-
-
-@app.post("/api/generate-concept", response_model=GenerateConceptResponse)
-async def generate_concept(req: GenerateConceptRequest):
-    """Generate a concept image for a design dimension.
-
-    Creates an abstract image that purely embodies the given design dimension,
-    without recognizable objects or scenes. The concept image can be used as
-    a design reference or mood sample.
-    """
-    try:
-        # Generate the concept image
-        result = await gemini.generate_concept_image(
-            dimension=req.dimension.model_dump(),
-            aspect_ratio=req.aspect_ratio,
-        )
-
-        if not result.images:
-            return GenerateConceptResponse(success=False, error="No image generated")
-
-        # Save the image and create a prompt entry
-        generated_at = datetime.now().isoformat()
-        image_id = str(uuid.uuid4())
-        prompt_id = str(uuid.uuid4())
-
-        # Save image file
-        image_data = result.images[0]
-        image_bytes = base64.b64decode(image_data["base64"])
-        filename = f"{image_id}.jpg"
-        image_path = IMAGES_DIR / filename
-        image_path.write_bytes(image_bytes)
-
-        # Create image entry
-        image_entry = {
-            "id": image_id,
-            "image_path": filename,
-            "mime_type": image_data.get("mime_type", "image/jpeg"),
-            "generated_at": generated_at,
-            "varied_prompt": req.dimension.generation_prompt,
-        }
-
-        # Create concept prompt entry
-        prompt_entry = {
-            "id": prompt_id,
-            "prompt": req.dimension.generation_prompt,
-            "title": f"Concept: {req.dimension.name}",
-            "created_at": generated_at,
-            "images": [image_entry],
-            "is_concept": True,
-            "concept_axis": req.dimension.axis,
-            "source_image_id": req.image_id,
-        }
-
-        # Save to metadata
-        metadata = load_metadata()
-        if "prompts" not in metadata:
-            metadata["prompts"] = []
-        metadata["prompts"].insert(0, prompt_entry)
-        save_metadata(metadata)
-
-        logger.info(f"Generated concept '{req.dimension.name}' ({req.dimension.axis})")
-        return GenerateConceptResponse(
-            success=True,
-            prompt_id=prompt_id,
-            images=[image_entry],
-        )
-    except Exception as e:
-        logger.error(f"Concept generation failed: {e}")
-        return GenerateConceptResponse(success=False, error=str(e))
 
 
 @app.patch("/api/images/{image_id}/dimensions")

@@ -26,9 +26,9 @@ import type { ImageData } from '../../types';
 
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
-  const currentPromptId = useStore((s) => s.currentPromptId);
+  const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
@@ -44,11 +44,12 @@ export function SingleView() {
   const createCollection = useStore((s) => s.createCollection);
   const addImagesToCollection = useStore((s) => s.addImagesToCollection);
   const openExtractionDialog = useStore((s) => s.openExtractionDialog);
+  const generationFilter = useStore((s) => s.generationFilter);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentPromptId) || null,
-    [prompts, currentPromptId]
+    () => prompts.find((p) => p.id === currentGenerationId) || null,
+    [prompts, currentGenerationId]
   );
 
   const currentCollection = useMemo(
@@ -69,10 +70,27 @@ export function SingleView() {
       .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
   }, [prompts, currentCollection]);
 
-  // Support both prompt and collection viewing
-  const displayImages = currentPrompt?.images ?? currentCollectionImages;
-  const displayTitle = currentPrompt?.title ?? currentCollection?.name ?? 'Image';
-  const isViewingCollection = !currentPrompt && !!currentCollection;
+  // Concept images from store (already sorted newest first)
+  const conceptImages = useMemo(() => {
+    const conceptPrompts = prompts.filter((p) => p.is_concept);
+    const images = conceptPrompts.flatMap((prompt) => prompt.images);
+    return images.sort(
+      (a, b) =>
+        new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime()
+    );
+  }, [prompts]);
+
+  // Determine what we're viewing
+  const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+  const isViewingCollection = !currentPrompt && !!currentCollection && !isViewingConcepts;
+
+  // Support prompt, collection, and concepts gallery viewing
+  const displayImages = isViewingConcepts
+    ? conceptImages
+    : currentPrompt?.images ?? currentCollectionImages;
+  const displayTitle = isViewingConcepts
+    ? 'Design Library'
+    : currentPrompt?.title ?? currentCollection?.name ?? 'Image';
 
   const currentImage = displayImages[currentImageIndex] || null;
 
@@ -88,13 +106,28 @@ export function SingleView() {
   }, [prompts]);
 
   // Get context images used for this prompt's generation
+  // For concept images, find the parent concept prompt and use its context_image_ids
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const promptContextImages = useMemo(() => {
-    if (!currentPrompt?.context_image_ids) return [];
-    return currentPrompt.context_image_ids
-      .map((id) => allImagesMap.get(id))
-      .filter((img): img is ImageData => img !== undefined);
-  }, [currentPrompt?.context_image_ids, allImagesMap]);
+    // If viewing a regular prompt, use its context
+    if (currentPrompt?.context_image_ids) {
+      return currentPrompt.context_image_ids
+        .map((id) => allImagesMap.get(id))
+        .filter((img): img is ImageData => img !== undefined);
+    }
+    // If viewing concepts and we have a current image, find its parent prompt's context
+    if (isViewingConcepts && currentImage) {
+      const parentPrompt = prompts.find(
+        (p) => p.is_concept && p.images.some((img) => img.id === currentImage.id)
+      );
+      if (parentPrompt?.context_image_ids) {
+        return parentPrompt.context_image_ids
+          .map((id) => allImagesMap.get(id))
+          .filter((img): img is ImageData => img !== undefined);
+      }
+    }
+    return [];
+  }, [currentPrompt?.context_image_ids, allImagesMap, isViewingConcepts, currentImage, prompts]);
 
   // State for context display - MUST be before any early returns (React hooks rule)
   const [isContextExpanded, setIsContextExpanded] = useState(false);

@@ -48,9 +48,9 @@ describe('SingleView', () => {
   })
 
   const createMockState = (overrides = {}) => ({
-    prompts: [],
+    generations: [],
     collections: [],
-    currentPromptId: null,
+    currentGenerationId: null,
     currentCollectionId: null,
     currentImageIndex: 0,
     setCurrentImageIndex: vi.fn(),
@@ -91,8 +91,8 @@ describe('SingleView', () => {
       // This test verifies the hooks order fix - useState must be called
       // before early returns to prevent React error #310
       const mockState = createMockState({
-        prompts: [],
-        currentPromptId: null,
+        generations: [],
+        currentGenerationId: null,
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -126,8 +126,8 @@ describe('SingleView', () => {
       }
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -158,8 +158,8 @@ describe('SingleView', () => {
       }
 
       let mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -173,8 +173,8 @@ describe('SingleView', () => {
 
       // Now simulate deletion - no more images
       mockState = createMockState({
-        prompts: [],
-        currentPromptId: null,
+        generations: [],
+        currentGenerationId: null,
       })
 
       // This should not throw React error #310
@@ -194,8 +194,8 @@ describe('SingleView', () => {
       })
 
       const mockState = createMockState({
-        prompts: [contextPrompt, mainPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [contextPrompt, mainPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -217,8 +217,8 @@ describe('SingleView', () => {
       const mainPrompt = createMockPrompt('prompt-1', [mainImage])
 
       const mockState = createMockState({
-        prompts: [mainPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mainPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -246,8 +246,8 @@ describe('SingleView', () => {
       })
 
       const mockState = createMockState({
-        prompts: [contextPrompt, mainPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [contextPrompt, mainPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -270,8 +270,8 @@ describe('SingleView', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -293,8 +293,8 @@ describe('SingleView', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -319,8 +319,8 @@ describe('SingleView', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -344,8 +344,8 @@ describe('SingleView', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -370,8 +370,8 @@ describe('SingleView', () => {
       const mockPrompt = createMockPrompt('prompt-1', [mockImage])
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -399,8 +399,8 @@ describe('SingleView', () => {
       })
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -429,8 +429,8 @@ describe('SingleView', () => {
       })
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -456,8 +456,8 @@ describe('SingleView', () => {
       })
 
       const mockState = createMockState({
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -482,8 +482,8 @@ describe('SingleView', () => {
       const mainPrompt = createMockPrompt('prompt-1', [mainImage])
 
       const mockState = createMockState({
-        prompts: [mainPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mainPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -505,8 +505,8 @@ describe('SingleView', () => {
       const mainPrompt = createMockPrompt('prompt-1', [mainImage])
 
       const mockState = createMockState({
-        prompts: [mainPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mainPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       const selectorCalls: string[] = []

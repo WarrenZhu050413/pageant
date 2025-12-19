@@ -75,9 +75,9 @@ describe('SelectionTray', () => {
 
   const createMockState = (overrides = {}) => ({
     selectedIds: new Set<string>(),
-    prompts: [],
+    generations: [],
     collections: [],
-    currentPromptId: null,
+    currentGenerationId: null,
     currentCollectionId: null,
     clearSelection: vi.fn(),
     toggleSelection: vi.fn(),
@@ -122,8 +122,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -147,8 +147,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1', 'img-2', 'img-3']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -168,8 +168,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -193,8 +193,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         clearSelection,
       })
 
@@ -227,8 +227,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']), // Only 1 of 2 selected
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -248,8 +248,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1', 'img-2']), // All 2 selected
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -271,8 +271,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         selectAll,
       })
 
@@ -296,8 +296,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1', 'img-2']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         clearSelection,
       })
 
@@ -321,8 +321,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -346,8 +346,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         contextImageIds: [],
         setContextImages,
         setRightTab,
@@ -377,8 +377,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-2']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         contextImageIds: ['img-1'], // Already has one image
         setContextImages,
         setRightTab: vi.fn(),
@@ -407,8 +407,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -429,8 +429,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         collections: [],
       })
 
@@ -457,8 +457,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         collections: [mockCollection],
       })
 
@@ -484,8 +484,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1', 'img-2']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         collections: [],
       })
 
@@ -509,8 +509,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         collections: [],
       })
 
@@ -536,8 +536,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -567,8 +567,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         batchDelete,
       })
 
@@ -601,8 +601,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
       })
 
       mockUseStore.mockImplementation((selector) => {
@@ -624,8 +624,8 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
-        currentPromptId: 'prompt-1',
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
         openExtractionDialog,
       })
 
@@ -651,9 +651,9 @@ describe('SelectionTray', () => {
 
       const mockState = createMockState({
         selectedIds: new Set(['img-1']),
-        prompts: [mockPrompt],
+        generations: [mockPrompt],
         collections: [mockCollection],
-        currentPromptId: null,
+        currentGenerationId: null,
         currentCollectionId: 'col-1',
       })
 

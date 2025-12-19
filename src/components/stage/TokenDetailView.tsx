@@ -8,6 +8,7 @@ import {
   Trash2,
   Sparkles,
   Image as ImageIcon,
+  Eye,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Button } from '../ui';
@@ -19,8 +20,8 @@ interface TokenDetailViewProps {
 }
 
 export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
-  const prompts = useStore((s) => s.prompts);
-  const setCurrentPromptId = useStore((s) => s.setCurrentPrompt);
+  const prompts = useStore((s) => s.generations);
+  const setCurrentGenerationId = useStore((s) => s.setCurrentGeneration);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const setViewMode = useStore((s) => s.setViewMode);
   const generateTokenConcept = useStore((s) => s.generateTokenConcept);
@@ -65,8 +66,18 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
   const handleViewSource = (imageId: string) => {
     const found = imageMap.get(imageId);
     if (found) {
-      setCurrentPromptId(found.promptId);
+      setCurrentGenerationId(found.promptId);
       setCurrentImageIndex(found.imageIndex);
+      setViewMode('single');
+      onClose();
+    }
+  };
+
+  // Navigate to concept image in SingleView (for editing annotations)
+  const handleViewConcept = () => {
+    if (token.concept_prompt_id) {
+      setCurrentGenerationId(token.concept_prompt_id);
+      setCurrentImageIndex(0);
       setViewMode('single');
       onClose();
     }
@@ -134,20 +145,55 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto">
+          {/* AI context indicator */}
+          {token.concept_image_id && (
+            <div className="mx-5 mt-4 px-3 py-2 rounded-lg bg-brass/10 border border-brass/20 flex items-center gap-2">
+              <Eye size={14} className="text-brass shrink-0" />
+              <p className="text-xs text-brass-dark">
+                <span className="font-medium">AI sees this concept image</span> when you add this token to generation context.
+                Click the image to edit its annotations.
+              </p>
+            </div>
+          )}
+
           {/* Image comparison */}
           <div className="flex gap-4 p-5">
-            {/* Concept image */}
+            {/* Concept image - clickable to edit annotations */}
             <div className="flex-1">
-              <p className="text-xs text-ink-muted mb-2 uppercase tracking-wide">
-                Concept Image
-              </p>
-              <div className="aspect-square rounded-lg bg-canvas-muted overflow-hidden relative">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-ink-muted uppercase tracking-wide">
+                  Concept Image
+                </p>
+                {token.concept_prompt_id && (
+                  <span className="text-[0.65rem] text-brass">
+                    Click to edit annotations
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleViewConcept}
+                disabled={!token.concept_prompt_id}
+                className={clsx(
+                  'aspect-square rounded-lg bg-canvas-muted overflow-hidden relative w-full group',
+                  token.concept_prompt_id && 'cursor-pointer hover:ring-2 hover:ring-brass/40'
+                )}
+                title={token.concept_prompt_id ? 'Click to view and edit annotations' : undefined}
+              >
                 {conceptImageUrl ? (
-                  <img
-                    src={conceptImageUrl}
-                    alt={`${token.name} concept`}
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
+                  <>
+                    <img
+                      src={conceptImageUrl}
+                      alt={`${token.name} concept`}
+                      className="absolute inset-0 w-full h-full object-cover"
+                    />
+                    {token.concept_prompt_id && (
+                      <div className="absolute inset-0 bg-ink/0 group-hover:bg-ink/30 transition-colors flex items-center justify-center">
+                        <span className="px-3 py-1.5 bg-surface/90 rounded-lg text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                          View & Edit
+                        </span>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-ink-muted">
                     <Sparkles size={24} className="mb-2 opacity-30" />
@@ -156,14 +202,14 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
                       size="sm"
                       variant="ghost"
                       leftIcon={<RefreshCw size={12} />}
-                      onClick={handleRegenerateConcept}
+                      onClick={(e) => { e.stopPropagation(); handleRegenerateConcept(); }}
                       className="mt-2"
                     >
                       Generate
                     </Button>
                   </div>
                 )}
-              </div>
+              </button>
             </div>
 
             {/* Source images */}

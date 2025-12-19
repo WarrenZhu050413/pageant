@@ -1,3 +1,14 @@
+/**
+ * API Layer - Translation between frontend and backend terminology
+ *
+ * NAMING CONVENTION:
+ * - Frontend (store/components): uses "Generation" (e.g., generations, currentGenerationId)
+ * - Backend (server.py): uses "Prompt" (e.g., /api/prompts, metadata["prompts"])
+ * - This API layer bridges the two, using backend's "prompts" endpoints
+ *
+ * The `Prompt` type is a legacy alias for `Generation` in src/types/index.ts.
+ * Functions like fetchPrompts() return data that the store treats as Generation[].
+ */
 import type {
   Prompt,
   Collection,
@@ -16,7 +27,6 @@ import type {
   PolishPromptsRequest,
   PolishPromptsResponse,
   AnalyzeDimensionsResponse,
-  GenerateConceptResponse,
   SuggestDimensionsResponse,
   CreateTokenRequest,
   CreateTokenResponse,
@@ -389,20 +399,6 @@ export async function analyzeDimensions(
   });
 }
 
-export async function generateConcept(
-  imageId: string,
-  dimension: DesignDimension,
-  aspectRatio: string = '1:1'
-): Promise<GenerateConceptResponse> {
-  return request<GenerateConceptResponse>('/generate-concept', {
-    method: 'POST',
-    body: JSON.stringify({
-      image_id: imageId,
-      dimension,
-      aspect_ratio: aspectRatio,
-    }),
-  });
-}
 
 export async function updateImageDimensions(
   imageId: string,

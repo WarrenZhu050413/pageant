@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -22,6 +22,7 @@ interface TokenCardProps {
   token: DesignToken;
   isSelectionMode: boolean;
   isSelected: boolean;
+  isNew: boolean;
   onToggleSelect: () => void;
   onInsert: (token: DesignToken) => void;
   onDelete: (id: string) => void;
@@ -32,6 +33,7 @@ function TokenCard({
   token,
   isSelectionMode,
   isSelected,
+  isNew,
   onToggleSelect,
   onInsert,
   onDelete,
@@ -87,6 +89,11 @@ function TokenCard({
             <span className="text-sm font-medium text-ink truncate">
               {token.name}
             </span>
+            {isNew && (
+              <span className="text-[0.55rem] px-1.5 py-0.5 bg-brass/20 text-brass-dark font-semibold rounded uppercase tracking-wide">
+                New
+              </span>
+            )}
             {token.category && (
               <span className="text-[0.6rem] px-1.5 py-0.5 bg-canvas-subtle text-ink-muted rounded capitalize">
                 {token.category}
@@ -256,6 +263,17 @@ export function LibraryTab() {
   const markTokenUsed = useStore((s) => s.useToken);
   const setRightTab = useStore((s) => s.setRightTab);
   const setViewMode = useStore((s) => s.setViewMode);
+  const setLeftTab = useStore((s) => s.setLeftTab);
+  const setGenerationFilter = useStore((s) => s.setGenerationFilter);
+  const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
+  const setCurrentCollection = useStore((s) => s.setCurrentCollection);
+  const markLibrarySeen = useStore((s) => s.markLibrarySeen);
+  const lastSeenLibraryAt = useStore((s) => s.lastSeenLibraryAt);
+
+  // Mark library as seen when this tab is opened
+  useEffect(() => {
+    markLibrarySeen();
+  }, [markLibrarySeen]);
 
   const [filter, setFilter] = useState<string>('all');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -280,6 +298,17 @@ export function LibraryTab() {
     if (filter === 'all') return designTokens;
     return designTokens.filter((t) => t.category === filter);
   }, [designTokens, filter]);
+
+  // Identify "new" tokens (created since user last saw the library)
+  // Note: We mark library as seen on mount, so this captures tokens created
+  // while user was on a different tab in the current session
+  const newTokenIds = useMemo(() => {
+    if (!lastSeenLibraryAt) return new Set<string>();
+    const lastSeen = new Date(lastSeenLibraryAt);
+    return new Set(
+      designTokens.filter((t) => new Date(t.created_at) > lastSeen).map((t) => t.id)
+    );
+  }, [designTokens, lastSeenLibraryAt]);
 
   // Get the selected token for detail view
   const selectedToken = useMemo(
@@ -371,7 +400,13 @@ export function LibraryTab() {
             variant="ghost"
             size="sm"
             leftIcon={<LayoutGrid size={14} />}
-            onClick={() => setViewMode('token-gallery')}
+            onClick={() => {
+              setCurrentGeneration(null);  // Clear to show flat gallery
+              setCurrentCollection(null);
+              setGenerationFilter('concepts');
+              setLeftTab('prompts');
+              setViewMode('grid');
+            }}
             disabled={totalCount === 0}
           >
             Gallery
@@ -459,6 +494,7 @@ export function LibraryTab() {
               token={token}
               isSelectionMode={isSelectionMode}
               isSelected={selectedIds.has(token.id)}
+              isNew={newTokenIds.has(token.id)}
               onToggleSelect={() => handleToggleSelect(token.id)}
               onInsert={handleInsert}
               onDelete={(id) => setDeleteConfirmId(id)}

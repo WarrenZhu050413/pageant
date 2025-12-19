@@ -1,46 +1,57 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Hexagon } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
 
 export function PromptsTab() {
-  const prompts = useStore((s) => s.prompts);
-  const pendingPrompts = useStore((s) => s.pendingPrompts);
+  const prompts = useStore((s) => s.generations);
+  const pendingGenerations = useStore((s) => s.pendingGenerations);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
-  const pendingCount = pendingPrompts.size;
-  const currentPromptId = useStore((s) => s.currentPromptId);
+  const pendingCount = pendingGenerations.size;
+  const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentDraftId = useStore((s) => s.currentDraftId);
-  const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
+  const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
   const setCurrentDraft = useStore((s) => s.setCurrentDraft);
-  const selectedPromptIds = useStore((s) => s.selectedPromptIds);
-  const togglePromptSelection = useStore((s) => s.togglePromptSelection);
-  const selectAllPrompts = useStore((s) => s.selectAllPrompts);
-  const clearPromptSelection = useStore((s) => s.clearPromptSelection);
-  const batchDeletePrompts = useStore((s) => s.batchDeletePrompts);
+  const selectedGenerationIds = useStore((s) => s.selectedGenerationIds);
+  const toggleGenerationSelection = useStore((s) => s.toggleGenerationSelection);
+  const selectAllGenerations = useStore((s) => s.selectAllGenerations);
+  const clearGenerationSelection = useStore((s) => s.clearGenerationSelection);
+  const batchDeleteGenerations = useStore((s) => s.batchDeleteGenerations);
   const deleteDraft = useStore((s) => s.deleteDraft);
+  const generationFilter = useStore((s) => s.generationFilter);
+  const setGenerationFilter = useStore((s) => s.setGenerationFilter);
+  const setCurrentCollection = useStore((s) => s.setCurrentCollection);
+  const setViewMode = useStore((s) => s.setViewMode);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  // Count concept images for the pinned Design Library entry
+  const conceptCount = useMemo(() => {
+    return prompts
+      .filter((p) => p.is_concept)
+      .reduce((sum, p) => sum + p.images.length, 0);
+  }, [prompts]);
+
+  // Check if Design Library is currently active
+  const isDesignLibraryActive = generationFilter === 'concepts' && !currentGenerationId && !currentDraftId;
 
   // Combine drafts, pending, and actual prompts
   type PromptItem = {
     id: string;
     title: string;
     count: number;
-    itemType: 'draft' | 'pending' | 'prompt' | 'concept';
+    itemType: 'draft' | 'pending' | 'prompt';
     created_at: string;
     prompt?: string;
     thumbnail?: string;
     variationCount?: number;
     isGenerating?: boolean; // Per-draft generating variations state
     isGeneratingImages?: boolean; // Per-draft generating images state
-    // Concept-specific fields
-    conceptAxis?: string;
-    sourceImageId?: string;
   };
 
   const allItems: PromptItem[] = [
@@ -57,16 +68,17 @@ export function PromptsTab() {
       isGeneratingImages: generatingImageDraftIds.has(d.id),
     })),
     // Pending prompts at top (below drafts)
-    ...Array.from(pendingPrompts.entries()).map(([id, data]) => ({
+    ...Array.from(pendingGenerations.entries()).map(([id, data]) => ({
       id,
       title: data.title || 'Generating...',
       count: data.count,
       itemType: 'pending' as const,
       created_at: new Date().toISOString(),
     })),
-    // Sort actual prompts by created_at descending (newest first)
-    // Separate concepts from regular prompts
+    // Sort actual generations by created_at descending (newest first)
+    // Filter out concepts - they appear in the pinned Design Library entry
     ...prompts
+      .filter((p: { is_concept?: boolean }) => !p.is_concept)
       .slice()
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       .map((p) => ({
@@ -74,63 +86,49 @@ export function PromptsTab() {
         title: p.title,
         prompt: p.prompt,
         count: p.images.length,
-        itemType: p.is_concept ? ('concept' as const) : ('prompt' as const),
+        itemType: 'prompt' as const,
         created_at: p.created_at,
         thumbnail: p.images[0]?.image_path,
-        conceptAxis: p.concept_axis,
-        sourceImageId: p.source_image_id,
       })),
   ];
 
-  const selectableItems = allItems.filter((item) => item.itemType === 'prompt' || item.itemType === 'concept' || item.itemType === 'draft');
-  const allSelected = selectableItems.length > 0 && selectedPromptIds.size === selectableItems.length;
+  const selectableItems = allItems.filter((item) => item.itemType === 'prompt' || item.itemType === 'draft');
+  const allSelected = selectableItems.length > 0 && selectedGenerationIds.size === selectableItems.length;
 
   const handleToggleSelectionMode = () => {
     if (isSelectionMode) {
-      clearPromptSelection();
+      clearGenerationSelection();
     }
     setIsSelectionMode(!isSelectionMode);
   };
 
   const handleDeleteSelected = async () => {
-    const selectedIds = Array.from(selectedPromptIds);
+    const selectedIds = Array.from(selectedGenerationIds);
 
-    // Separate drafts from prompts/concepts
+    // Separate drafts from prompts
     const draftIds = selectedIds.filter(id =>
       allItems.find(item => item.id === id)?.itemType === 'draft'
     );
-    const promptIds = selectedIds.filter(id => {
-      const item = allItems.find(item => item.id === id);
-      return item?.itemType === 'prompt' || item?.itemType === 'concept';
-    });
+    const promptIds = selectedIds.filter(id =>
+      allItems.find(item => item.id === id)?.itemType === 'prompt'
+    );
 
     // Delete drafts (local state only)
     for (const draftId of draftIds) {
       deleteDraft(draftId);
     }
 
-    // Delete prompts/concepts (API + refresh)
+    // Delete prompts (API + refresh)
     if (promptIds.length > 0) {
-      await batchDeletePrompts(promptIds);
+      await batchDeleteGenerations(promptIds);
     }
 
     setIsDeleteDialogOpen(false);
     setIsSelectionMode(false);
   };
 
-  if (allItems.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-6">
-        <div className="w-12 h-12 rounded-full bg-canvas-muted flex items-center justify-center mb-3">
-          <ImageIcon size={20} className="text-ink-muted" />
-        </div>
-        <p className="text-sm text-ink-secondary">No prompts yet</p>
-        <p className="text-xs text-ink-muted mt-1">
-          Generate your first images to get started
-        </p>
-      </div>
-    );
-  }
+  // Show empty state only if no items AND no concept images
+  const showEmptyState = allItems.length === 0 && conceptCount === 0;
 
   return (
     <div className="flex flex-col h-full">
@@ -150,12 +148,12 @@ export function PromptsTab() {
                 size="sm"
                 variant="ghost"
                 leftIcon={allSelected ? <CheckSquare size={14} /> : <Square size={14} />}
-                onClick={() => (allSelected ? clearPromptSelection() : selectAllPrompts())}
+                onClick={() => (allSelected ? clearGenerationSelection() : selectAllGenerations())}
               >
                 {allSelected ? 'None' : 'All'}
               </Button>
               <span className="text-xs text-ink-muted">
-                {selectedPromptIds.size} selected
+                {selectedGenerationIds.size} selected
               </span>
             </div>
             <div className="flex items-center gap-1">
@@ -164,7 +162,7 @@ export function PromptsTab() {
                 variant="danger"
                 leftIcon={<Trash2 size={14} />}
                 onClick={() => setIsDeleteDialogOpen(true)}
-                disabled={selectedPromptIds.size === 0}
+                disabled={selectedGenerationIds.size === 0}
               >
                 Delete
               </Button>
@@ -191,16 +189,78 @@ export function PromptsTab() {
 
       {/* Prompts list */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        {/* Pinned Design Library entry */}
+        <button
+          onClick={() => {
+            setCurrentGeneration(null);
+            setCurrentDraft(null);
+            setCurrentCollection(null);
+            setGenerationFilter('concepts');
+            setViewMode('grid');
+          }}
+          className={clsx(
+            'w-full flex items-center gap-3 p-2.5 rounded-lg',
+            'transition-all duration-150',
+            isDesignLibraryActive
+              ? 'bg-brass-muted ring-1 ring-brass/30'
+              : 'hover:bg-canvas-subtle'
+          )}
+        >
+          <div
+            className={clsx(
+              'w-12 h-12 rounded-md flex-shrink-0 flex items-center justify-center',
+              isDesignLibraryActive ? 'bg-brass/20' : 'bg-brass/10'
+            )}
+          >
+            <Sparkles size={20} className="text-brass" />
+          </div>
+          <div className="flex-1 min-w-0 text-left">
+            <div className="flex items-center justify-between gap-2">
+              <h3
+                className={clsx(
+                  'text-sm font-medium',
+                  isDesignLibraryActive ? 'text-ink' : 'text-ink-secondary'
+                )}
+              >
+                Design Library
+              </h3>
+              <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-brass/15 text-brass">
+                {conceptCount}
+              </span>
+            </div>
+            <p className="text-[0.625rem] text-ink-muted mt-0.5">
+              Concept images from design tokens
+            </p>
+          </div>
+        </button>
+
+        {/* Empty state */}
+        {showEmptyState && (
+          <div className="flex flex-col items-center justify-center text-center p-6 mt-4">
+            <div className="w-12 h-12 rounded-full bg-canvas-muted flex items-center justify-center mb-3">
+              <ImageIcon size={20} className="text-ink-muted" />
+            </div>
+            <p className="text-sm text-ink-secondary">No prompts yet</p>
+            <p className="text-xs text-ink-muted mt-1">
+              Generate your first images to get started
+            </p>
+          </div>
+        )}
+
+        {/* Separator */}
+        {allItems.length > 0 && (
+          <div className="h-px bg-border my-2" />
+        )}
+
         {allItems.map((item, index) => {
           const isDraft = item.itemType === 'draft';
           const isPending = item.itemType === 'pending';
           const isPrompt = item.itemType === 'prompt';
-          const isConcept = item.itemType === 'concept';
           const isActive = isDraft
             ? item.id === currentDraftId
-            : item.id === currentPromptId;
-          const isSelected = selectedPromptIds.has(item.id);
-          const isSelectable = isPrompt || isConcept || isDraft;
+            : item.id === currentGenerationId;
+          const isSelected = selectedGenerationIds.has(item.id);
+          const isSelectable = isPrompt || isDraft;
 
           return (
             <motion.div
@@ -213,22 +273,18 @@ export function PromptsTab() {
                 'transition-all duration-150',
                 isPending && 'shimmer cursor-wait',
                 isDraft && 'border border-dashed border-brass/40',
-                // No shimmer for drafts - spinner is sufficient
-                isConcept && 'border border-purple-500/30',
                 isActive && !isSelectionMode
                   ? isDraft
                     ? 'bg-brass/10 ring-1 ring-brass/40'
-                    : isConcept
-                    ? 'bg-purple-500/10 ring-1 ring-purple-500/40'
                     : 'bg-brass-muted ring-1 ring-brass/30'
                   : 'hover:bg-canvas-subtle',
                 isSelected && 'bg-brass-muted/50'
               )}
             >
-              {/* Checkbox (only in selection mode, for prompts and concepts) */}
+              {/* Checkbox (only in selection mode, for prompts and drafts) */}
               {isSelectionMode && isSelectable && (
                 <button
-                  onClick={() => togglePromptSelection(item.id)}
+                  onClick={() => toggleGenerationSelection(item.id)}
                   className="pl-2 py-2.5"
                 >
                   <div
@@ -253,12 +309,13 @@ export function PromptsTab() {
               <button
                 onClick={() => {
                   if (isSelectionMode && isSelectable) {
-                    togglePromptSelection(item.id);
+                    toggleGenerationSelection(item.id);
                   } else if (isDraft) {
                     setCurrentDraft(item.id);
-                  } else if (isPrompt || isConcept) {
+                  } else if (isPrompt) {
                     setCurrentDraft(null); // Clear any selected draft
-                    setCurrentPrompt(item.id);
+                    setGenerationFilter('all'); // Clear concepts filter when selecting a prompt
+                    setCurrentGeneration(item.id);
                   }
                 }}
                 disabled={isPending}
@@ -269,8 +326,7 @@ export function PromptsTab() {
                   <div
                     className={clsx(
                       'w-12 h-12 rounded-md flex-shrink-0 overflow-hidden',
-                      isDraft ? 'bg-brass/10 border border-dashed border-brass/30' :
-                      isConcept ? 'bg-purple-500/10 border border-purple-500/30' : 'bg-canvas-muted',
+                      isDraft ? 'bg-brass/10 border border-dashed border-brass/30' : 'bg-canvas-muted',
                       !isSelectionMode && 'ml-2.5'
                     )}
                   >
@@ -282,11 +338,6 @@ export function PromptsTab() {
                         ) : (
                           <FileEdit size={16} className="text-brass" />
                         )}
-                      </div>
-                    ) : isConcept ? (
-                      // Concept: show hexagon icon
-                      <div className="w-full h-full flex items-center justify-center">
-                        <Hexagon size={20} className="text-purple-500" />
                       </div>
                     ) : isPending ? (
                       // Show grid of placeholder slots for each image being generated
@@ -329,14 +380,12 @@ export function PromptsTab() {
                           'flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
                           isDraft
                             ? 'bg-brass/15 text-brass'
-                            : isConcept
-                            ? 'bg-purple-500/15 text-purple-600'
                             : isPending
                             ? 'bg-generating/15 text-generating'
                             : 'bg-canvas-muted text-ink-tertiary'
                         )}
                       >
-                        {isDraft ? 'Draft' : isConcept ? 'Concept' : item.count}
+                        {isDraft ? 'Draft' : item.count}
                       </span>
                     </div>
 
@@ -353,8 +402,6 @@ export function PromptsTab() {
                           : item.isGenerating
                           ? 'Creating variations...'
                           : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
-                        : isConcept
-                        ? `${item.conceptAxis || 'design'} axis`
                         : isPending
                         ? 'Generating...'
                         : new Date(item.created_at).toLocaleDateString('en-US', {
@@ -378,7 +425,7 @@ export function PromptsTab() {
         onClose={() => setIsDeleteDialogOpen(false)}
         onConfirm={handleDeleteSelected}
         title="Delete Prompts"
-        message={`Are you sure you want to delete ${selectedPromptIds.size} prompt${selectedPromptIds.size !== 1 ? 's' : ''} and all their images? This action cannot be undone.`}
+        message={`Are you sure you want to delete ${selectedGenerationIds.size} prompt${selectedGenerationIds.size !== 1 ? 's' : ''} and all their images? This action cannot be undone.`}
         confirmLabel="Delete"
         variant="danger"
       />

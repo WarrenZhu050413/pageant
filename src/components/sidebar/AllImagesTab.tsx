@@ -8,14 +8,14 @@ import { Button } from '../ui';
 import type { ImageData } from '../../types';
 
 export function AllImagesTab() {
-  const prompts = useStore((s) => s.prompts);
+  const prompts = useStore((s) => s.generations);
   const selectionMode = useStore((s) => s.selectionMode);
   const selectedIds = useStore((s) => s.selectedIds);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const setSelectedIds = useStore((s) => s.setSelectedIds);
   const clearSelection = useStore((s) => s.clearSelection);
-  const setCurrentPrompt = useStore((s) => s.setCurrentPrompt);
+  const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
 
@@ -46,7 +46,7 @@ export function AllImagesTab() {
     } else {
       // Navigate to the image in its prompt
       setCurrentCollection(null);
-      setCurrentPrompt(item.promptId);
+      setCurrentGeneration(item.promptId);
       setCurrentImageIndex(item.indexInPrompt);
     }
   };

@@ -25,6 +25,15 @@ const tabs = [
 export function LeftSidebar() {
   const leftTab = useStore((s) => s.leftTab);
   const setLeftTab = useStore((s) => s.setLeftTab);
+  const getNewTokenCount = useStore((s) => s.getNewTokenCount);
+
+  // Get new token count for library badge
+  const newTokenCount = getNewTokenCount();
+
+  // Build tabs with dynamic badge for library
+  const tabsWithBadges = tabs.map((tab) =>
+    tab.id === 'library' ? { ...tab, badge: newTokenCount } : tab
+  );
 
   return (
     <div className="flex flex-col h-full">
@@ -41,7 +50,7 @@ export function LeftSidebar() {
 
       {/* Tabs */}
       <Tabs
-        tabs={tabs}
+        tabs={tabsWithBadges}
         activeTab={leftTab}
         onChange={(id) => setLeftTab(id as LeftTab)}
       />
