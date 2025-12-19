@@ -100,7 +100,7 @@ install:
 	uv sync
 	@echo ""
 	@echo "✓ Setup complete! Run 'make dev' to start."
-	@echo "  (Optional: 'make seed' to load sample design tokens)"
+	@echo "  (Recommended: 'make seed' to load sample design tokens)"
 
 seed:
 	@echo "Loading sample design tokens..."
