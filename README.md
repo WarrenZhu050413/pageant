@@ -31,12 +31,9 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 # Install dependencies + seed data
 make install
 
-# Get your Gemini API key from Google AI Studio
-# https://aistudio.google.com/app/apikey
-
-# Save the key
+# Set up your Gemini API key (see "Getting Your API Key" below)
 mkdir -p ~/.gemini
-echo "your-key-here" > ~/.gemini/apikey.txt
+echo "your-api-key" > ~/.gemini/apikey.txt
 
 # Run
 make dev
@@ -69,10 +66,22 @@ bun run lint      # Lint
 bun run build     # Type check + build
 ```
 
-## API Key
+## Getting Your API Key
 
-Checked in order:
+([Official docs](https://ai.google.dev/gemini-api/docs/api-key))
 
+1. Go to [Google AI Studio](https://aistudio.google.com/)
+2. Sign in with your Google account
+3. Accept the Terms of Service (first time only)
+4. Click **Get API key** in the left sidebar (key icon)
+5. Copy your key—for new users, a default key is already created. Click the truncated key value (looks like `...abc123`) to copy it.
+6. Save it:
+   ```bash
+   mkdir -p ~/.gemini
+   echo "your-copied-key" > ~/.gemini/apikey.txt
+   ```
+
+Pageant checks for the key in this order:
 1. `~/.gemini/apikey.txt`
 2. `GEMINI_API_KEY` env var
 3. `GEMINI_API_KEY_PATH` pointing to key file
