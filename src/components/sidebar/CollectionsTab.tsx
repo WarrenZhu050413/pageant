@@ -157,7 +157,6 @@ export function CollectionsTab() {
                   <IconButton
                     size="sm"
                     variant="ghost"
-                    tooltip="Edit"
                     onClick={(e) => handleEditClick(collection, e)}
                   >
                     <Pencil size={14} />
@@ -167,7 +166,6 @@ export function CollectionsTab() {
                     <IconButton
                       size="sm"
                       variant="danger"
-                      tooltip="Delete"
                       onClick={(e) => {
                         e.stopPropagation();
                         setDeleteId(collection.id);
