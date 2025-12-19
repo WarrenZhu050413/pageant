@@ -26,6 +26,8 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
   const setViewMode = useStore((s) => s.setViewMode);
   const generateTokenConcept = useStore((s) => s.generateTokenConcept);
   const deleteToken = useStore((s) => s.deleteToken);
+  const pendingConceptGenerations = useStore((s) => s.pendingConceptGenerations);
+  const isGeneratingConcept = pendingConceptGenerations.has(token.id);
 
   // Build image map for navigation
   const imageMap = useMemo(() => {
@@ -201,11 +203,12 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
                     <Button
                       size="sm"
                       variant="ghost"
-                      leftIcon={<RefreshCw size={12} />}
+                      leftIcon={<RefreshCw size={12} className={isGeneratingConcept ? 'animate-spin' : ''} />}
                       onClick={(e) => { e.stopPropagation(); handleRegenerateConcept(); }}
                       className="mt-2"
+                      disabled={isGeneratingConcept}
                     >
-                      Generate
+                      {isGeneratingConcept ? 'Generating...' : 'Generate'}
                     </Button>
                   </div>
                 )}
@@ -346,10 +349,11 @@ export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
               <Button
                 variant="ghost"
                 size="sm"
-                leftIcon={<RefreshCw size={14} />}
+                leftIcon={<RefreshCw size={14} className={isGeneratingConcept ? 'animate-spin' : ''} />}
                 onClick={handleRegenerateConcept}
+                disabled={isGeneratingConcept}
               >
-                Regenerate
+                {isGeneratingConcept ? 'Generating...' : 'Regenerate'}
               </Button>
             )}
             <Button

@@ -11,6 +11,7 @@ import {
   Square,
   CheckSquare,
   X,
+  Loader2,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -23,6 +24,7 @@ interface TokenCardProps {
   isSelectionMode: boolean;
   isSelected: boolean;
   isNew: boolean;
+  isGeneratingConcept: boolean;
   onToggleSelect: () => void;
   onInsert: (token: DesignToken) => void;
   onDelete: (id: string) => void;
@@ -34,6 +36,7 @@ function TokenCard({
   isSelectionMode,
   isSelected,
   isNew,
+  isGeneratingConcept,
   onToggleSelect,
   onInsert,
   onDelete,
@@ -85,11 +88,20 @@ function TokenCard({
         <div className="flex-1 min-w-0">
           {/* Header with name and category */}
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles size={12} className="flex-shrink-0 text-brass" />
+            {isGeneratingConcept ? (
+              <Loader2 size={12} className="flex-shrink-0 text-brass animate-spin" />
+            ) : (
+              <Sparkles size={12} className="flex-shrink-0 text-brass" />
+            )}
             <span className="text-sm font-medium text-ink truncate">
               {token.name}
             </span>
-            {isNew && (
+            {isGeneratingConcept && (
+              <span className="text-[0.55rem] px-1.5 py-0.5 bg-brass/20 text-brass-dark font-semibold rounded uppercase tracking-wide animate-pulse">
+                Generating
+              </span>
+            )}
+            {isNew && !isGeneratingConcept && (
               <span className="text-[0.55rem] px-1.5 py-0.5 bg-brass/20 text-brass-dark font-semibold rounded uppercase tracking-wide">
                 New
               </span>
@@ -108,14 +120,20 @@ function TokenCard({
             </p>
           )}
 
-          {/* Concept image thumbnail */}
-          {hasConcept && (
+          {/* Concept image thumbnail or generating placeholder */}
+          {(hasConcept || isGeneratingConcept) && (
             <div className="mb-2">
-              <img
-                src={getImageUrl(token.concept_image_path!)}
-                alt={token.name}
-                className="w-16 h-16 rounded-lg object-cover border border-border"
-              />
+              {isGeneratingConcept ? (
+                <div className="w-16 h-16 rounded-lg border border-brass/30 bg-brass/5 flex items-center justify-center">
+                  <Loader2 size={16} className="text-brass animate-spin" />
+                </div>
+              ) : (
+                <img
+                  src={getImageUrl(token.concept_image_path!)}
+                  alt={token.name}
+                  className="w-16 h-16 rounded-lg object-cover border border-border"
+                />
+              )}
             </div>
           )}
 
@@ -269,6 +287,8 @@ export function LibraryTab() {
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
   const markLibrarySeen = useStore((s) => s.markLibrarySeen);
   const lastSeenLibraryAt = useStore((s) => s.lastSeenLibraryAt);
+  const pendingConceptGenerations = useStore((s) => s.pendingConceptGenerations);
+  const pendingCount = pendingConceptGenerations.size;
 
   // Mark library as seen when this tab is opened
   useEffect(() => {
@@ -385,6 +405,11 @@ export function LibraryTab() {
           <h3 className="text-sm font-medium text-ink">Design Library</h3>
           <p className="text-xs text-ink-muted">
             {totalCount} token{totalCount !== 1 ? 's' : ''}
+            {pendingCount > 0 && (
+              <span className="ml-1 text-brass">
+                · {pendingCount} generating
+              </span>
+            )}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -495,6 +520,7 @@ export function LibraryTab() {
               isSelectionMode={isSelectionMode}
               isSelected={selectedIds.has(token.id)}
               isNew={newTokenIds.has(token.id)}
+              isGeneratingConcept={pendingConceptGenerations.has(token.id)}
               onToggleSelect={() => handleToggleSelect(token.id)}
               onInsert={handleInsert}
               onDelete={(id) => setDeleteConfirmId(id)}

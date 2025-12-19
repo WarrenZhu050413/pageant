@@ -1321,8 +1321,13 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
 
 @app.delete("/api/images/{image_id}")
 async def delete_image(image_id: str):
-    """Delete a single image from a prompt."""
+    """Delete a single image from a prompt.
+
+    If the image is a concept image for a token, also clears the token's
+    concept references to keep them in sync.
+    """
     metadata = load_metadata()
+    updated_token_id = None
 
     for prompt in metadata.get("prompts", []):
         for i, img in enumerate(prompt.get("images", [])):
@@ -1334,8 +1339,20 @@ async def delete_image(image_id: str):
 
                 # Remove from prompt
                 prompt["images"].pop(i)
+
+                # If this is a concept image, clear the linked token's references
+                tokens = metadata.get("tokens", [])
+                for token in tokens:
+                    if token.get("concept_image_id") == image_id:
+                        token["concept_prompt_id"] = None
+                        token["concept_image_id"] = None
+                        token["concept_image_path"] = None
+                        updated_token_id = token["id"]
+                        logger.info(f"Cleared concept references from token: {token['id']}")
+                        break
+
                 save_metadata(metadata)
-                return {"success": True, "deleted_id": image_id}
+                return {"success": True, "deleted_id": image_id, "updated_token_id": updated_token_id}
 
     raise HTTPException(status_code=404, detail="Image not found")
 
@@ -2204,10 +2221,15 @@ async def generate_more_like_this(image_id: str, count: int = 4):
 
 @app.post("/api/batch/delete")
 async def batch_delete_images(req: BatchDeleteRequest):
-    """Delete multiple images at once."""
+    """Delete multiple images at once.
+
+    If any images are concept images for tokens, also clears the token's
+    concept references to keep them in sync.
+    """
     metadata = load_metadata()
     deleted = []
     not_found = []
+    updated_token_ids = []
 
     for image_id in req.image_ids:
         found = False
@@ -2223,6 +2245,18 @@ async def batch_delete_images(req: BatchDeleteRequest):
                     prompt["images"].pop(i)
                     deleted.append(image_id)
                     found = True
+
+                    # If this is a concept image, clear the linked token's references
+                    tokens = metadata.get("tokens", [])
+                    for token in tokens:
+                        if token.get("concept_image_id") == image_id:
+                            token["concept_prompt_id"] = None
+                            token["concept_image_id"] = None
+                            token["concept_image_path"] = None
+                            updated_token_ids.append(token["id"])
+                            logger.info(f"Cleared concept references from token: {token['id']}")
+                            break
+
                     break
             if found:
                 break
@@ -2231,7 +2265,7 @@ async def batch_delete_images(req: BatchDeleteRequest):
 
     save_metadata(metadata)
     logger.info(f"Batch deleted {len(deleted)} images")
-    return {"success": True, "deleted": deleted, "not_found": not_found}
+    return {"success": True, "deleted": deleted, "not_found": not_found, "updated_token_ids": updated_token_ids}
 
 
 @app.post("/api/batch/favorite")

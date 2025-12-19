@@ -63,6 +63,7 @@ interface AppStore {
   // UI State
   isGenerating: boolean;
   pendingGenerations: Map<string, PendingGeneration>;
+  pendingConceptGenerations: Set<string>; // Token IDs currently generating concept images
   error: string | null;
 
   // Sessions (persisted)
@@ -291,6 +292,7 @@ export const useStore = create<AppStore>()(
 
       isGenerating: false,
       pendingGenerations: new Map(),
+      pendingConceptGenerations: new Set(),
       error: null,
 
       sessions: [],
@@ -1598,6 +1600,11 @@ export const useStore = create<AppStore>()(
       },
 
       generateTokenConcept: async (tokenId) => {
+        // Add to pending set
+        const newPending = new Set(get().pendingConceptGenerations);
+        newPending.add(tokenId);
+        set({ pendingConceptGenerations: newPending });
+
         try {
           await api.generateTokenConcept(tokenId);
           // Refresh both tokens and generations (concept images create Generation entries)
@@ -1605,9 +1612,16 @@ export const useStore = create<AppStore>()(
             api.fetchTokens(),
             api.fetchPrompts(),
           ]);
-          set({ designTokens, generations });
+
+          // Remove from pending set
+          const updatedPending = new Set(get().pendingConceptGenerations);
+          updatedPending.delete(tokenId);
+          set({ designTokens, generations, pendingConceptGenerations: updatedPending });
         } catch (error) {
-          set({ error: (error as Error).message });
+          // Remove from pending set on error
+          const updatedPending = new Set(get().pendingConceptGenerations);
+          updatedPending.delete(tokenId);
+          set({ pendingConceptGenerations: updatedPending, error: (error as Error).message });
         }
       },
 

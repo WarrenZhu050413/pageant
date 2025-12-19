@@ -354,3 +354,254 @@ class TestConceptPromptMetadataStructure:
             assert dim["name"] == "Dreamy Ethereal"
             assert "tags" in dim
             assert "generation_prompt" in dim
+
+
+class TestDeleteConceptImageClearsTokenReference:
+    """Test DELETE /api/images/{id} clears token's concept references."""
+
+    def test_delete_concept_image_clears_token_reference(self, client, test_data_dir):
+        """Deleting a concept image should clear the linked token's concept fields."""
+        images_dir = test_data_dir / "generated_images"
+        metadata_path = images_dir / "metadata.json"
+
+        # Setup: token with concept references
+        token_id = "tok-delete-test"
+        concept_image_id = "concept-img-delete"
+        concept_prompt_id = "concept-prompt-delete"
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        metadata["tokens"] = [
+            {
+                "id": token_id,
+                "name": "Token With Concept",
+                "created_at": "2025-01-01T00:00:00",
+                "use_count": 0,
+                "images": [{"id": "img-source", "image_path": "source.png"}],
+                "prompts": [],
+                "concept_image_id": concept_image_id,
+                "concept_image_path": "concept-delete.jpg",
+                "concept_prompt_id": concept_prompt_id,
+            }
+        ]
+        metadata["prompts"].append({
+            "id": concept_prompt_id,
+            "prompt": "Concept prompt",
+            "title": "Concept: Test",
+            "created_at": "2025-01-01T00:00:00",
+            "images": [
+                {
+                    "id": concept_image_id,
+                    "image_path": "concept-delete.jpg",
+                    "generated_at": "2025-01-01T00:00:00",
+                }
+            ],
+            "is_concept": True,
+        })
+
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        # Delete the concept image
+        response = client.delete(f"/api/images/{concept_image_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["deleted_id"] == concept_image_id
+        assert data["updated_token_id"] == token_id
+
+        # Verify token's concept references are cleared
+        with open(metadata_path) as f:
+            updated_metadata = json.load(f)
+
+        token = next(t for t in updated_metadata["tokens"] if t["id"] == token_id)
+        assert token["concept_image_id"] is None
+        assert token["concept_image_path"] is None
+        assert token["concept_prompt_id"] is None
+
+    def test_delete_regular_image_does_not_affect_tokens(self, client, test_data_dir):
+        """Deleting a non-concept image should not affect any tokens."""
+        images_dir = test_data_dir / "generated_images"
+        metadata_path = images_dir / "metadata.json"
+
+        token_id = "tok-unaffected"
+        concept_image_id = "concept-keep"
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        metadata["tokens"] = [
+            {
+                "id": token_id,
+                "name": "Token Unaffected",
+                "created_at": "2025-01-01T00:00:00",
+                "use_count": 0,
+                "images": [],
+                "prompts": [],
+                "concept_image_id": concept_image_id,
+                "concept_image_path": "concept-keep.jpg",
+                "concept_prompt_id": "prompt-keep",
+            }
+        ]
+
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        # Delete a regular image (not the concept image)
+        regular_image_id = "img-test123"  # From fixture
+        response = client.delete(f"/api/images/{regular_image_id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data.get("updated_token_id") is None
+
+        # Verify token's concept references are still intact
+        with open(metadata_path) as f:
+            updated_metadata = json.load(f)
+
+        token = next(t for t in updated_metadata["tokens"] if t["id"] == token_id)
+        assert token["concept_image_id"] == concept_image_id
+        assert token["concept_image_path"] == "concept-keep.jpg"
+
+
+class TestBatchDeleteClearsTokenReferences:
+    """Test POST /api/batch/delete clears token's concept references."""
+
+    def test_batch_delete_clears_token_references(self, client, test_data_dir):
+        """Batch deleting concept images should clear linked tokens' concept fields."""
+        images_dir = test_data_dir / "generated_images"
+        metadata_path = images_dir / "metadata.json"
+
+        # Setup: two tokens with concept references
+        token1_id = "tok-batch1"
+        token2_id = "tok-batch2"
+        concept1_id = "concept-batch1"
+        concept2_id = "concept-batch2"
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        metadata["tokens"] = [
+            {
+                "id": token1_id,
+                "name": "Token 1",
+                "created_at": "2025-01-01T00:00:00",
+                "use_count": 0,
+                "images": [],
+                "prompts": [],
+                "concept_image_id": concept1_id,
+                "concept_image_path": "concept1.jpg",
+                "concept_prompt_id": "prompt1",
+            },
+            {
+                "id": token2_id,
+                "name": "Token 2",
+                "created_at": "2025-01-01T00:00:00",
+                "use_count": 0,
+                "images": [],
+                "prompts": [],
+                "concept_image_id": concept2_id,
+                "concept_image_path": "concept2.jpg",
+                "concept_prompt_id": "prompt2",
+            },
+        ]
+        metadata["prompts"].append({
+            "id": "prompt1",
+            "prompt": "Concept 1",
+            "title": "Concept: 1",
+            "created_at": "2025-01-01T00:00:00",
+            "images": [{"id": concept1_id, "image_path": "concept1.jpg", "generated_at": "2025-01-01T00:00:00"}],
+            "is_concept": True,
+        })
+        metadata["prompts"].append({
+            "id": "prompt2",
+            "prompt": "Concept 2",
+            "title": "Concept: 2",
+            "created_at": "2025-01-01T00:00:00",
+            "images": [{"id": concept2_id, "image_path": "concept2.jpg", "generated_at": "2025-01-01T00:00:00"}],
+            "is_concept": True,
+        })
+
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        # Batch delete both concept images
+        response = client.post(
+            "/api/batch/delete",
+            json={"image_ids": [concept1_id, concept2_id]}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert set(data["deleted"]) == {concept1_id, concept2_id}
+        assert set(data["updated_token_ids"]) == {token1_id, token2_id}
+
+        # Verify both tokens' concept references are cleared
+        with open(metadata_path) as f:
+            updated_metadata = json.load(f)
+
+        for token_id in [token1_id, token2_id]:
+            token = next(t for t in updated_metadata["tokens"] if t["id"] == token_id)
+            assert token["concept_image_id"] is None
+            assert token["concept_image_path"] is None
+            assert token["concept_prompt_id"] is None
+
+    def test_batch_delete_mixed_images(self, client, test_data_dir):
+        """Batch delete with mix of concept and regular images."""
+        images_dir = test_data_dir / "generated_images"
+        metadata_path = images_dir / "metadata.json"
+
+        token_id = "tok-mixed"
+        concept_id = "concept-mixed"
+        regular_id = "img-test123"  # From fixture
+
+        with open(metadata_path) as f:
+            metadata = json.load(f)
+
+        metadata["tokens"] = [
+            {
+                "id": token_id,
+                "name": "Token Mixed",
+                "created_at": "2025-01-01T00:00:00",
+                "use_count": 0,
+                "images": [],
+                "prompts": [],
+                "concept_image_id": concept_id,
+                "concept_image_path": "concept-mixed.jpg",
+                "concept_prompt_id": "prompt-mixed",
+            },
+        ]
+        metadata["prompts"].append({
+            "id": "prompt-mixed",
+            "prompt": "Concept mixed",
+            "title": "Concept: Mixed",
+            "created_at": "2025-01-01T00:00:00",
+            "images": [{"id": concept_id, "image_path": "concept-mixed.jpg", "generated_at": "2025-01-01T00:00:00"}],
+            "is_concept": True,
+        })
+
+        with open(metadata_path, "w") as f:
+            json.dump(metadata, f)
+
+        # Batch delete mix of concept and regular images
+        response = client.post(
+            "/api/batch/delete",
+            json={"image_ids": [regular_id, concept_id]}
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert set(data["deleted"]) == {regular_id, concept_id}
+        # Only concept image should trigger token update
+        assert data["updated_token_ids"] == [token_id]
+
+        # Verify token's concept references are cleared
+        with open(metadata_path) as f:
+            updated_metadata = json.load(f)
+
+        token = next(t for t in updated_metadata["tokens"] if t["id"] == token_id)
+        assert token["concept_image_id"] is None
