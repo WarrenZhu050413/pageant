@@ -1537,6 +1537,14 @@ export const useStore = create<AppStore>()(
 
       // Design Tokens
       createToken: async (data) => {
+        // Track pending if generating concept
+        const tempId = data.generate_concept ? `creating-${Date.now()}` : null;
+        if (tempId) {
+          const newPending = new Set(get().pendingConceptGenerations);
+          newPending.add(tempId);
+          set({ pendingConceptGenerations: newPending });
+        }
+
         try {
           // Check if a token with the same name already exists
           const existingTokens = get().designTokens;
@@ -1553,10 +1561,25 @@ export const useStore = create<AppStore>()(
             api.fetchTokens(),
             api.fetchPrompts(),
           ]);
-          set({ designTokens, generations });
+
+          // Remove from pending
+          if (tempId) {
+            const updatedPending = new Set(get().pendingConceptGenerations);
+            updatedPending.delete(tempId);
+            set({ designTokens, generations, pendingConceptGenerations: updatedPending });
+          } else {
+            set({ designTokens, generations });
+          }
           return token;
         } catch (error) {
-          set({ error: (error as Error).message });
+          // Remove from pending on error
+          if (tempId) {
+            const updatedPending = new Set(get().pendingConceptGenerations);
+            updatedPending.delete(tempId);
+            set({ pendingConceptGenerations: updatedPending, error: (error as Error).message });
+          } else {
+            set({ error: (error as Error).message });
+          }
           return undefined;
         }
       },
