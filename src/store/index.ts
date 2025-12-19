@@ -226,6 +226,19 @@ interface AppStore {
   confirmDimension: (imageId: string, axis: string) => Promise<void>;
   updateImageDimensions: (imageId: string, dimensions: Record<string, DesignDimension>) => Promise<void>;
 
+  // Token Extraction Dialog (shared between SingleView and SelectionTray)
+  extractionDialog: {
+    isOpen: boolean;
+    isExtracting: boolean;
+    imageIds: string[];  // Images being analyzed
+    suggestedDimensions: DesignDimension[];
+    selectedDimensionIndex: number | null;
+  };
+  openExtractionDialog: (imageIds: string[]) => Promise<void>;
+  closeExtractionDialog: () => void;
+  selectExtractionDimension: (index: number | null) => void;
+  createTokenFromExtraction: () => Promise<void>;
+
   // Error handling
   setError: (error: string | null) => void;
   clearError: () => void;
@@ -291,6 +304,15 @@ export const useStore = create<AppStore>()(
       // Design Dimensions (Rich AI Analysis)
       pendingAnalysis: new Set<string>(),
 
+      // Token Extraction Dialog
+      extractionDialog: {
+        isOpen: false,
+        isExtracting: false,
+        imageIds: [],
+        suggestedDimensions: [],
+        selectedDimensionIndex: null,
+      },
+
       // Initialize app
       initialize: async () => {
         try {
@@ -310,13 +332,20 @@ export const useStore = create<AppStore>()(
             created_at: s.created_at,
           }));
 
+          // Find the newest prompt by created_at (matches sidebar sort order)
+          const newestPrompt = prompts.length > 0
+            ? prompts.reduce((latest, p) =>
+                new Date(p.created_at) > new Date(latest.created_at) ? p : latest
+              )
+            : null;
+
           set({
             prompts,
             designTokens,
             collections,
             settings,
             sessions: sessionsTyped,
-            currentPromptId: prompts[0]?.id || null,
+            currentPromptId: newestPrompt?.id || null,
           });
         } catch (error) {
           set({ error: (error as Error).message });
@@ -1961,6 +1990,137 @@ export const useStore = create<AppStore>()(
           await get().refreshData();
         } catch (error) {
           set({ error: (error as Error).message });
+        }
+      },
+
+      // Token Extraction Dialog actions
+      openExtractionDialog: async (imageIds: string[]) => {
+        // Show "analyzing" toast immediately - user can continue working
+        const imageCount = imageIds.length;
+        toast.info(`Analyzing ${imageCount} image${imageCount !== 1 ? 's' : ''} for design dimensions...`);
+
+        // Store imageIds for when dialog opens later
+        set({
+          extractionDialog: {
+            isOpen: false,  // Don't open yet - background processing
+            isExtracting: true,
+            imageIds,
+            suggestedDimensions: [],
+            selectedDimensionIndex: null,
+          },
+        });
+
+        try {
+          const response = await api.suggestDimensions(imageIds);
+          if (response.success && response.dimensions.length > 0) {
+            // Store results
+            set({
+              extractionDialog: {
+                ...get().extractionDialog,
+                isExtracting: false,
+                suggestedDimensions: response.dimensions,
+              },
+            });
+
+            // Show success toast with "View" action
+            const count = response.dimensions.length;
+            toast.success(
+              `Found ${count} design dimension${count !== 1 ? 's' : ''}`,
+              {
+                label: 'View',
+                onClick: () => {
+                  // Open dialog with pre-loaded results
+                  set({
+                    extractionDialog: {
+                      ...get().extractionDialog,
+                      isOpen: true,
+                    },
+                  });
+                },
+              }
+            );
+          } else {
+            set({
+              extractionDialog: {
+                ...get().extractionDialog,
+                isExtracting: false,
+              },
+            });
+            toast.error('No design dimensions found. Try different images.');
+          }
+        } catch (error) {
+          set({
+            extractionDialog: {
+              ...get().extractionDialog,
+              isExtracting: false,
+            },
+          });
+          toast.error(`Analysis failed: ${(error as Error).message}`);
+        }
+      },
+
+      closeExtractionDialog: () => {
+        set({
+          extractionDialog: {
+            isOpen: false,
+            isExtracting: false,
+            imageIds: [],
+            suggestedDimensions: [],
+            selectedDimensionIndex: null,
+          },
+        });
+      },
+
+      selectExtractionDimension: (index: number | null) => {
+        set({
+          extractionDialog: {
+            ...get().extractionDialog,
+            selectedDimensionIndex: index,
+          },
+        });
+      },
+
+      createTokenFromExtraction: async () => {
+        const { extractionDialog, createToken, clearSelection, setSelectionMode } = get();
+        const { selectedDimensionIndex, suggestedDimensions, imageIds } = extractionDialog;
+
+        if (selectedDimensionIndex === null || !suggestedDimensions[selectedDimensionIndex]) return;
+
+        const dimension = suggestedDimensions[selectedDimensionIndex];
+
+        set({
+          extractionDialog: {
+            ...extractionDialog,
+            isExtracting: true,
+          },
+        });
+
+        try {
+          const token = await createToken({
+            name: dimension.name,
+            description: dimension.description,
+            image_ids: imageIds,
+            prompts: [dimension.generation_prompt],
+            creation_method: 'ai-extraction',
+            dimension,
+            generate_concept: true,
+            category: dimension.axis,
+            tags: dimension.tags,
+          });
+
+          if (token) {
+            // Success - close dialog and clear selection
+            get().closeExtractionDialog();
+            clearSelection();
+            setSelectionMode('none');
+          }
+        } finally {
+          set({
+            extractionDialog: {
+              ...get().extractionDialog,
+              isExtracting: false,
+            },
+          });
         }
       },
 
