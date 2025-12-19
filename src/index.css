@@ -31,8 +31,16 @@
 
   --color-favorite: #d4a853;
   --color-error: #c45c5c;
+  --color-error-muted: rgba(196, 92, 92, 0.15);
   --color-success: #5c9a7a;
+  --color-success-muted: rgba(92, 154, 122, 0.15);
+  --color-warning: #d97706;
+  --color-warning-muted: rgba(217, 119, 6, 0.15);
   --color-generating: #7a6ba8;
+
+  /* Typography scale - small text */
+  --text-2xs: 0.625rem;  /* 10px */
+  --text-3xs: 0.5rem;    /* 8px */
 
   --color-border: rgba(26, 25, 24, 0.08);
   --color-border-strong: rgba(26, 25, 24, 0.15);
@@ -100,7 +108,11 @@
   --color-accent-light: #5aa88c;
   --color-favorite: #d4a853;
   --color-error: #e07070;
+  --color-error-muted: rgba(224, 112, 112, 0.2);
   --color-success: #6ab088;
+  --color-success-muted: rgba(106, 176, 136, 0.2);
+  --color-warning: #f59e0b;
+  --color-warning-muted: rgba(245, 158, 11, 0.2);
   --color-generating: #9a8ac8;
 
   /* Borders - inverted opacity base */

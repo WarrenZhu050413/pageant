@@ -143,7 +143,7 @@ export function ImagePickerModal({ isOpen, onClose, onConfirm }: ImagePickerModa
             )}
             <div className="flex items-center gap-2">
               {selectedCollection?.name === FAVORITES_COLLECTION_NAME ? (
-                <Star size={18} className="text-amber-500" />
+                <Star size={18} className="text-favorite" />
               ) : (
                 <FolderOpen size={18} className="text-brass" />
               )}
@@ -183,7 +183,7 @@ export function ImagePickerModal({ isOpen, onClose, onConfirm }: ImagePickerModa
                       )}
                     >
                       {isFavorites ? (
-                        <Star size={20} className="text-amber-500 shrink-0" />
+                        <Star size={20} className="text-favorite shrink-0" />
                       ) : (
                         <FolderOpen size={20} className="text-brass shrink-0" />
                       )}

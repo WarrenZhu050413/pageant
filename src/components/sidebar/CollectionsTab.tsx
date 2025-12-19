@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { FolderOpen, Trash2, Star } from 'lucide-react';
+import { FolderOpen, Trash2, Star, Check, X } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, IconButton } from '../ui';
@@ -24,12 +24,44 @@ export function CollectionsTab() {
   }, [rawCollections]);
   const prompts = useStore((s) => s.prompts);
   const deleteCollection = useStore((s) => s.deleteCollection);
+  const updateCollection = useStore((s) => s.updateCollection);
   const addContextImages = useStore((s) => s.addContextImages);
   const setRightTab = useStore((s) => s.setRightTab);
   const viewCollection = useStore((s) => s.viewCollection);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
+  const editInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (editingId && editInputRef.current) {
+      editInputRef.current.focus();
+      editInputRef.current.select();
+    }
+  }, [editingId]);
+
+  const handleDoubleClick = (collectionId: string, currentName: string, isFavorites: boolean) => {
+    if (isFavorites) return; // Can't rename Favorites
+    setEditingId(collectionId);
+    setEditingName(currentName);
+  };
+
+  const handleSaveRename = async () => {
+    if (!editingId || !editingName.trim()) {
+      setEditingId(null);
+      return;
+    }
+    await updateCollection(editingId, { name: editingName.trim() });
+    setEditingId(null);
+  };
+
+  const handleCancelRename = () => {
+    setEditingId(null);
+    setEditingName('');
+  };
 
   // Helper to get image data by ID
   const getImageById = (imageId: string) => {
@@ -103,7 +135,7 @@ export function CollectionsTab() {
                 ) : (
                   <div className="col-span-2 row-span-2 flex items-center justify-center">
                     {isFavorites ? (
-                      <Star size={16} className="text-amber-500" />
+                      <Star size={16} className="text-favorite" />
                     ) : (
                       <FolderOpen size={16} className="text-ink-muted" />
                     )}
@@ -114,12 +146,60 @@ export function CollectionsTab() {
               {/* Content */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <h3 className={clsx(
-                    'text-sm font-medium truncate',
-                    isActive ? 'text-brass-dark' : 'text-ink-secondary'
-                  )}>
-                    {collection.name}
-                  </h3>
+                  {editingId === collection.id ? (
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <input
+                        ref={editInputRef}
+                        type="text"
+                        value={editingName}
+                        onChange={(e) => setEditingName(e.target.value)}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === 'Enter') handleSaveRename();
+                          if (e.key === 'Escape') handleCancelRename();
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className={clsx(
+                          'flex-1 min-w-0 text-sm font-medium px-1.5 py-0.5 rounded',
+                          'bg-surface border border-brass focus:outline-none focus:ring-1 focus:ring-brass',
+                          'text-ink'
+                        )}
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSaveRename();
+                        }}
+                        className="p-0.5 rounded hover:bg-success/20 text-success"
+                      >
+                        <Check size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCancelRename();
+                        }}
+                        className="p-0.5 rounded hover:bg-error/20 text-error"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    <h3
+                      className={clsx(
+                        'text-sm font-medium truncate',
+                        isActive ? 'text-brass-dark' : 'text-ink-secondary',
+                        !isFavorites && 'cursor-text hover:bg-canvas-muted/50 rounded px-1 -mx-1'
+                      )}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        handleDoubleClick(collection.id, collection.name, isFavorites);
+                      }}
+                      title={isFavorites ? undefined : 'Double-click to rename'}
+                    >
+                      {collection.name}
+                    </h3>
+                  )}
                   <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-canvas-muted text-ink-tertiary">
                     {collection.image_ids.length}
                   </span>

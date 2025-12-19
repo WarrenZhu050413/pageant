@@ -388,7 +388,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                       )}
                       {/* Edited indicator */}
                       {variation.isEdited && (
-                        <Badge variant="outline" size="sm" className="text-amber-600 border-amber-300 bg-amber-50 shrink-0">
+                        <Badge variant="outline" size="sm" className="text-warning border-warning/30 bg-warning-muted shrink-0">
                           <Pencil size={10} className="mr-0.5" />
                           edited
                         </Badge>
@@ -580,10 +580,10 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                                 )}
                                 {/* Auto-applied suggestion: show "Applied" with Revert option */}
                                 {suggestion && !isReverted && (
-                                  <div className="mt-1 flex items-start gap-2 bg-green-50/50 rounded p-1.5">
-                                    <Check size={10} className="text-green-600 shrink-0 mt-0.5" />
+                                  <div className="mt-1 flex items-start gap-2 bg-success-muted rounded p-1.5">
+                                    <Check size={10} className="text-success shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-[0.6rem] text-green-700">
+                                      <p className="text-[0.6rem] text-success">
                                         Auto-polished
                                       </p>
                                       {suggestion.original_annotation && (
@@ -594,7 +594,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                                     </div>
                                     <button
                                       onClick={() => handleRevertAnnotation(imgId, suggestion.original_annotation || '')}
-                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-gray-100 text-gray-600 hover:bg-gray-200 transition-colors"
+                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-canvas-muted text-ink-secondary hover:bg-canvas-subtle transition-colors"
                                     >
                                       Revert
                                     </button>
@@ -602,10 +602,10 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                                 )}
                                 {/* Reverted: show option to re-apply */}
                                 {suggestion && isReverted && (
-                                  <div className="mt-1 flex items-start gap-2 bg-amber-50/50 rounded p-1.5">
-                                    <Sparkles size={10} className="text-amber-600 shrink-0 mt-0.5" />
+                                  <div className="mt-1 flex items-start gap-2 bg-warning-muted rounded p-1.5">
+                                    <Sparkles size={10} className="text-warning shrink-0 mt-0.5" />
                                     <div className="flex-1 min-w-0">
-                                      <p className="text-[0.6rem] text-amber-700">
+                                      <p className="text-[0.6rem] text-warning">
                                         Reverted to original
                                       </p>
                                       <p className="text-[0.55rem] text-ink-muted mt-0.5">
@@ -614,7 +614,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                                     </div>
                                     <button
                                       onClick={() => handleReapplyAnnotation(imgId, suggestion.suggested_annotation)}
-                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-amber-100 text-amber-700 hover:bg-amber-200 transition-colors"
+                                      className="shrink-0 px-1.5 py-0.5 rounded text-[0.6rem] bg-warning-muted text-warning hover:bg-warning/20 transition-colors"
                                     >
                                       Re-apply
                                     </button>
