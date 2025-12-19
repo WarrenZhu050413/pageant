@@ -1,4 +1,4 @@
-.PHONY: help dev frontend backend install clean stop preview build
+.PHONY: help dev frontend backend install clean stop preview build seed
 .PHONY: stop-dev stop-preview
 .PHONY: preview-frontend preview-backend
 
@@ -28,6 +28,7 @@ help:
 	@echo "Other:"
 	@echo "  make stop         - Stop ALL servers (dev + preview)"
 	@echo "  make install      - Install dependencies (bun + uv)"
+	@echo "  make seed         - Load sample design tokens for demo"
 	@echo "  make clean        - Clean build artifacts"
 	@echo ""
 
@@ -99,6 +100,14 @@ install:
 	uv sync
 	@echo ""
 	@echo "✓ Setup complete! Run 'make dev' to start."
+	@echo "  (Optional: 'make seed' to load sample design tokens)"
+
+seed:
+	@echo "Loading sample design tokens..."
+	@cp -r sample_data/images/* generated_images/
+	@cp sample_data/metadata.json generated_images/
+	@echo "✓ Loaded 6 sample design tokens"
+	@echo "  Run 'make dev' and check the Library tab"
 
 clean:
 	rm -rf node_modules dist .vite

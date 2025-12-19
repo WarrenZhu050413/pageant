@@ -1,0 +1,283 @@
+{
+  "generated_at": "2025-12-20T00:00:00",
+  "model": "gemini-2.0-flash-exp",
+  "prompts": [],
+  "favorites": [],
+  "templates": [],
+  "collections": [],
+  "sessions": [],
+  "stories": [],
+  "library": [],
+  "tokens": [
+    {
+      "id": "tok-28d28b0c",
+      "name": "Stark Rim Lighting",
+      "description": "A lighting technique where the subject is lit primarily from behind or the side, creating a thin outline of light against darkness. This emphasizes shape and silhouette over surface detail.",
+      "created_at": "2025-12-19T22:31:52.285086",
+      "use_count": 4,
+      "images": [
+        {
+          "id": "2025-12-19-22-30-59-Visceral-Textures-Noir-Moods-2",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-19-22-30-59-Visceral-Textures-Noir-Moods-2.jpg"
+        }
+      ],
+      "prompts": [
+        "Abstract composition of pure white rim light edges against a pitch black background, tracing the outline of undefined curved forms."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "lighting",
+      "tags": [
+        "sample",
+        "rim-light",
+        "silhouette",
+        "high-contrast"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "lighting",
+          "name": "Stark Rim Lighting",
+          "description": "A lighting technique where the subject is lit primarily from behind or the side, creating a thin outline of light against darkness. This emphasizes shape and silhouette over surface detail.",
+          "tags": [
+            "rim-light",
+            "silhouette",
+            "high-contrast"
+          ],
+          "generation_prompt": "Abstract composition of pure white rim light edges against a pitch black background, tracing the outline of undefined curved forms.",
+          "commonality": null
+        },
+        "generation_prompt": "Abstract composition of pure white rim light edges against a pitch black background, tracing the outline of undefined curved forms."
+      },
+      "concept_image_path": "concept-f7f835c0.jpg",
+      "concept_image_id": "concept-tok-28d28b0c",
+      "last_used": "2025-12-19T23:20:22.404218"
+    },
+    {
+      "id": "tok-37dae0c3",
+      "name": "Aggressive Double Exposure",
+      "description": "Superimposing two distinct images (organic and structural) to create a third, composite meaning. The blend mode is usually 'screen' or 'multiply', creating complex intersections.",
+      "created_at": "2025-12-19T22:33:41.135334",
+      "use_count": 1,
+      "images": [
+        {
+          "id": "2025-12-19-22-31-12-Visceral-Textures-Noir-Moods-4",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-19-22-31-12-Visceral-Textures-Noir-Moods-4.jpg"
+        }
+      ],
+      "prompts": [
+        "Abstract visual layering of organic noise over geometric grid structures, blending modes, transparency and opacity interplay."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "composition",
+      "tags": [
+        "sample",
+        "double-exposure",
+        "overlay",
+        "superimposition"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "composition",
+          "name": "Aggressive Double Exposure",
+          "description": "Superimposing two distinct images (organic and structural) to create a third, composite meaning. The blend mode is usually 'screen' or 'multiply', creating complex intersections.",
+          "tags": [
+            "double-exposure",
+            "overlay",
+            "superimposition"
+          ],
+          "generation_prompt": "Abstract visual layering of organic noise over geometric grid structures, blending modes, transparency and opacity interplay.",
+          "commonality": null
+        },
+        "generation_prompt": "Abstract visual layering of organic noise over geometric grid structures, blending modes, transparency and opacity interplay."
+      },
+      "concept_image_path": "concept-01b9306e.jpg",
+      "concept_image_id": "concept-tok-37dae0c3",
+      "last_used": "2025-12-19T23:13:18.244455"
+    },
+    {
+      "id": "tok-e471a133",
+      "name": "Macro Biomorphic Texture",
+      "description": "Extreme magnification of biological surfaces until they resemble large-scale landscapes. It blurs the line between the intimate body and the vast environment.",
+      "created_at": "2025-12-19T22:43:07.996284",
+      "use_count": 0,
+      "images": [
+        {
+          "id": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3.jpg"
+        }
+      ],
+      "prompts": [
+        "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "aesthetic",
+      "tags": [
+        "sample",
+        "macro",
+        "skin-texture",
+        "biomorphic"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "aesthetic",
+          "name": "Macro Biomorphic Texture",
+          "description": "Extreme magnification of biological surfaces until they resemble large-scale landscapes. It blurs the line between the intimate body and the vast environment.",
+          "tags": [
+            "macro",
+            "skin-texture",
+            "biomorphic"
+          ],
+          "generation_prompt": "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones.",
+          "commonality": null
+        },
+        "generation_prompt": "Abstract surface texture resembling microscopic skin or desert sand dunes, sweeping organic curves, high detail, warm beige tones."
+      },
+      "concept_image_path": "concept-c774925c.jpg",
+      "concept_image_id": "concept-tok-e471a133"
+    },
+    {
+      "id": "tok-2a62b43b",
+      "name": "Binary Threshold Contrast",
+      "description": "Reducing a full tonal range image to essentially two values: black and white. It creates graphic, powerful shapes at the expense of detail.",
+      "created_at": "2025-12-19T22:59:32.713279",
+      "use_count": 0,
+      "images": [
+        {
+          "id": "2025-12-19-22-31-00-Visceral-Textures-Noir-Moods-5",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-19-22-31-00-Visceral-Textures-Noir-Moods-5.jpg"
+        }
+      ],
+      "prompts": [
+        "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "colors",
+      "tags": [
+        "sample",
+        "threshold",
+        "binary",
+        "graphic"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "colors",
+          "name": "Binary Threshold Contrast",
+          "description": "Reducing a full tonal range image to essentially two values: black and white. It creates graphic, powerful shapes at the expense of detail.",
+          "tags": [
+            "threshold",
+            "binary",
+            "graphic"
+          ],
+          "generation_prompt": "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern.",
+          "commonality": null
+        },
+        "generation_prompt": "Pure black and white abstract shapes, no greyscale, hard edges, extreme contrast graphic pattern."
+      },
+      "concept_image_path": "concept-fd814ba8.jpg",
+      "concept_image_id": "concept-tok-2a62b43b"
+    },
+    {
+      "id": "tok-c681261e",
+      "name": "Dusty Sepia Grading",
+      "description": "A color palette restricted to warm browns, beiges, and golds. It evokes nostalgia, history, or the natural earth, removing the clinical feel of modern digital photography.",
+      "created_at": "2025-12-19T23:16:02.517701",
+      "use_count": 0,
+      "images": [
+        {
+          "id": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-19-22-31-07-Visceral-Textures-Noir-Moods-3.jpg"
+        }
+      ],
+      "prompts": [
+        "Abstract gradient of warm browns, tans, and deep golds, reminiscent of old paper or dried earth, monochromatic warmth."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "colors",
+      "tags": [
+        "sample",
+        "sepia",
+        "earth-tones",
+        "warm-monochrome"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "colors",
+          "name": "Dusty Sepia Grading",
+          "description": "A color palette restricted to warm browns, beiges, and golds. It evokes nostalgia, history, or the natural earth, removing the clinical feel of modern digital photography.",
+          "tags": [
+            "sepia",
+            "earth-tones",
+            "warm-monochrome"
+          ],
+          "generation_prompt": "Abstract gradient of warm browns, tans, and deep golds, reminiscent of old paper or dried earth, monochromatic warmth.",
+          "commonality": null
+        },
+        "generation_prompt": "Abstract gradient of warm browns, tans, and deep golds, reminiscent of old paper or dried earth, monochromatic warmth."
+      },
+      "concept_image_path": "concept-8e83ecbf.jpg",
+      "concept_image_id": "concept-tok-c681261e",
+      "concept_prompt_id": "concept-prompt-tok-c681261e"
+    },
+    {
+      "id": "tok-29202b7b",
+      "name": "Fluid Suspension Density",
+      "description": "Visuals that suggest matter suspended in a medium. It lacks gravity or a horizon line, creating a floating, weightless sensation where the 'subject' is the medium itself.",
+      "created_at": "2025-12-20T01:18:23.034976",
+      "use_count": 0,
+      "images": [
+        {
+          "id": "2025-12-20-01-15-00-Atmospheric-Noise-Texture-4",
+          "annotation": null,
+          "liked_axes": null,
+          "image_path": "2025-12-20-01-15-00-Atmospheric-Noise-Texture-4.jpg"
+        }
+      ],
+      "prompts": [
+        "Abstract representation of ink or smoke diffusing in a fluid medium. Soft, billowing shapes with no hard edges, floating in a dense, colored void."
+      ],
+      "creation_method": "ai-extraction",
+      "category": "layout",
+      "tags": [
+        "sample",
+        "underwater",
+        "ethereal",
+        "amorphous"
+      ],
+      "extraction": {
+        "dimension": {
+          "axis": "layout",
+          "name": "Fluid Suspension Density",
+          "description": "Visuals that suggest matter suspended in a medium. It lacks gravity or a horizon line, creating a floating, weightless sensation where the 'subject' is the medium itself.",
+          "tags": [
+            "underwater",
+            "ethereal",
+            "amorphous"
+          ],
+          "generation_prompt": "Abstract representation of ink or smoke diffusing in a fluid medium. Soft, billowing shapes with no hard edges, floating in a dense, colored void.",
+          "commonality": null
+        },
+        "generation_prompt": "Abstract representation of ink or smoke diffusing in a fluid medium. Soft, billowing shapes with no hard edges, floating in a dense, colored void."
+      },
+      "concept_image_path": "concept-841e4462.jpg",
+      "concept_image_id": "concept-tok-29202b7b",
+      "concept_prompt_id": "concept-prompt-tok-29202b7b"
+    }
+  ],
+  "settings": {
+    "variation_prompt": "You are a creative director for visual imagery exploration.\nGenerate scene descriptions for AI image generation, balancing the user's vision with creative exploration.\n\nGenerate {count} diverse scene descriptions based on this prompt:\n\n\"{base_prompt}\"\n\nRequirements:\n1. Each scene must be vivid and detailed for AI image generation\n2. Vary lighting, mood, composition, and style across scenes\n3. Some scenes should faithfully interpret the prompt\n4. Some scenes should explore unexpected creative directions\n5. All scenes should be visually striking and interesting\n\nBalance:\n- About half should be \"faithful\" - closely matching the user's intent\n- About half should be \"exploration\" - creative interpretations and variations\n\nMood options: warm, cool, dramatic, serene, energetic, mysterious, playful, elegant, contemplative, whimsical, bold, intimate, grand, nostalgic, futuristic\n\nDesign tag guidelines (select 1-3 per axis based on the scene):\nNOTE: These are SUGGESTED tags. You may use novel, specific tags when they better describe the scene.\nFor example, \"film-noir\" for style, \"golden-hour\" for colors, or \"dutch-angle\" for composition are valid.\nThe system learns from your tags, so be precise and descriptive.\n\n- colors:\n  Palette type: monochromatic, complementary, analogous, triadic, split-complementary, tetradic\n  Temperature: warm, cool, neutral\n  Saturation: vibrant, muted, pastel, saturated, desaturated, earthy\n  Contrast: high-contrast, low-contrast, subtle-gradients\n  Mood-based: moody-dark, light-airy, rich-jewel-tones, soft-naturals\n\n- composition:\n  Framing: close-up, medium-shot, wide-angle, extreme-close-up, bird's-eye, worm's-eye\n  Balance: rule-of-thirds, symmetrical, asymmetrical, centered, golden-ratio\n  Lines: diagonal, horizontal, vertical, curved, leading-lines\n  Depth: layered, shallow-depth, deep-focus, foreground-focus, atmospheric-perspective\n  Space: negative-space, framed, contained, expansive, cropped-tight\n\n- layout:\n  Structure: centered, asymmetric, grid, modular, freeform\n  Density: dense, spacious, balanced, clustered, scattered\n  Flow: dynamic, static, radial, linear, organic\n  Hierarchy: focal-point, distributed, progressive, nested\n\n- aesthetic:\n  Realism: photorealistic, hyperrealistic, stylized-realism\n  Illustration: illustrated, flat-design, line-art, hand-drawn, vector\n  Digital: 3D-rendered, CGI, digital-painting, pixel-art, low-poly\n  Movement: art-nouveau, art-deco, bauhaus, swiss-style, brutalist\n  Era: retro, vintage, mid-century, 80s-aesthetic, Y2K, modern, futuristic\n  Approach: minimalist, maximalist, abstract, surreal, collage, mixed-media\n\n- typeface_feel:\n  Category: sans-serif, serif, slab-serif, monospace, display, script\n  Weight: light, regular, medium, bold, black, variable\n  Style: geometric, humanist, grotesque, transitional, modern, old-style\n  Character: elegant, playful, technical, editorial, friendly, authoritative\n  Mood: refined, casual, dramatic, neutral, quirky, classical\n",
+    "iteration_prompt": "Create a variation of this image while maintaining its core essence.\nFocus on: {focus}\nOriginal concept: {original_prompt}\n\nGenerate a new scene description that explores this direction while keeping the fundamental visual identity.",
+    "image_size": "1K",
+    "safety_level": "BLOCK_NONE",
+    "thinking_level": "high",
+    "google_search_grounding": true
+  }
+}
