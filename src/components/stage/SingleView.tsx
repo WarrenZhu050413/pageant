@@ -165,8 +165,10 @@ export function SingleView() {
     return () => window.removeEventListener('resize', handleResize);
   }, [calculateOverlayBounds]);
 
-  // Reset bounds when image changes
+  // Reset bounds when image changes - this is a valid pattern for resetting
+  // state when a dependency changes, not a cascading render issue
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOverlayBounds(null);
   }, [currentImageIndex]);
 

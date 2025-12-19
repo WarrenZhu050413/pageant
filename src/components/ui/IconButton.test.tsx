@@ -11,8 +11,9 @@ describe('IconButton', () => {
         </IconButton>
       )
 
-      // Find the tooltip container
-      const tooltipContainer = screen.getByText('Test tooltip')
+      // Find the tooltip container (parent of the text element)
+      const tooltipText = screen.getByText('Test tooltip')
+      const tooltipContainer = tooltipText.parentElement!
 
       // Tooltip should be positioned above the button (bottom-full)
       // This prevents overflow when buttons are at the bottom of image overlays
@@ -27,7 +28,8 @@ describe('IconButton', () => {
         </IconButton>
       )
 
-      const tooltipContainer = screen.getByText('Centered tooltip')
+      const tooltipText = screen.getByText('Centered tooltip')
+      const tooltipContainer = tooltipText.parentElement!
       // Tooltip should be centered using transform
       expect(tooltipContainer.className).toContain('left-1/2')
       expect(tooltipContainer.className).toContain('-translate-x-1/2')
@@ -40,7 +42,8 @@ describe('IconButton', () => {
         </IconButton>
       )
 
-      const tooltipContainer = screen.getByText('High z-index tooltip')
+      const tooltipText = screen.getByText('High z-index tooltip')
+      const tooltipContainer = tooltipText.parentElement!
       // z-[100] ensures tooltip appears above overflow-hidden parents
       expect(tooltipContainer.className).toContain('z-[100]')
     })
