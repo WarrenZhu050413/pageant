@@ -1,12 +1,24 @@
 # Pageant
 
-A place to vibe-create with nano-banana pro.
+My interface for vibe-creating with nano-banana pro. It's built around two ideas:
 
-**What makes it interesting:**
+### 1. Context Engineering for Image Models
 
-1. **Batch generation** — generate many variations at once, not one image at a time
-2. **Feedback-first UI** — refine prompts before generation, annotate images, star favorites, build collections
-3. **Design token extraction** — pull out design dimensions from images you like (colors, composition, mood, aesthetic) and remix them into new generations
+Prompts are only half the story. What images you attach, what you say about them, what preferences you express—that's the context that shapes what you get back.
+
+Pageant makes this easy:
+
+- **Auto-selected reference images.** Gemini picks which images to attach to each prompt variation based on what you're trying to achieve.
+- **Annotations that travel with images.** Annotate an image, like specific design axes (color palette, composition, mood), and those preferences get sent as context whenever the image is attached.
+- **Design Tokens.** Extract a core visual concept from an image—isolate the thing that makes it work—and apply it to future generations.
+
+### 2. Batch Experimentation
+
+Great art comes from lots of experimentation. Pageant is built for volume:
+
+- Enter one prompt idea → Gemini generates *n* variations, each with its own reference images and annotations
+- Fire off many prompt sets in parallel, no waiting
+- Refine what works, discard what doesn't, iterate fast
 
 ![Pageant UI - Prompt Refinement](docs/screenshot-1.png)
 
@@ -37,34 +49,13 @@ Open **http://localhost:5173**.
 
 > **Tip:** `make install` includes sample design tokens and concept images so you can explore the UI right away.
 
-## Workflow
+## Other Features
 
-### Two-Phase Generation
-
-1. **Generate Prompts** — enter a base idea, get AI-generated variations with annotation suggestions
-2. **Refine** — edit variations, tweak annotations, pick which to generate
-3. **Batch Generate** — generate all selected prompts
-
-Iterate on prompts before burning API calls on images.
-
-### Design Tokens
-
-Extract reusable design concepts from images that work.
-
-- Select images → Extract Token → Choose a design dimension
-- Tokens capture: color palette, composition style, mood, aesthetic
-- Apply tokens to future generations
-
-## Features
-
-- **View Modes**: Single and Grid
-- **Collections**: Group images
-- **Context Images**: Use existing images as style references
-- **Templates**: Save prompt structures
-- **Favorites**: Star generations
-- **Batch Operations**: Bulk actions on selections
-- **Keyboard Shortcuts**: `1`/`2` views, `←`/`→` navigate, `F` favorite
-- **Sessions & Notes**: Track process
+- **View Modes**: Single and Grid (`1`/`2` keys)
+- **Collections**: Group images into collections
+- **Templates**: Save reusable prompt structures
+- **Favorites**: Star images (`F` key)
+- **Keyboard navigation**: `←`/`→` to move through images
 
 ## Tech Stack
 
