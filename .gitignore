@@ -12,3 +12,11 @@ logs/
 .annotations/
 **/.annotations/
 metadata.lock
+
+# Claude Code
+.claude/
+claude_files/
+
+# Testing artifacts
+.playwright-mcp/
+.pytest_cache/
