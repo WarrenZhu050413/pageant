@@ -22,6 +22,8 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <motion.div
       layout
+      role={toast.type === 'error' ? 'alert' : 'status'}
+      aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
       initial={{ opacity: 0, y: 50, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.9 }}
@@ -50,6 +52,7 @@ function ToastItem({ toast }: { toast: Toast }) {
       )}
       <button
         onClick={() => removeToast(toast.id)}
+        aria-label="Dismiss notification"
         className="p-1 rounded hover:bg-canvas-muted transition-colors text-ink-muted hover:text-ink"
       >
         <X size={14} />

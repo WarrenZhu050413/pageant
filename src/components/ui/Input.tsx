@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
+import { forwardRef, useId, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { clsx } from 'clsx';
 
 interface InputProps extends InputHTMLAttributes<HTMLInputElement> {
@@ -24,7 +24,9 @@ const baseInputStyles = clsx(
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
   ({ className, label, error, id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
+    const generatedId = useId();
+    const inputId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
+    const errorId = `${inputId}-error`;
 
     return (
       <div className="space-y-1.5">
@@ -39,10 +41,16 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : undefined}
           className={clsx(baseInputStyles, error && 'border-error', className)}
           {...props}
         />
-        {error && <p className="text-xs text-error">{error}</p>}
+        {error && (
+          <p id={errorId} className="text-xs text-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     );
   }
@@ -52,7 +60,9 @@ Input.displayName = 'Input';
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
   ({ className, label, error, id, ...props }, ref) => {
-    const inputId = id || label?.toLowerCase().replace(/\s+/g, '-');
+    const generatedId = useId();
+    const inputId = id || label?.toLowerCase().replace(/\s+/g, '-') || generatedId;
+    const errorId = `${inputId}-error`;
 
     return (
       <div className="space-y-1.5">
@@ -67,6 +77,8 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         <textarea
           ref={ref}
           id={inputId}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? errorId : undefined}
           className={clsx(
             baseInputStyles,
             'resize-y min-h-[100px] leading-relaxed',
@@ -75,7 +87,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           )}
           {...props}
         />
-        {error && <p className="text-xs text-error">{error}</p>}
+        {error && (
+          <p id={errorId} className="text-xs text-error" role="alert">
+            {error}
+          </p>
+        )}
       </div>
     );
   }

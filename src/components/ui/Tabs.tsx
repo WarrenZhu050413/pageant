@@ -18,6 +18,7 @@ interface TabsProps {
 export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
   return (
     <div
+      role="tablist"
       className={clsx(
         'flex border-b border-border overflow-x-auto',
         // Show thin scrollbar when needed (removed scrollbar-none)
@@ -30,6 +31,8 @@ export function Tabs({ tabs, activeTab, onChange, className }: TabsProps) {
         return (
           <button
             key={tab.id}
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onChange(tab.id)}
             className={clsx(
               'relative flex items-center gap-1 px-1.5 py-2 flex-shrink-0',

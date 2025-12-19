@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useId } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
 import { X } from 'lucide-react';
@@ -10,9 +10,13 @@ interface DialogProps {
   title?: string;
   children: React.ReactNode;
   className?: string;
+  /** Optional custom aria-label for dialogs without visible title */
+  ariaLabel?: string;
 }
 
-export function Dialog({ isOpen, onClose, title, children, className }: DialogProps) {
+export function Dialog({ isOpen, onClose, title, children, className, ariaLabel }: DialogProps) {
+  const titleId = useId();
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -43,10 +47,15 @@ export function Dialog({ isOpen, onClose, title, children, className }: DialogPr
             transition={{ duration: 0.2 }}
             className="fixed inset-0 bg-overlay z-50"
             onClick={onClose}
+            aria-hidden="true"
           />
 
           {/* Dialog */}
           <motion.div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={title ? titleId : undefined}
+            aria-label={!title ? ariaLabel : undefined}
             initial={{ opacity: 0, scale: 0.95, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -63,11 +72,15 @@ export function Dialog({ isOpen, onClose, title, children, className }: DialogPr
             {/* Header */}
             {title && (
               <div className="flex items-center justify-between px-5 py-4 border-b border-border">
-                <h2 className="font-[family-name:var(--font-display)] text-lg font-semibold text-ink">
+                <h2
+                  id={titleId}
+                  className="font-[family-name:var(--font-display)] text-lg font-semibold text-ink"
+                >
                   {title}
                 </h2>
                 <button
                   onClick={onClose}
+                  aria-label="Close dialog"
                   className="p-1 rounded-lg text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
                 >
                   <X size={18} />
