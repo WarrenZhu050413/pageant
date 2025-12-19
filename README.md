@@ -15,7 +15,7 @@ A place to vibe-create with nano-banana pro.
 curl -fsSL https://bun.sh/install | bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install dependencies
+# Install dependencies + seed data
 make install
 
 # Get your Gemini API key from Google AI Studio
@@ -30,6 +30,8 @@ make dev
 ```
 
 Open **http://localhost:5173**.
+
+> **Tip:** `make install` includes sample design tokens and concept images so you can explore the UI right away.
 
 ## Workflow
 
