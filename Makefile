@@ -94,8 +94,11 @@ stop: stop-dev stop-preview
 	@echo "All servers stopped."
 
 install:
+	@mkdir -p generated_images
 	bun install
 	uv sync
+	@echo ""
+	@echo "✓ Setup complete! Run 'make dev' to start."
 
 clean:
 	rm -rf node_modules dist .vite
