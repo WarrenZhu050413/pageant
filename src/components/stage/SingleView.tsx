@@ -299,7 +299,7 @@ export function SingleView() {
             />
 
             {/* Overlay Actions */}
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
+            <div className="absolute inset-0 bg-gradient-to-t from-ink/20 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
               {/* Top right - Fullscreen button */}
               <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
                 <span className="text-[0.65rem] text-white/60 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
