@@ -15,6 +15,7 @@ import {
   Images,
   Check,
   Sparkles,
+  Maximize2,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -251,7 +252,7 @@ export function SingleView() {
       )}
 
       {/* Image Container */}
-      <div className="flex-1 relative min-h-0">
+      <div className="flex-1 relative min-h-0 overflow-hidden">
         <div className="absolute inset-4 flex items-center justify-center">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
@@ -299,6 +300,24 @@ export function SingleView() {
 
             {/* Overlay Actions */}
             <div className="absolute inset-0 bg-gradient-to-t from-ink/40 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
+              {/* Top right - Fullscreen button */}
+              <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+                <span className="text-[0.65rem] text-white/60 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
+                  Double-click to expand
+                </span>
+                <IconButton
+                  variant="default"
+                  tooltip="Fullscreen"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsFullscreen(true);
+                  }}
+                  className="bg-surface/90 backdrop-blur-sm"
+                >
+                  <Maximize2 size={18} />
+                </IconButton>
+              </div>
+
               <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between z-10">
                 <div className="flex gap-2">
                   <IconButton
