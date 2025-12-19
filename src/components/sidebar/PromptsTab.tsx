@@ -26,6 +26,8 @@ export function PromptsTab() {
   const setGenerationFilter = useStore((s) => s.setGenerationFilter);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
   const setViewMode = useStore((s) => s.setViewMode);
+  const pendingConceptGenerations = useStore((s) => s.pendingConceptGenerations);
+  const pendingConceptCount = pendingConceptGenerations.size;
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
@@ -212,7 +214,11 @@ export function PromptsTab() {
               isDesignLibraryActive ? 'bg-brass/20' : 'bg-brass/10'
             )}
           >
-            <Sparkles size={20} className="text-brass" />
+            {pendingConceptCount > 0 ? (
+              <Loader2 size={20} className="text-brass animate-spin" />
+            ) : (
+              <Sparkles size={20} className="text-brass" />
+            )}
           </div>
           <div className="flex-1 min-w-0 text-left">
             <div className="flex items-center justify-between gap-2">
@@ -224,12 +230,21 @@ export function PromptsTab() {
               >
                 Design Library
               </h3>
-              <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-brass/15 text-brass">
-                {conceptCount}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {pendingConceptCount > 0 && (
+                  <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-brass/30 text-brass animate-pulse">
+                    +{pendingConceptCount}
+                  </span>
+                )}
+                <span className="flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded bg-brass/15 text-brass">
+                  {conceptCount}
+                </span>
+              </div>
             </div>
             <p className="text-[0.625rem] text-ink-muted mt-0.5">
-              Concept images from design tokens
+              {pendingConceptCount > 0
+                ? `Generating ${pendingConceptCount} concept${pendingConceptCount !== 1 ? 's' : ''}...`
+                : 'Concept images from design tokens'}
             </p>
           </div>
         </button>
