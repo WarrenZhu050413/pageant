@@ -13,7 +13,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useStore } from '../../store';
-import { Button, Badge } from '../ui';
+import { Button } from '../ui';
 
 export function PromptPreviewModal() {
   const showPromptPreview = useStore((s) => s.showPromptPreview);
@@ -147,16 +147,6 @@ export function PromptPreviewModal() {
                       <span className="text-xs font-medium text-ink-tertiary">
                         #{index + 1}
                       </span>
-                      {variation.mood && (
-                        <Badge variant="secondary" size="sm">
-                          {variation.mood}
-                        </Badge>
-                      )}
-                      {variation.type && variation.type !== 'faithful' && (
-                        <Badge variant="outline" size="sm">
-                          {variation.type}
-                        </Badge>
-                      )}
                     </div>
 
                     <div className="flex-1" />

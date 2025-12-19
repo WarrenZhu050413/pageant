@@ -175,7 +175,7 @@ export function SingleView() {
   // Fullscreen keyboard handler
   const handleFullscreenKeyDown = useCallback((e: KeyboardEvent) => {
     if (!isFullscreen) return;
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.key === 'f' || e.key === 'F') {
       setIsFullscreen(false);
     } else if (e.key === 'ArrowLeft' && currentImageIndex > 0) {
       prevImage();
@@ -194,6 +194,54 @@ export function SingleView() {
       document.body.style.overflow = '';
     };
   }, [isFullscreen, handleFullscreenKeyDown]);
+
+  // Delete warning state
+  const [showDeleteWarning, setShowDeleteWarning] = useState(false);
+
+  // Listen for keyboard shortcut events
+  useEffect(() => {
+    const handleSaveCollectionShortcut = () => {
+      if (currentImage) {
+        setSelectedCollectionId(null);
+        setIsCreatingNew(collections.length === 0);
+        setCollectionName('');
+        setCollectionDescription('');
+        setIsCollectionDialogOpen(true);
+      }
+    };
+
+    const handleToggleFullscreen = () => {
+      if (currentImage) {
+        setIsFullscreen((prev) => !prev);
+      }
+    };
+
+    const handleDeleteWarning = () => {
+      setShowDeleteWarning(true);
+    };
+
+    const handleDeleteCancelled = () => {
+      setShowDeleteWarning(false);
+    };
+
+    const handleDeleteConfirmed = () => {
+      setShowDeleteWarning(false);
+    };
+
+    window.addEventListener('keyboard:saveCollection', handleSaveCollectionShortcut);
+    window.addEventListener('keyboard:toggleFullscreen', handleToggleFullscreen);
+    window.addEventListener('keyboard:deleteWarning', handleDeleteWarning);
+    window.addEventListener('keyboard:deleteCancelled', handleDeleteCancelled);
+    window.addEventListener('keyboard:deleteConfirmed', handleDeleteConfirmed);
+
+    return () => {
+      window.removeEventListener('keyboard:saveCollection', handleSaveCollectionShortcut);
+      window.removeEventListener('keyboard:toggleFullscreen', handleToggleFullscreen);
+      window.removeEventListener('keyboard:deleteWarning', handleDeleteWarning);
+      window.removeEventListener('keyboard:deleteCancelled', handleDeleteCancelled);
+      window.removeEventListener('keyboard:deleteConfirmed', handleDeleteConfirmed);
+    };
+  }, [currentImage, collections.length]);
 
   // Sort collections newest first
   const sortedCollections = useMemo(() =>
@@ -320,7 +368,7 @@ export function SingleView() {
 
       {/* Image Container - outer establishes bounds, inner centers content */}
       <div className="flex-1 relative min-h-0 overflow-hidden">
-        <div className="absolute inset-4 flex items-center justify-center">
+        <div className="absolute inset-3 flex items-center justify-center">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
           <button
@@ -382,6 +430,7 @@ export function SingleView() {
                   variant="default"
                   tooltip="Fullscreen"
                   tooltipHint="Double-click image"
+                  shortcut="F"
                   tooltipPosition="bottom"
                   tooltipAlign="right"
                   onClick={(e) => {
@@ -399,6 +448,7 @@ export function SingleView() {
                   <IconButton
                     variant="default"
                     tooltip="Extract token"
+                    shortcut="E"
                     tooltipAlign="left"
                     onClick={(e) => {
                       e.stopPropagation();
@@ -425,6 +475,7 @@ export function SingleView() {
                   <IconButton
                     variant="default"
                     tooltip="Save to collection"
+                    shortcut="B"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleOpenCollectionDialog();
@@ -476,14 +527,17 @@ export function SingleView() {
                   ) : (
                     <IconButton
                       variant="danger"
-                      tooltip="Delete"
+                      tooltip={showDeleteWarning ? "Press ⌫ again to confirm" : "Delete"}
                       shortcut="⌫"
                       tooltipAlign="right"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteImage(currentImage.id);
                       }}
-                      className="bg-surface/90 backdrop-blur-sm"
+                      className={clsx(
+                        "bg-surface/90 backdrop-blur-sm",
+                        showDeleteWarning && "ring-2 ring-danger animate-pulse"
+                      )}
                     >
                       <Trash2 size={18} />
                     </IconButton>

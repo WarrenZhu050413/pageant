@@ -10,8 +10,8 @@ import { SettingsTab } from './SettingsTab';
 import { NotesPanel } from '../sidebar/NotesPanel';
 
 const tabs = [
-  { id: 'generate', label: 'Generate', icon: <Wand2 size={14} /> },
-  { id: 'settings', label: 'Settings', icon: <Settings size={14} /> },
+  { id: 'generate', label: 'Generate', icon: <Wand2 size={14} />, shortcut: 'G' },
+  { id: 'settings', label: 'Settings', icon: <Settings size={14} />, shortcut: 'T' },
 ];
 
 export function RightPanel() {

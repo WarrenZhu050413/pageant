@@ -1,18 +1,29 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import { useStore } from '../store';
+import { getImageUrl } from '../api';
+
+// Timeout for delete confirmation (ms)
+const DELETE_CONFIRM_TIMEOUT = 2000;
 
 export function useKeyboardShortcuts() {
   const {
-    viewMode,
     setViewMode,
     selectionMode,
     setSelectionMode,
     nextImage,
     prevImage,
     setRightTab,
+    setLeftTab,
     getCurrentImage,
-    toggleFavorite,
+    getCurrentPrompt,
+    contextImageIds,
+    setContextImages,
+    openExtractionDialog,
+    deleteImage,
   } = useStore();
+
+  // Track pending delete state
+  const pendingDeleteRef = useRef<{ imageId: string; timeout: NodeJS.Timeout } | null>(null);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent) => {
@@ -54,14 +65,14 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Favorite
-        case 'f':
-        case 'F':
+        // Add to context
+        case 'a':
+        case 'A':
           if (!isMeta) {
             event.preventDefault();
-            const image = getCurrentImage();
-            if (image) {
-              toggleFavorite(image.id);
+            const imageToAdd = getCurrentImage();
+            if (imageToAdd && !contextImageIds.includes(imageToAdd.id)) {
+              setContextImages([...contextImageIds, imageToAdd.id]);
             }
           }
           break;
@@ -82,14 +93,19 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Select mode / Save as template (Cmd+S)
+        // Settings tab
+        case 't':
+        case 'T':
+          if (!isMeta) {
+            event.preventDefault();
+            setRightTab('settings');
+          }
+          break;
+
+        // Select mode
         case 's':
         case 'S':
-          if (isMeta) {
-            event.preventDefault();
-            // Trigger save template modal
-            document.dispatchEvent(new CustomEvent('save-template'));
-          } else {
+          if (!isMeta) {
             event.preventDefault();
             setSelectionMode(selectionMode === 'select' ? 'none' : 'select');
           }
@@ -102,18 +118,142 @@ export function useKeyboardShortcuts() {
             setSelectionMode('none');
           }
           break;
+
+        // Sidebar tabs
+        case 'p':
+        case 'P':
+          if (!isMeta) {
+            event.preventDefault();
+            setLeftTab('prompts');
+          }
+          break;
+        case 'o':
+        case 'O':
+          if (!isMeta) {
+            event.preventDefault();
+            setLeftTab('collections');
+          }
+          break;
+        case 'i':
+        case 'I':
+          if (!isMeta) {
+            event.preventDefault();
+            setLeftTab('all-images');
+          }
+          break;
+        case 'l':
+        case 'L':
+          if (!isMeta) {
+            event.preventDefault();
+            setLeftTab('library');
+          }
+          break;
+
+        // Toolbar actions
+        case 'e':
+        case 'E':
+          if (!isMeta) {
+            event.preventDefault();
+            const imageForExtract = getCurrentImage();
+            if (imageForExtract) {
+              openExtractionDialog([imageForExtract.id]);
+            }
+          }
+          break;
+
+        case 'b':
+        case 'B':
+          if (!isMeta) {
+            event.preventDefault();
+            // Dispatch custom event for collection dialog
+            window.dispatchEvent(new CustomEvent('keyboard:saveCollection'));
+          }
+          break;
+
+        case 'c':
+        case 'C':
+          if (!isMeta) {
+            event.preventDefault();
+            const promptToCopy = getCurrentPrompt();
+            if (promptToCopy) {
+              navigator.clipboard.writeText(promptToCopy.prompt);
+            }
+          }
+          break;
+
+        case 'd':
+        case 'D':
+          if (!isMeta) {
+            event.preventDefault();
+            const imageToDownload = getCurrentImage();
+            const promptForDownload = getCurrentPrompt();
+            if (imageToDownload && promptForDownload) {
+              const link = document.createElement('a');
+              link.href = getImageUrl(imageToDownload.image_path);
+              const ext = imageToDownload.image_path.split('.').pop();
+              link.download = `${promptForDownload.title.replace(/\s+/g, '-')}-${imageToDownload.id}.${ext}`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+          }
+          break;
+
+        case 'f':
+        case 'F':
+          if (!isMeta) {
+            event.preventDefault();
+            // Dispatch custom event to toggle fullscreen
+            window.dispatchEvent(new CustomEvent('keyboard:toggleFullscreen'));
+          }
+          break;
+
+        case 'Backspace':
+        case 'Delete':
+          if (!isMeta) {
+            event.preventDefault();
+            const imageToDelete = getCurrentImage();
+            if (imageToDelete) {
+              // Check if we're confirming a pending delete
+              if (pendingDeleteRef.current?.imageId === imageToDelete.id) {
+                // Confirmed - actually delete
+                clearTimeout(pendingDeleteRef.current.timeout);
+                pendingDeleteRef.current = null;
+                window.dispatchEvent(new CustomEvent('keyboard:deleteConfirmed'));
+                deleteImage(imageToDelete.id);
+              } else {
+                // First press - show warning
+                if (pendingDeleteRef.current) {
+                  clearTimeout(pendingDeleteRef.current.timeout);
+                }
+                const timeout = setTimeout(() => {
+                  pendingDeleteRef.current = null;
+                  window.dispatchEvent(new CustomEvent('keyboard:deleteCancelled'));
+                }, DELETE_CONFIRM_TIMEOUT);
+                pendingDeleteRef.current = { imageId: imageToDelete.id, timeout };
+                window.dispatchEvent(new CustomEvent('keyboard:deleteWarning', {
+                  detail: { imageId: imageToDelete.id }
+                }));
+              }
+            }
+          }
+          break;
       }
     },
     [
-      viewMode,
       selectionMode,
       setViewMode,
       setSelectionMode,
       nextImage,
       prevImage,
       setRightTab,
+      setLeftTab,
       getCurrentImage,
-      toggleFavorite,
+      getCurrentPrompt,
+      contextImageIds,
+      setContextImages,
+      openExtractionDialog,
+      deleteImage,
     ]
   );
 

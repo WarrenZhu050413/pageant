@@ -21,6 +21,7 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Find the image by ID across all prompts
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const imageData = useMemo(() => {
     if (!imageId) return null;
     for (const prompt of prompts) {
@@ -39,9 +40,10 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
   const [localAnnotation, setLocalAnnotation] = useState('');
   const [saved, setSaved] = useState(false);
 
-  // Reset local state when modal opens or imageId changes
+  // Reset local state when modal opens or imageId changes (intentional sync)
   useEffect(() => {
     if (isOpen && imageId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setLocalAnnotation(overrideAnnotation ?? originalAnnotation);
       setSaved(false);
       // Auto-focus textarea after a brief delay for animation

@@ -3,20 +3,23 @@ import {
   FileText,
   FolderOpen,
   BookmarkIcon,
+  Images,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
 import type { LeftTab } from '../../types';
 import { PromptsTab } from './PromptsTab';
 import { CollectionsTab } from './CollectionsTab';
+import { AllImagesTab } from './AllImagesTab';
 import { LibraryTab } from './LibraryTab';
 import { SessionsPanel } from './SessionsPanel';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
-  { id: 'prompts', label: 'Prompts', icon: <FileText size={14} /> },
-  { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} /> },
-  { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} /> },
+  { id: 'prompts', label: 'Prompts', icon: <FileText size={14} />, shortcut: 'P' },
+  { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} />, shortcut: 'O' },
+  { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'I' },
+  { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} />, shortcut: 'L' },
 ];
 
 export function LeftSidebar() {
@@ -56,6 +59,7 @@ export function LeftSidebar() {
           >
             {leftTab === 'prompts' && <PromptsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
+            {leftTab === 'all-images' && <AllImagesTab />}
             {leftTab === 'library' && <LibraryTab />}
           </motion.div>
         </AnimatePresence>
