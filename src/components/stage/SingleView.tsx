@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { IconButton, Dialog, Button, Input } from '../ui';
+import { IconButton, Dialog, Button, Input, Textarea } from '../ui';
 import { DesignAnnotation } from './DesignAnnotation';
 import { ExtractionDialog } from './ExtractionDialog';
 import type { ImageData } from '../../types';
@@ -88,6 +88,7 @@ export function SingleView() {
   }, [prompts]);
 
   // Get context images used for this prompt's generation
+  // eslint-disable-next-line react-hooks/preserve-manual-memoization
   const promptContextImages = useMemo(() => {
     if (!currentPrompt?.context_image_ids) return [];
     return currentPrompt.context_image_ids
@@ -101,29 +102,72 @@ export function SingleView() {
   // Collection dialog state
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
+  const [collectionDescription, setCollectionDescription] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   // Fullscreen view state
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Image dimensions for overlay sizing
+  // Image ref and overlay bounds for accurate overlay positioning
   const imgRef = useRef<HTMLImageElement>(null);
-  const [imgDimensions, setImgDimensions] = useState<{ width: number; height: number } | null>(null);
+  const [overlayBounds, setOverlayBounds] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    height: number;
+  } | null>(null);
 
-  // Update dimensions when image loads or changes
-  const handleImageLoad = useCallback(() => {
-    if (imgRef.current) {
-      setImgDimensions({
-        width: imgRef.current.offsetWidth,
-        height: imgRef.current.offsetHeight,
-      });
+  // Calculate actual visible image bounds within object-contain box
+  const calculateOverlayBounds = useCallback(() => {
+    const img = imgRef.current;
+    if (!img) return;
+
+    const { naturalWidth, naturalHeight, clientWidth, clientHeight } = img;
+    if (!naturalWidth || !naturalHeight) return;
+
+    const imgAspect = naturalWidth / naturalHeight;
+    const boxAspect = clientWidth / clientHeight;
+
+    let renderWidth: number, renderHeight: number, offsetX: number, offsetY: number;
+
+    if (imgAspect > boxAspect) {
+      // Image is wider than box - fills width, has vertical padding
+      renderWidth = clientWidth;
+      renderHeight = clientWidth / imgAspect;
+      offsetX = 0;
+      offsetY = (clientHeight - renderHeight) / 2;
+    } else {
+      // Image is taller than box - fills height, has horizontal padding
+      renderHeight = clientHeight;
+      renderWidth = clientHeight * imgAspect;
+      offsetX = (clientWidth - renderWidth) / 2;
+      offsetY = 0;
     }
+
+    setOverlayBounds({
+      top: offsetY,
+      left: offsetX,
+      width: renderWidth,
+      height: renderHeight,
+    });
   }, []);
 
-  // Reset dimensions when image changes
+  // Callback when image loads
+  const handleImageLoad = useCallback(() => {
+    calculateOverlayBounds();
+  }, [calculateOverlayBounds]);
+
+  // Recalculate on window resize
   useEffect(() => {
-    setImgDimensions(null);
+    const handleResize = () => calculateOverlayBounds();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [calculateOverlayBounds]);
+
+  // Reset bounds when image changes
+  useEffect(() => {
+    setOverlayBounds(null);
   }, [currentImageIndex]);
 
   // Fullscreen keyboard handler
@@ -180,6 +224,7 @@ export function SingleView() {
     setSelectedCollectionId(null);
     setIsCreatingNew(collections.length === 0);
     setCollectionName('');
+    setCollectionDescription('');
     setIsCollectionDialogOpen(true);
   };
 
@@ -189,8 +234,9 @@ export function SingleView() {
     if (isCreatingNew) {
       if (collectionName.trim()) {
         // Create collection with current image
-        await createCollection(collectionName.trim(), '', [currentImage.id]);
+        await createCollection(collectionName.trim(), collectionDescription.trim() || undefined, [currentImage.id]);
         setCollectionName('');
+        setCollectionDescription('');
         setIsCreatingNew(false);
         setIsCollectionDialogOpen(false);
       }
@@ -270,8 +316,9 @@ export function SingleView() {
         </div>
       )}
 
-      {/* Image Container */}
-      <div className="flex-1 relative flex items-center justify-center min-h-0 overflow-hidden p-4">
+      {/* Image Container - outer establishes bounds, inner centers content */}
+      <div className="flex-1 relative min-h-0 overflow-hidden">
+        <div className="absolute inset-4 flex items-center justify-center">
         {/* Navigation - Previous */}
         {currentImageIndex > 0 && (
           <button
@@ -298,15 +345,10 @@ export function SingleView() {
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
             className={clsx(
-              'relative',
-              'shadow-lg',
+              'relative h-full w-full flex items-center justify-center',
               selectionMode !== 'none' && 'cursor-pointer',
               isSelected && 'ring-4 ring-brass'
             )}
-            style={imgDimensions ? {
-              width: imgDimensions.width,
-              height: imgDimensions.height,
-            } : undefined}
             onClick={() => {
               if (selectionMode !== 'none') {
                 toggleSelection(currentImage.id);
@@ -318,20 +360,28 @@ export function SingleView() {
               ref={imgRef}
               src={getImageUrl(currentImage.image_path)}
               alt={displayTitle}
-              className="max-h-full max-w-full object-contain"
+              className="h-full w-full object-contain"
               onLoad={handleImageLoad}
             />
 
-            {/* Overlay Actions */}
-            <div className="absolute inset-0 bg-gradient-to-t from-ink/10 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible">
+            {/* Overlay Actions - positioned to match actual visible image */}
+            <div
+              className="absolute bg-gradient-to-t from-ink/10 via-transparent to-transparent opacity-0 hover:opacity-100 transition-opacity overflow-visible"
+              style={overlayBounds ? {
+                top: overlayBounds.top,
+                left: overlayBounds.left,
+                width: overlayBounds.width,
+                height: overlayBounds.height,
+              } : { inset: 0 }}
+            >
               {/* Top right - Fullscreen button */}
-              <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
-                <span className="text-[0.65rem] text-white/60 bg-black/30 px-2 py-1 rounded backdrop-blur-sm">
-                  Double-click to expand
-                </span>
+              <div className="absolute top-3 right-3 z-10">
                 <IconButton
                   variant="default"
                   tooltip="Fullscreen"
+                  tooltipHint="Double-click image"
+                  tooltipPosition="bottom"
+                  tooltipAlign="right"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsFullscreen(true);
@@ -347,6 +397,7 @@ export function SingleView() {
                   <IconButton
                     variant="default"
                     tooltip="Extract token"
+                    tooltipAlign="left"
                     onClick={(e) => {
                       e.stopPropagation();
                       openExtractionDialog([currentImage.id]);
@@ -357,7 +408,8 @@ export function SingleView() {
                   </IconButton>
                   <IconButton
                     variant="default"
-                    tooltip="Add to context (A)"
+                    tooltip="Add to context"
+                    shortcut="A"
                     onClick={(e) => {
                       e.stopPropagation();
                       if (!contextImageIds.includes(currentImage.id)) {
@@ -382,6 +434,7 @@ export function SingleView() {
                   <IconButton
                     variant="default"
                     tooltip="Copy prompt"
+                    shortcut="C"
                     onClick={(e) => {
                       e.stopPropagation();
                       handleCopyPrompt();
@@ -399,6 +452,7 @@ export function SingleView() {
                     <IconButton
                       variant="default"
                       tooltip="Download"
+                      shortcut="D"
                       className="bg-surface/90 backdrop-blur-sm"
                     >
                       <Download size={18} />
@@ -408,6 +462,7 @@ export function SingleView() {
                     <IconButton
                       variant="default"
                       tooltip="Remove from collection"
+                      tooltipAlign="right"
                       onClick={(e) => {
                         e.stopPropagation();
                         removeFromCurrentCollection(currentImage.id);
@@ -420,6 +475,8 @@ export function SingleView() {
                     <IconButton
                       variant="danger"
                       tooltip="Delete"
+                      shortcut="⌫"
+                      tooltipAlign="right"
                       onClick={(e) => {
                         e.stopPropagation();
                         deleteImage(currentImage.id);
@@ -478,6 +535,7 @@ export function SingleView() {
             <ChevronRight size={20} />
           </button>
         )}
+        </div>
       </div>
 
       {/* Dot Navigation */}
@@ -582,8 +640,18 @@ export function SingleView() {
                 placeholder="My Collection"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveToCollection();
+                  if (e.key === 'Enter' && !e.shiftKey && collectionName.trim()) {
+                    handleSaveToCollection();
+                  }
                 }}
+              />
+              <Textarea
+                label="Description (optional)"
+                value={collectionDescription}
+                onChange={(e) => setCollectionDescription(e.target.value)}
+                placeholder="What's this collection about?"
+                rows={2}
+                className="min-h-[60px]"
               />
             </div>
           )}

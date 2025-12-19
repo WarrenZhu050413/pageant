@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Plus, Check, Trash2, CheckSquare, Square, Sparkles, Loader2 } from 'lucide-react';
+import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Sparkles, Check } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { Button, Input, Dialog, IconButton } from '../ui';
-import type { DesignDimension } from '../../types';
+import { Button, Input, Textarea, Dialog, IconButton } from '../ui';
+import { ExtractionDialog } from './ExtractionDialog';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
@@ -46,17 +46,13 @@ export function SelectionTray() {
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const selectAll = useStore((s) => s.selectAll);
   const batchDelete = useStore((s) => s.batchDelete);
-  const suggestDimensions = useStore((s) => s.suggestDimensions);
-  const createToken = useStore((s) => s.createToken);
+  const openExtractionDialog = useStore((s) => s.openExtractionDialog);
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [suggestedDimensions, setSuggestedDimensions] = useState<DesignDimension[]>([]);
-  const [showExtractionDialog, setShowExtractionDialog] = useState(false);
-  const [selectedDimensionIndex, setSelectedDimensionIndex] = useState<number | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
+  const [collectionDescription, setCollectionDescription] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
@@ -93,10 +89,14 @@ export function SelectionTray() {
   const handleSaveCollection = async () => {
     if (isCreatingNew) {
       if (collectionName.trim()) {
-        await createCollection(collectionName.trim());
+        // Pass selected images to the new collection
+        await createCollection(collectionName.trim(), collectionDescription.trim() || undefined, Array.from(selectedIds));
         setCollectionName('');
+        setCollectionDescription('');
         setIsCreatingNew(false);
         setIsCollectionDialogOpen(false);
+        clearSelection();
+        setSelectionMode('none');
       }
     } else if (selectedCollectionId) {
       await addToCollection(selectedCollectionId);
@@ -111,6 +111,7 @@ export function SelectionTray() {
     setSelectedCollectionId(null);
     setIsCreatingNew(collections.length === 0);
     setCollectionName('');
+    setCollectionDescription('');
     setIsCollectionDialogOpen(true);
   };
 
@@ -129,54 +130,8 @@ export function SelectionTray() {
     setSelectionMode('none');
   };
 
-  // New two-step extraction flow
-  const handleOpenExtractionDialog = async () => {
-    setIsExtracting(true);
-    setSuggestedDimensions([]);
-    setSelectedDimensionIndex(null);
-    setShowExtractionDialog(true);
-
-    try {
-      const imageIds = Array.from(selectedIds);
-      const dimensions = await suggestDimensions(imageIds);
-      setSuggestedDimensions(dimensions);
-    } finally {
-      setIsExtracting(false);
-    }
-  };
-
-  const handleCreateToken = async () => {
-    if (selectedDimensionIndex === null || !suggestedDimensions[selectedDimensionIndex]) return;
-
-    const dimension = suggestedDimensions[selectedDimensionIndex];
-    const imageIds = Array.from(selectedIds);
-
-    setIsExtracting(true);
-
-    try {
-      const token = await createToken({
-        name: dimension.name,
-        description: dimension.description,
-        image_ids: imageIds,
-        prompts: [dimension.generation_prompt],
-        creation_method: 'ai-extraction',
-        dimension,
-        generate_concept: true,
-        category: dimension.axis,
-        tags: dimension.tags,
-      });
-
-      if (token) {
-        // Success - close dialog and clear selection
-        setShowExtractionDialog(false);
-        setSuggestedDimensions([]);
-        setSelectedDimensionIndex(null);
-        clearSelection();
-        setSelectionMode('none');
-      }
-    } finally {
-      setIsExtracting(false);
-    }
+  const handleOpenExtractionDialog = () => {
+    openExtractionDialog(Array.from(selectedIds));
   };
 
   return (
@@ -363,8 +318,18 @@ export function SelectionTray() {
                 placeholder="My Collection"
                 autoFocus
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleSaveCollection();
+                  if (e.key === 'Enter' && !e.shiftKey && collectionName.trim()) {
+                    handleSaveCollection();
+                  }
                 }}
+              />
+              <Textarea
+                label="Description (optional)"
+                value={collectionDescription}
+                onChange={(e) => setCollectionDescription(e.target.value)}
+                placeholder="What's this collection about?"
+                rows={2}
+                className="min-h-[60px]"
               />
             </div>
           )}
@@ -411,108 +376,8 @@ export function SelectionTray() {
         </div>
       </Dialog>
 
-      {/* Token Extraction dialog */}
-      <Dialog
-        isOpen={showExtractionDialog}
-        onClose={() => {
-          setShowExtractionDialog(false);
-          setSuggestedDimensions([]);
-          setSelectedDimensionIndex(null);
-        }}
-        title="Extract Design Token"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-ink-secondary">
-            Analyzing {selectedIds.size} selected image{selectedIds.size !== 1 ? 's' : ''} for design dimensions...
-          </p>
-
-          {/* Loading state */}
-          {isExtracting && suggestedDimensions.length === 0 && (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 size={24} className="animate-spin text-brass" />
-            </div>
-          )}
-
-          {/* Dimension suggestions */}
-          {suggestedDimensions.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-ink-secondary">
-                Select a design dimension to extract
-              </label>
-              <div className="max-h-64 overflow-y-auto space-y-2">
-                {suggestedDimensions.map((dim, index) => (
-                  <button
-                    key={`${dim.axis}-${index}`}
-                    onClick={() => setSelectedDimensionIndex(index)}
-                    className={clsx(
-                      'w-full text-left p-3 rounded-lg border transition-colors',
-                      selectedDimensionIndex === index
-                        ? 'border-brass bg-brass-muted'
-                        : 'border-border hover:bg-canvas-muted'
-                    )}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-medium text-ink">{dim.name}</span>
-                      <span className="text-xs text-ink-muted capitalize px-2 py-0.5 bg-canvas-subtle rounded">
-                        {dim.axis}
-                      </span>
-                    </div>
-                    <p className="text-xs text-ink-secondary line-clamp-2 mb-2">
-                      {dim.description}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      {dim.tags.slice(0, 5).map((tag) => (
-                        <span
-                          key={tag}
-                          className="text-[0.65rem] px-1.5 py-0.5 bg-canvas-subtle text-ink-muted rounded"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                      {dim.tags.length > 5 && (
-                        <span className="text-[0.65rem] text-ink-muted">
-                          +{dim.tags.length - 5} more
-                        </span>
-                      )}
-                    </div>
-                    {selectedDimensionIndex === index && (
-                      <Check size={16} className="absolute top-3 right-3 text-brass-dark" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty state */}
-          {!isExtracting && suggestedDimensions.length === 0 && (
-            <p className="text-sm text-ink-muted text-center py-4">
-              No design dimensions could be detected. Try selecting different images.
-            </p>
-          )}
-
-          <div className="flex justify-end gap-3">
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowExtractionDialog(false);
-                setSuggestedDimensions([]);
-                setSelectedDimensionIndex(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="brass"
-              onClick={handleCreateToken}
-              disabled={selectedDimensionIndex === null || isExtracting}
-              leftIcon={isExtracting ? <Loader2 size={14} className="animate-spin" /> : undefined}
-            >
-              {isExtracting ? 'Creating...' : 'Create Token'}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      {/* Shared Token Extraction dialog */}
+      <ExtractionDialog />
     </>
   );
 }
