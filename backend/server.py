@@ -76,16 +76,21 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifespan handler for startup/shutdown tasks."""
-    # Startup: start background indexer
-    logger.info("Starting background indexer...")
-    indexer = get_background_indexer(IMAGES_DIR)
-    await indexer.start()
+    # Startup: start background indexer (if search is enabled)
+    if config.ENABLE_SEARCH:
+        logger.info("Starting background indexer...")
+        indexer = get_background_indexer(IMAGES_DIR)
+        await indexer.start()
+    else:
+        logger.info("Search disabled (ENABLE_SEARCH=false), skipping indexer")
 
     yield
 
     # Shutdown: stop background indexer
-    logger.info("Stopping background indexer...")
-    await indexer.stop()
+    if config.ENABLE_SEARCH:
+        logger.info("Stopping background indexer...")
+        indexer = get_background_indexer(IMAGES_DIR)
+        await indexer.stop()
 
 
 app = FastAPI(title="Gemini Pageant API", lifespan=lifespan)
@@ -946,14 +951,15 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
         fresh_metadata["prompts"].append(prompt_entry)
 
     # Queue images for background indexing (semantic search)
-    indexer = get_background_indexer(IMAGES_DIR)
-    for img in images:
-        indexer.queue_for_indexing(
-            image_id=img["id"],
-            image_path=img["image_path"],
-            prompt_id=prompt_id,
-            prompt_text=img.get("varied_prompt", ""),
-        )
+    if config.ENABLE_SEARCH:
+        indexer = get_background_indexer(IMAGES_DIR)
+        for img in images:
+            indexer.queue_for_indexing(
+                image_id=img["id"],
+                image_path=img["image_path"],
+                prompt_id=prompt_id,
+                prompt_text=img.get("varied_prompt", ""),
+            )
 
     logger.info(f"Generated {len(images)} images from prompts, prompt_id={prompt_id}")
 
@@ -1001,6 +1007,12 @@ async def delete_prompt(prompt_id: str):
     metadata = load_metadata()
     deleted_token_id = None
 
+    # Get vector store if search is enabled
+    vector_store = None
+    if config.ENABLE_SEARCH:
+        from backend.search.vector_store import get_vector_store
+        vector_store = get_vector_store(IMAGES_DIR / "search_index")
+
     for i, prompt in enumerate(metadata.get("prompts", [])):
         if prompt["id"] == prompt_id:
             # Delete all image files and remove from favorites
@@ -1008,6 +1020,9 @@ async def delete_prompt(prompt_id: str):
                 _metadata_manager.delete_image_file(
                     metadata, img["id"], img.get("image_path")
                 )
+                # Remove from search index
+                if vector_store:
+                    vector_store.delete_image(img["id"])
 
             # If this is a concept prompt, clean up the linked token's references
             if prompt.get("is_concept"):
@@ -1046,6 +1061,12 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
     updated_token_ids = []
     errors = []
 
+    # Get vector store if search is enabled
+    vector_store = None
+    if config.ENABLE_SEARCH:
+        from backend.search.vector_store import get_vector_store
+        vector_store = get_vector_store(IMAGES_DIR / "search_index")
+
     for prompt_id in req.prompt_ids:
         found = False
         for i, prompt in enumerate(metadata.get("prompts", [])):
@@ -1056,6 +1077,9 @@ async def batch_delete_prompts(req: BatchDeletePromptsRequest):
                     _metadata_manager.delete_image_file(
                         metadata, img["id"], img.get("image_path")
                     )
+                    # Remove from search index
+                    if vector_store:
+                        vector_store.delete_image(img["id"])
 
                 # If this is a concept prompt, clean up the linked token's references
                 if prompt.get("is_concept"):
@@ -1099,6 +1123,12 @@ async def delete_image(image_id: str):
                 _metadata_manager.delete_image_file(
                     metadata, image_id, img.get("image_path")
                 )
+
+                # Remove from search index
+                if config.ENABLE_SEARCH:
+                    from backend.search.vector_store import get_vector_store
+                    vector_store = get_vector_store(IMAGES_DIR / "search_index")
+                    vector_store.delete_image(image_id)
 
                 # Remove from prompt
                 prompt["images"].pop(i)
@@ -1216,6 +1246,17 @@ async def upload_images(
     # Atomically append to fresh metadata (prevents race condition with concurrent requests)
     async with _metadata_manager.atomic() as fresh_metadata:
         fresh_metadata["prompts"].append(prompt_entry)
+
+    # Queue uploaded images for background indexing (semantic search)
+    if config.ENABLE_SEARCH:
+        indexer = get_background_indexer(IMAGES_DIR)
+        for img in images:
+            indexer.queue_for_indexing(
+                image_id=img["id"],
+                image_path=img["image_path"],
+                prompt_id=prompt_id,
+                prompt_text="",  # Uploaded images have no prompt text
+            )
 
     logger.info(f"Uploaded {len(images)} images as prompt: {prompt_id}")
 
@@ -1945,6 +1986,12 @@ async def batch_delete_images(req: BatchDeleteRequest):
     not_found = []
     updated_token_ids = []
 
+    # Get vector store once if search is enabled
+    vector_store = None
+    if config.ENABLE_SEARCH:
+        from backend.search.vector_store import get_vector_store
+        vector_store = get_vector_store(IMAGES_DIR / "search_index")
+
     for image_id in req.image_ids:
         found = False
         for prompt in metadata.get("prompts", []):
@@ -1954,6 +2001,10 @@ async def batch_delete_images(req: BatchDeleteRequest):
                     _metadata_manager.delete_image_file(
                         metadata, image_id, img.get("image_path")
                     )
+
+                    # Remove from search index
+                    if vector_store:
+                        vector_store.delete_image(image_id)
 
                     # Remove from prompt
                     prompt["images"].pop(i)
@@ -2873,6 +2924,9 @@ class SearchResponse(BaseModel):
 @app.post("/api/search", response_model=SearchResponse)
 async def search_images(req: SearchRequest):
     """Search images by text query using semantic embeddings."""
+    if not config.ENABLE_SEARCH:
+        return SearchResponse(success=False, error="Search is disabled (ENABLE_SEARCH=false)")
+
     if not req.query.strip():
         return SearchResponse(success=True, results=[])
 
@@ -2900,6 +2954,9 @@ async def search_images(req: SearchRequest):
 @app.get("/api/search/similar/{image_id}", response_model=SearchResponse)
 async def find_similar_images(image_id: str, limit: int = 20):
     """Find images similar to a given image (image-to-image search)."""
+    if not config.ENABLE_SEARCH:
+        return SearchResponse(success=False, error="Search is disabled (ENABLE_SEARCH=false)")
+
     try:
         metadata = load_metadata()
         img_data, img_path = _find_image_by_id(metadata, image_id)
@@ -2939,6 +2996,9 @@ class IndexRequest(BaseModel):
 @app.post("/api/search/index")
 async def trigger_indexing(req: IndexRequest):
     """Trigger indexing for specific images or all missing images."""
+    if not config.ENABLE_SEARCH:
+        return {"success": False, "error": "Search is disabled (ENABLE_SEARCH=false)"}
+
     try:
         metadata = load_metadata()
         search_service = get_search_service(IMAGES_DIR)
@@ -2991,6 +3051,9 @@ async def trigger_indexing(req: IndexRequest):
 @app.get("/api/search/indexed")
 async def get_indexed_image_ids():
     """Get all indexed image IDs for frontend status indicator."""
+    if not config.ENABLE_SEARCH:
+        return {"success": True, "indexed_ids": [], "disabled": True}
+
     try:
         search_service = get_search_service(IMAGES_DIR)
         indexed_ids = list(search_service.get_indexed_ids())
@@ -3003,6 +3066,9 @@ async def get_indexed_image_ids():
 @app.get("/api/search/stats")
 async def get_search_stats():
     """Get search index statistics."""
+    if not config.ENABLE_SEARCH:
+        return {"success": True, "disabled": True, "indexed_count": 0, "pending_count": 0}
+
     try:
         search_service = get_search_service(IMAGES_DIR)
         stats = search_service.get_stats()
