@@ -21,8 +21,8 @@ export function useKeyboardShortcuts() {
     currentCollectionId,
     contextImageIds,
     setContextImages,
-    openExtractionDialog,
     deleteImage,
+    toggleGenerationMode,
   } = useStore();
 
   // Track pending delete state
@@ -80,19 +80,12 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Generate tab
+        // Generations tab (left sidebar)
         case 'g':
         case 'G':
           if (!isMeta) {
             event.preventDefault();
-            setRightTab('generate');
-            // Focus prompt textarea after a short delay
-            setTimeout(() => {
-              const textarea = document.querySelector(
-                '[data-prompt-input]'
-              ) as HTMLTextAreaElement;
-              textarea?.focus();
-            }, 100);
+            setLeftTab('generations');
           }
           break;
 
@@ -122,14 +115,17 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Sidebar tabs
-        case 'p':
-        case 'P':
-          if (!isMeta) {
+        // Generation mode toggle (Shift+Tab)
+        case 'Tab':
+          if (event.shiftKey && !isMeta) {
             event.preventDefault();
-            setLeftTab('prompts');
+            toggleGenerationMode();
+            // Dispatch custom event for mode toggle notification
+            window.dispatchEvent(new CustomEvent('keyboard:modeToggled'));
           }
           break;
+
+        // Sidebar tabs (G for Generations is handled above)
         case 'o':
         case 'O':
           if (!isMeta) {
@@ -153,17 +149,6 @@ export function useKeyboardShortcuts() {
           break;
 
         // Toolbar actions
-        case 'e':
-        case 'E':
-          if (!isMeta) {
-            event.preventDefault();
-            const imageForExtract = getCurrentImage();
-            if (imageForExtract) {
-              openExtractionDialog([imageForExtract.id]);
-            }
-          }
-          break;
-
         case 'b':
         case 'B':
           if (!isMeta) {
@@ -269,8 +254,8 @@ export function useKeyboardShortcuts() {
       currentCollectionId,
       contextImageIds,
       setContextImages,
-      openExtractionDialog,
       deleteImage,
+      toggleGenerationMode,
     ]
   );
 

@@ -19,8 +19,8 @@ describe('navigationSlice', () => {
       expect(slice.viewMode).toBe('single')
     })
 
-    it('has default leftTab as prompts', () => {
-      expect(slice.leftTab).toBe('prompts')
+    it('has default leftTab as generations', () => {
+      expect(slice.leftTab).toBe('generations')
     })
 
     it('has default rightTab as generate', () => {

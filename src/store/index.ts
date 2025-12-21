@@ -32,6 +32,7 @@ import type {
 } from '../types';
 import * as api from '../api';
 import { toast } from './toastStore';
+import { buildPrompt, buildConceptPrompt } from '../prompts';
 
 interface PendingGeneration {
   title?: string;  // Optional - will be auto-generated if not provided
@@ -64,7 +65,13 @@ interface AppStore {
   isGenerating: boolean;
   pendingGenerations: Map<string, PendingGeneration>;
   pendingConceptGenerations: Set<string>; // Token IDs currently generating concept images
+  isGeneratingReference: boolean; // Generating a reference image from prompt
   error: string | null;
+
+  // Generation Mode (Plan vs Auto)
+  generationMode: 'plan' | 'auto';
+  setGenerationMode: (mode: 'plan' | 'auto') => void;
+  toggleGenerationMode: () => void;
 
   // Sessions (persisted)
   sessions: Session[];
@@ -138,14 +145,16 @@ interface AppStore {
     prompt: string;
     title?: string;  // Optional - will be auto-generated if not provided
     count?: number;
+    skipOptimization?: boolean;  // Skip Gemini prompt optimization
   } & ImageGenerationParams) => Promise<void>;
-  iterate: (imageId: string) => Promise<void>;
 
   // Two-Phase Generation Actions
   generateVariations: (params: {
     prompt: string;
     title?: string; // Optional - will be auto-generated if not provided
     count?: number;
+    template?: 'variation' | 'reference'; // Which prompt template to use
+    autoGenerate?: boolean; // Auto-trigger image generation after prompts complete
   } & ImageGenerationParams) => Promise<void>;
   updateVariation: (id: string, newText: string) => void;
   removeVariation: (id: string) => void;
@@ -166,8 +175,6 @@ interface AppStore {
   duplicateDraftVariation: (draftId: string, variationId: string) => void;
   regenerateDraftVariation: (draftId: string, variationId: string) => Promise<void>;
   addMoreDraftVariations: (draftId: string, count?: number) => Promise<void>;
-  polishDraftVariation: (draftId: string, variationId: string) => Promise<void>;
-  polishDraftVariations: (draftId: string) => Promise<void>;
   generateFromDraft: (draftId: string) => Promise<void>;
   deleteDraft: (draftId: string) => void;
   getCurrentDraft: () => DraftPrompt | null;
@@ -191,8 +198,8 @@ interface AppStore {
   createToken: (data: CreateTokenRequest) => Promise<DesignToken | undefined>;
   deleteToken: (id: string) => Promise<void>;
   useToken: (id: string) => Promise<DesignToken | undefined>;
-  suggestDimensions: (imageIds: string[]) => Promise<DesignDimension[]>;
   generateTokenConcept: (tokenId: string) => Promise<void>;
+  generateReferenceImage: (prompt: string, aspectRatio?: string) => Promise<void>;
 
   // Collections
   createCollection: (name: string, description?: string, imageIds?: string[]) => Promise<void>;
@@ -210,8 +217,6 @@ interface AppStore {
 
   // Settings
   updateSettings: (settings: {
-    variation_prompt: string;
-    iteration_prompt?: string;
     image_size?: string;
     aspect_ratio?: string;
     seed?: number;
@@ -241,23 +246,21 @@ interface AppStore {
 
   // Design Dimensions (Rich AI Analysis)
   pendingAnalysis: Set<string>;  // Image IDs currently being analyzed
-  analyzeDimensions: (imageId: string) => Promise<DesignDimension[]>;
   confirmDimension: (imageId: string, axis: string) => Promise<void>;
   updateImageDimensions: (imageId: string, dimensions: Record<string, DesignDimension>) => Promise<void>;
   toggleDimensionLike: (imageId: string, axis: string, liked: boolean) => Promise<void>;
 
-  // Token Extraction Dialog (shared between SingleView and SelectionTray)
-  extractionDialog: {
-    isOpen: boolean;
-    isExtracting: boolean;
-    imageIds: string[];  // Images being analyzed
-    suggestedDimensions: DesignDimension[];
-    selectedDimensionIndex: number | null;
-  };
-  openExtractionDialog: (imageIds: string[]) => Promise<void>;
-  closeExtractionDialog: () => void;
-  selectExtractionDimension: (index: number | null) => void;
-  createTokenFromExtraction: () => Promise<void>;
+  // Semantic Search
+  searchMode: 'text' | 'semantic';
+  semanticResults: api.SearchResult[] | null;
+  isSearching: boolean;
+  indexedImageIds: Set<string>;
+  similarToImageId: string | null; // For "Find Similar" mode
+  setSearchMode: (mode: 'text' | 'semantic') => void;
+  searchSemantic: (query: string) => Promise<void>;
+  findSimilar: (imageId: string) => Promise<void>;
+  clearSemanticSearch: () => void;
+  fetchIndexedIds: () => Promise<void>;
 
   // Error handling
   setError: (error: string | null) => void;
@@ -281,7 +284,7 @@ export const useStore = create<AppStore>()(
       currentGenerationId: null,
       currentImageIndex: 0,
       viewMode: 'single',
-      leftTab: 'prompts',
+      leftTab: 'generations',
       rightTab: 'generate',
       generationFilter: 'all',
 
@@ -293,7 +296,11 @@ export const useStore = create<AppStore>()(
       isGenerating: false,
       pendingGenerations: new Map(),
       pendingConceptGenerations: new Set(),
+      isGeneratingReference: false,
       error: null,
+
+      // Generation Mode (Plan vs Auto)
+      generationMode: 'plan',
 
       sessions: [],
       currentSessionId: null,
@@ -329,14 +336,12 @@ export const useStore = create<AppStore>()(
       // Design Dimensions (Rich AI Analysis)
       pendingAnalysis: new Set<string>(),
 
-      // Token Extraction Dialog
-      extractionDialog: {
-        isOpen: false,
-        isExtracting: false,
-        imageIds: [],
-        suggestedDimensions: [],
-        selectedDimensionIndex: null,
-      },
+      // Semantic Search
+      searchMode: 'text' as const,
+      semanticResults: null,
+      isSearching: false,
+      indexedImageIds: new Set<string>(),
+      similarToImageId: null,
 
       // Initialize app
       initialize: async () => {
@@ -461,6 +466,13 @@ export const useStore = create<AppStore>()(
       setRightTab: (tab) => set({ rightTab: tab }),
       setGenerationFilter: (filter) => set({ generationFilter: filter }),
 
+      // Generation Mode (Plan vs Auto)
+      setGenerationMode: (mode) => set({ generationMode: mode }),
+      toggleGenerationMode: () => {
+        const current = get().generationMode;
+        set({ generationMode: current === 'plan' ? 'auto' : 'plan' });
+      },
+
       // Selection
       setSelectionMode: (mode) => {
         set({
@@ -550,7 +562,8 @@ export const useStore = create<AppStore>()(
       },
 
       // Generation (supports concurrent generations)
-      generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level }) => {
+      // Uses two-phase flow: generate variations -> generate images
+      generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level, skipOptimization }) => {
         const { contextImageIds, contextAnnotationOverrides, pendingGenerations, currentSessionId, generations } = get();
 
         // Create pending generation
@@ -586,16 +599,56 @@ export const useStore = create<AppStore>()(
             }
           }
 
-          await api.generateImages({
-            prompt,
-            title,
-            count,
+          let prompts: { text: string; mood?: string; design?: Record<string, string[]> }[];
+          let generatedTitle = title || 'Untitled';
+
+          if (skipOptimization) {
+            // Skip optimization: use the original prompt directly
+            prompts = Array.from({ length: count || 4 }, () => ({ text: prompt }));
+          } else {
+            // Phase 1: Generate prompt variations via streaming
+            // Build complete prompt using frontend template
+            const fullPrompt = buildPrompt({
+              basePrompt: prompt,
+              count: count || 4,
+              title: title || undefined,
+              contextImageCount: contextImageIds.length,
+              template: 'variation',
+            });
+
+            const variations: PromptVariation[] = [];
+            for await (const event of api.generatePromptVariationsStream({
+              prompt: fullPrompt,
+              count: count || 4,
+              context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+            })) {
+              if (event.type === 'complete' && event.variations) {
+                variations.push(...event.variations);
+                if (event.generated_title) {
+                  generatedTitle = event.generated_title;
+                }
+              } else if (event.type === 'error') {
+                throw new Error(event.error || 'Variation generation failed');
+              }
+            }
+            prompts = variations.map((v) => ({
+              text: v.text,
+              mood: v.mood,
+              design: v.design,
+            }));
+          }
+
+          // Phase 2: Generate images from prompts
+          await api.generateFromPrompts({
+            title: generatedTitle,
+            prompts,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
             session_id: currentSessionId || undefined,
             image_size,
             aspect_ratio,
             seed,
             safety_level,
+            base_prompt: prompt,
           });
 
           // Remove this pending generation
@@ -614,11 +667,10 @@ export const useStore = create<AppStore>()(
           });
 
           // Show success toast with option to view
-          const generationTitle = title || 'Untitled';
           // Find the newly created generation (should be the latest one)
           const { generations: updatedGenerations } = get();
-          const newGeneration = updatedGenerations.find((g) => g.title === generationTitle) || updatedGenerations[0];
-          toast.success(`"${generationTitle}" finished generating`, {
+          const newGeneration = updatedGenerations.find((g) => g.title === generatedTitle) || updatedGenerations[0];
+          toast.success(`"${generatedTitle}" finished generating`, {
             label: 'View',
             onClick: () => {
               if (newGeneration) {
@@ -657,33 +709,13 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      iterate: async (imageId) => {
-        set({ isGenerating: true, error: null });
-
-        try {
-          await api.iterateImage(imageId);
-          await get().refreshData();
-
-          // Don't auto-navigate - stay on current view
-          set({
-            isGenerating: false,
-          });
-
-          // Show success toast
-          toast.success('Iteration complete');
-        } catch (error) {
-          set({ isGenerating: false, error: (error as Error).message });
-          toast.error(`Iteration failed: ${(error as Error).message}`);
-        }
-      },
-
       // Two-Phase Generation Actions
-      generateVariations: async ({ prompt, title, count = 4, image_size, aspect_ratio, seed, safety_level }) => {
+      generateVariations: async ({ prompt, title, count = 4, image_size, aspect_ratio, seed, safety_level, template = 'variation', autoGenerate = false }) => {
         const { contextImageIds, draftPrompts } = get();
 
         // Create a draft prompt immediately with placeholder title if not provided
         const draftId = `draft-${Date.now().toString(36)}`;
-        const initialTitle = title || 'Generating...'; // Will be replaced with generated title
+        const initialTitle = title || 'Generating Prompts...'; // Will be replaced with generated title
         const newDraft: DraftPrompt = {
           id: draftId,
           basePrompt: prompt,
@@ -693,6 +725,7 @@ export const useStore = create<AppStore>()(
           imageParams: { image_size, aspect_ratio, seed, safety_level },
           contextImageIds: contextImageIds.length > 0 ? [...contextImageIds] : undefined,
           isGenerating: true, // Per-draft generating state for concurrent support
+          autoGenerate, // Auto-trigger image generation after prompts complete
         };
 
         // Note: isGeneratingVariations kept for backwards compatibility but not used to block UI
@@ -711,18 +744,22 @@ export const useStore = create<AppStore>()(
         });
 
         try {
+          // Build complete prompt using frontend template
+          const fullPrompt = buildPrompt({
+            basePrompt: prompt,
+            count,
+            title: title || undefined,
+            contextImageCount: contextImageIds.length,
+            template,
+          });
+
           // Use streaming API for real-time progress
           let response: { success: boolean; variations?: typeof newDraft.variations; generated_title?: string; annotation_suggestions?: typeof newDraft.annotationSuggestions; error?: string } = { success: false };
 
           for await (const event of api.generatePromptVariationsStream({
-            prompt,
-            title: title || undefined,
+            prompt: fullPrompt,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
-            image_size,
-            aspect_ratio,
-            seed,
-            safety_level,
           })) {
             if (event.type === 'chunk') {
               // Update streaming text for UI feedback (rolling window to limit memory)
@@ -809,6 +846,14 @@ export const useStore = create<AppStore>()(
               isGeneratingVariations: false,
               streamingText: '', // Clear streaming text on success
             });
+
+            // Auto-trigger image generation if autoGenerate flag is set
+            if (autoGenerate) {
+              // Use setTimeout to allow state to settle before triggering next phase
+              setTimeout(() => {
+                get().generateFromDraft(draftId);
+              }, 100);
+            }
           } else {
             // Remove failed draft - don't leave zombies with 0 variations
             set({
@@ -869,9 +914,17 @@ export const useStore = create<AppStore>()(
         const { variationsBasePrompt, contextImageIds } = get();
 
         try {
+          // Build complete prompt using frontend template
+          const fullPrompt = buildPrompt({
+            basePrompt: variationsBasePrompt,
+            count: 1,
+            contextImageCount: contextImageIds.length,
+            template: 'variation',
+          });
+
           // Generate a single new variation
           const response = await api.generatePromptVariations({
-            prompt: variationsBasePrompt,
+            prompt: fullPrompt,
             count: 1,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
           });
@@ -895,8 +948,16 @@ export const useStore = create<AppStore>()(
         set({ isGeneratingVariations: true });
 
         try {
+          // Build complete prompt using frontend template
+          const fullPrompt = buildPrompt({
+            basePrompt: variationsBasePrompt,
+            count,
+            contextImageCount: contextImageIds.length,
+            template: 'variation',
+          });
+
           const response = await api.generatePromptVariations({
-            prompt: variationsBasePrompt,
+            prompt: fullPrompt,
             count,
             context_image_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
           });
@@ -1106,8 +1167,16 @@ export const useStore = create<AppStore>()(
         if (!draft) return;
 
         try {
+          // Build complete prompt using frontend template
+          const fullPrompt = buildPrompt({
+            basePrompt: draft.basePrompt,
+            count: 1,
+            contextImageCount: draft.contextImageIds?.length || 0,
+            template: 'variation',
+          });
+
           const response = await api.generatePromptVariations({
-            prompt: draft.basePrompt,
+            prompt: fullPrompt,
             count: 1,
             context_image_ids: draft.contextImageIds,
           });
@@ -1146,8 +1215,16 @@ export const useStore = create<AppStore>()(
         });
 
         try {
+          // Build complete prompt using frontend template
+          const fullPrompt = buildPrompt({
+            basePrompt: draft.basePrompt,
+            count,
+            contextImageCount: draft.contextImageIds?.length || 0,
+            template: 'variation',
+          });
+
           const response = await api.generatePromptVariations({
-            prompt: draft.basePrompt,
+            prompt: fullPrompt,
             count,
             context_image_ids: draft.contextImageIds,
           });
@@ -1172,112 +1249,6 @@ export const useStore = create<AppStore>()(
             draftPrompts: get().draftPrompts.map((d) =>
               d.id === draftId ? { ...d, isGenerating: false } : d
             ),
-            error: (error as Error).message,
-          });
-        }
-      },
-
-      polishDraftVariation: async (draftId, variationId) => {
-        const { draftPrompts } = get();
-        const draft = draftPrompts.find((d) => d.id === draftId);
-        if (!draft) return;
-
-        const variation = draft.variations.find((v) => v.id === variationId);
-        if (!variation) return;
-
-        set({ isGeneratingVariations: true });
-
-        try {
-          const response = await api.polishPrompts({
-            base_prompt: draft.basePrompt,
-            variations: [{
-              id: variation.id,
-              text: variation.text,
-              user_notes: variation.userNotes,
-              mood: variation.mood,
-              design: variation.design,
-              emphasized_tags: variation.emphasizedTags,
-            }],
-            context_image_ids: draft.contextImageIds,
-          });
-
-          if (response.success && response.polished_variations.length > 0) {
-            const polished = response.polished_variations[0];
-            set({
-              draftPrompts: get().draftPrompts.map((d) =>
-                d.id === draftId
-                  ? {
-                      ...d,
-                      variations: d.variations.map((v) =>
-                        v.id === variationId
-                          ? { ...v, text: polished.text, userNotes: '', isEdited: false }
-                          : v
-                      ),
-                    }
-                  : d
-              ),
-              isGeneratingVariations: false,
-            });
-          } else {
-            set({ isGeneratingVariations: false, error: response.error || 'Polish failed' });
-          }
-        } catch (error) {
-          set({
-            isGeneratingVariations: false,
-            error: (error as Error).message,
-          });
-        }
-      },
-
-      polishDraftVariations: async (draftId) => {
-        const { draftPrompts } = get();
-        const draft = draftPrompts.find((d) => d.id === draftId);
-        if (!draft || draft.variations.length === 0) return;
-
-        set({ isGeneratingVariations: true });
-
-        try {
-          const response = await api.polishPrompts({
-            base_prompt: draft.basePrompt,
-            variations: draft.variations.map((v) => ({
-              id: v.id,
-              text: v.text,
-              user_notes: v.userNotes,
-              mood: v.mood,
-              design: v.design,
-              emphasized_tags: v.emphasizedTags,
-            })),
-            context_image_ids: draft.contextImageIds,
-          });
-
-          if (response.success) {
-            // Build a map of polished results
-            const polishedMap = new Map(
-              response.polished_variations.map((p) => [p.id, p])
-            );
-
-            set({
-              draftPrompts: get().draftPrompts.map((d) =>
-                d.id === draftId
-                  ? {
-                      ...d,
-                      variations: d.variations.map((v) => {
-                        const polished = polishedMap.get(v.id);
-                        return polished
-                          ? { ...v, text: polished.text, userNotes: '', isEdited: false }
-                          : v;
-                      }),
-                    }
-                  : d
-              ),
-              isGeneratingVariations: false,
-            });
-          } else {
-            set({ isGeneratingVariations: false, error: response.error || 'Polish failed' });
-          }
-        } catch (error) {
-          set({
-            isGeneratingVariations: false,
             error: (error as Error).message,
           });
         }
@@ -1327,6 +1298,7 @@ export const useStore = create<AppStore>()(
             }
           }
 
+          // Generate images from prompts (same API for both regular and reference modes)
           const response = await api.generateFromPrompts({
             title: draft.title,
             prompts: draft.variations.map((v) => ({
@@ -1555,7 +1527,19 @@ export const useStore = create<AppStore>()(
             throw new Error(`Token "${data.name}" already exists`);
           }
 
-          const token = await api.createToken(data);
+          // Build concept prompt if generating concept image
+          let requestData = data;
+          if (data.generate_concept && data.dimension) {
+            const conceptPrompt = buildConceptPrompt({
+              dimensionName: data.dimension.name,
+              axis: data.dimension.axis,
+              description: data.dimension.description,
+              generationPrompt: data.dimension.generation_prompt,
+            });
+            requestData = { ...data, concept_prompt: conceptPrompt };
+          }
+
+          const token = await api.createToken(requestData);
           // Refresh both tokens and generations (concept images create Generation entries)
           const [designTokens, generations] = await Promise.all([
             api.fetchTokens(),
@@ -1607,29 +1591,30 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      suggestDimensions: async (imageIds) => {
-        try {
-          const response = await api.suggestDimensions(imageIds);
-          if (response.success) {
-            return response.dimensions;
-          } else {
-            set({ error: response.error || 'Failed to suggest dimensions' });
-            return [];
-          }
-        } catch (error) {
-          set({ error: (error as Error).message });
-          return [];
-        }
-      },
-
       generateTokenConcept: async (tokenId) => {
+        // Find the token to get its dimension data
+        const token = get().designTokens.find((t) => t.id === tokenId);
+        if (!token?.extraction?.dimension) {
+          set({ error: 'Token has no extraction dimension - cannot generate concept' });
+          return;
+        }
+
+        // Build the prompt using the frontend template
+        const dimension = token.extraction.dimension;
+        const prompt = buildConceptPrompt({
+          dimensionName: dimension.name,
+          axis: dimension.axis,
+          description: dimension.description,
+          generationPrompt: dimension.generation_prompt,
+        });
+
         // Add to pending set
         const newPending = new Set(get().pendingConceptGenerations);
         newPending.add(tokenId);
         set({ pendingConceptGenerations: newPending });
 
         try {
-          await api.generateTokenConcept(tokenId);
+          await api.generateTokenConcept(tokenId, prompt);
           // Refresh both tokens and generations (concept images create Generation entries)
           const [designTokens, generations] = await Promise.all([
             api.fetchTokens(),
@@ -1645,6 +1630,51 @@ export const useStore = create<AppStore>()(
           const updatedPending = new Set(get().pendingConceptGenerations);
           updatedPending.delete(tokenId);
           set({ pendingConceptGenerations: updatedPending, error: (error as Error).message });
+        }
+      },
+
+      generateReferenceImage: async (prompt, aspectRatio = '1:1') => {
+        set({ isGeneratingReference: true });
+
+        try {
+          // Phase 1: Generate prompt variations using reference template
+          const fullPrompt = buildPrompt({
+            basePrompt: prompt,
+            count: 1,
+            template: 'reference',
+          });
+
+          let generatedTitle = `Reference: ${prompt.slice(0, 50)}${prompt.length > 50 ? '...' : ''}`;
+          let prompts: { text: string }[] = [];
+
+          for await (const event of api.generatePromptVariationsStream({
+            prompt: fullPrompt,
+            count: 1,
+          })) {
+            if (event.type === 'complete' && event.variations) {
+              prompts = event.variations.map((v) => ({ text: v.text }));
+              if (event.generated_title) {
+                generatedTitle = event.generated_title;
+              }
+            } else if (event.type === 'error') {
+              throw new Error(event.error || 'Variation generation failed');
+            }
+          }
+
+          // Phase 2: Generate images from prompts
+          const result = await api.generateFromPrompts({
+            title: generatedTitle,
+            prompts,
+            aspect_ratio: aspectRatio as '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '9:16' | '16:9' | '21:9',
+          });
+          if (!result.success) {
+            throw new Error(result.errors?.join(', ') || 'Failed to generate reference image');
+          }
+          // Refresh generations to show the new reference image
+          const generations = await api.fetchPrompts();
+          set({ generations, isGeneratingReference: false });
+        } catch (error) {
+          set({ isGeneratingReference: false, error: (error as Error).message });
         }
       },
 
@@ -2018,31 +2048,6 @@ export const useStore = create<AppStore>()(
       },
 
       // Design Dimensions (Rich AI Analysis)
-      analyzeDimensions: async (imageId: string) => {
-        // Add to pending analysis
-        const pendingAnalysis = new Set(get().pendingAnalysis);
-        pendingAnalysis.add(imageId);
-        set({ pendingAnalysis });
-
-        try {
-          const response = await api.analyzeDimensions(imageId);
-          if (!response.success) {
-            throw new Error(response.error || 'Analysis failed');
-          }
-
-          // Return the dimensions for UI to handle
-          return response.dimensions;
-        } catch (error) {
-          set({ error: (error as Error).message });
-          return [];
-        } finally {
-          // Remove from pending analysis
-          const updated = new Set(get().pendingAnalysis);
-          updated.delete(imageId);
-          set({ pendingAnalysis: updated });
-        }
-      },
-
       confirmDimension: async (imageId: string, axis: string) => {
         // Get current image to find its dimensions
         const { generations } = get();
@@ -2118,164 +2123,60 @@ export const useStore = create<AppStore>()(
         }
       },
 
-      // Token Extraction Dialog actions
-      openExtractionDialog: async (imageIds: string[]) => {
-        const imageCount = imageIds.length;
+      // Semantic Search Actions
+      setSearchMode: (mode) => set({ searchMode: mode }),
 
-        // For single image: check if it has pre-computed dimensions
-        if (imageCount === 1) {
-          const { generations } = get();
-          let precomputedDimensions: DesignDimension[] | null = null;
-
-          for (const generation of generations) {
-            const img = generation.images.find((i) => i.id === imageIds[0]);
-            if (img?.design_dimensions) {
-              // Convert Record<string, DesignDimension> to array
-              precomputedDimensions = Object.values(img.design_dimensions);
-              break;
-            }
-          }
-
-          if (precomputedDimensions && precomputedDimensions.length > 0) {
-            // Use pre-computed dimensions - open dialog immediately
-            set({
-              extractionDialog: {
-                isOpen: true,
-                isExtracting: false,
-                imageIds,
-                suggestedDimensions: precomputedDimensions,
-                selectedDimensionIndex: null,
-              },
-            });
-            return;
-          }
+      searchSemantic: async (query: string) => {
+        if (!query.trim()) {
+          set({ semanticResults: null, isSearching: false });
+          return;
         }
 
-        // Multiple images OR no pre-computed: call API for analysis
-        toast.info(`Analyzing ${imageCount} image${imageCount !== 1 ? 's' : ''} for design dimensions...`);
-
-        // Store imageIds for when dialog opens later
-        set({
-          extractionDialog: {
-            isOpen: false,  // Don't open yet - background processing
-            isExtracting: true,
-            imageIds,
-            suggestedDimensions: [],
-            selectedDimensionIndex: null,
-          },
-        });
-
+        set({ isSearching: true, similarToImageId: null });
         try {
-          const response = await api.suggestDimensions(imageIds);
-          if (response.success && response.dimensions.length > 0) {
-            // Store results
-            set({
-              extractionDialog: {
-                ...get().extractionDialog,
-                isExtracting: false,
-                suggestedDimensions: response.dimensions,
-              },
-            });
-
-            // Show success toast with "View" action
-            const count = response.dimensions.length;
-            toast.success(
-              `Found ${count} design dimension${count !== 1 ? 's' : ''}`,
-              {
-                label: 'View',
-                onClick: () => {
-                  // Open dialog with pre-loaded results
-                  set({
-                    extractionDialog: {
-                      ...get().extractionDialog,
-                      isOpen: true,
-                    },
-                  });
-                },
-              }
-            );
+          const response = await api.searchImages(query);
+          if (response.success) {
+            set({ semanticResults: response.results, isSearching: false });
           } else {
-            set({
-              extractionDialog: {
-                ...get().extractionDialog,
-                isExtracting: false,
-              },
-            });
-            toast.error('No design dimensions found. Try different images.');
+            toast.error(response.error || 'Search failed');
+            set({ semanticResults: null, isSearching: false });
           }
         } catch (error) {
-          set({
-            extractionDialog: {
-              ...get().extractionDialog,
-              isExtracting: false,
-            },
-          });
-          toast.error(`Analysis failed: ${(error as Error).message}`);
+          toast.error((error as Error).message);
+          set({ semanticResults: null, isSearching: false });
         }
       },
 
-      closeExtractionDialog: () => {
-        set({
-          extractionDialog: {
-            isOpen: false,
-            isExtracting: false,
-            imageIds: [],
-            suggestedDimensions: [],
-            selectedDimensionIndex: null,
-          },
-        });
-      },
-
-      selectExtractionDimension: (index: number | null) => {
-        set({
-          extractionDialog: {
-            ...get().extractionDialog,
-            selectedDimensionIndex: index,
-          },
-        });
-      },
-
-      createTokenFromExtraction: async () => {
-        const { extractionDialog, createToken, clearSelection, setSelectionMode } = get();
-        const { selectedDimensionIndex, suggestedDimensions, imageIds } = extractionDialog;
-
-        if (selectedDimensionIndex === null || !suggestedDimensions[selectedDimensionIndex]) return;
-
-        const dimension = suggestedDimensions[selectedDimensionIndex];
-
-        set({
-          extractionDialog: {
-            ...extractionDialog,
-            isExtracting: true,
-          },
-        });
-
+      findSimilar: async (imageId: string) => {
+        set({ isSearching: true, similarToImageId: imageId, leftTab: 'all-images', searchMode: 'semantic' });
         try {
-          const token = await createToken({
-            name: dimension.name,
-            description: dimension.description,
-            image_ids: imageIds,
-            prompts: [dimension.generation_prompt],
-            creation_method: 'ai-extraction',
-            dimension,
-            generate_concept: true,
-            category: dimension.axis,
-            tags: dimension.tags,
-          });
-
-          if (token) {
-            // Success - close dialog and clear selection
-            get().closeExtractionDialog();
-            clearSelection();
-            setSelectionMode('none');
+          const response = await api.findSimilarImages(imageId);
+          if (response.success) {
+            set({ semanticResults: response.results, isSearching: false });
+          } else {
+            toast.error(response.error || 'Find similar failed');
+            set({ semanticResults: null, isSearching: false, similarToImageId: null });
           }
-        } finally {
-          set({
-            extractionDialog: {
-              ...get().extractionDialog,
-              isExtracting: false,
-            },
-          });
+        } catch (error) {
+          toast.error((error as Error).message);
+          set({ semanticResults: null, isSearching: false, similarToImageId: null });
+        }
+      },
+
+      clearSemanticSearch: () => set({
+        semanticResults: null,
+        similarToImageId: null,
+        isSearching: false,
+      }),
+
+      fetchIndexedIds: async () => {
+        try {
+          const response = await api.getIndexedImageIds();
+          if (response.success) {
+            set({ indexedImageIds: new Set(response.indexed_ids) });
+          }
+        } catch (error) {
+          console.error('Failed to fetch indexed IDs:', error);
         }
       },
 
@@ -2330,6 +2231,8 @@ export const useStore = create<AppStore>()(
         currentDraftId: state.currentDraftId,
         // Persist library "unread" tracking
         lastSeenLibraryAt: state.lastSeenLibraryAt,
+        // Persist generation mode preference
+        generationMode: state.generationMode,
       }),
     }
   )

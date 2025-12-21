@@ -152,44 +152,5 @@ Make them vivid.
             template.format_map({"name": "World"})  # Missing 'place'
 
 
-class TestPromptTemplateIntegration:
-    """Integration tests for prompt template handling in the system."""
-
-    def test_variation_prompt_has_required_placeholders(self):
-        """Default variation prompt should have all required placeholders."""
-        import sys
-        from pathlib import Path
-
-        # Add backend to path
-        backend_dir = Path(__file__).parent.parent
-        if str(backend_dir) not in sys.path:
-            sys.path.insert(0, str(backend_dir))
-
-        from config import load_variation_prompt
-
-        template = load_variation_prompt()
-
-        # Required placeholders that must be in the template
-        assert "{base_prompt}" in template
-        assert "{count}" in template
-
-        # New placeholders that should be in the default template
-        assert "{title_context}" in template
-        assert "{context_assignment_section}" in template
-
-    def test_iteration_prompt_has_required_placeholders(self):
-        """Default iteration prompt should have required placeholders."""
-        import sys
-        from pathlib import Path
-
-        backend_dir = Path(__file__).parent.parent
-        if str(backend_dir) not in sys.path:
-            sys.path.insert(0, str(backend_dir))
-
-        from config import load_iteration_prompt
-
-        template = load_iteration_prompt()
-
-        # Required placeholders for iteration prompt
-        assert "{original_prompt}" in template
-        assert "{focus}" in template
+# Note: Template integration tests removed - templates are now in frontend
+# See src/prompts/templates/ for the frontend template definitions

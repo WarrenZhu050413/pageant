@@ -10,71 +10,35 @@ class TestSettingsEndpoints:
     """Tests for settings API."""
 
     def test_get_settings(self, client):
-        """GET /api/settings returns variation prompt and models."""
+        """GET /api/settings returns model info and generation defaults."""
         response = client.get("/api/settings")
         assert response.status_code == 200
         data = response.json()
-        assert "variation_prompt" in data
         assert "text_model" in data
         assert "image_model" in data
-        # Default prompt should contain placeholders for structured output
-        assert "{count}" in data["variation_prompt"]
-        assert "{base_prompt}" in data["variation_prompt"]
 
     def test_update_settings(self, client):
-        """PUT /api/settings updates variation prompt."""
-        custom_prompt = "My custom variation prompt with {base_prompt} and {count}"
+        """PUT /api/settings updates image generation defaults."""
         response = client.put(
             "/api/settings",
-            json={"variation_prompt": custom_prompt},
+            json={"image_size": "2K", "aspect_ratio": "16:9"},
         )
         assert response.status_code == 200
 
         # Verify it persisted
         get_response = client.get("/api/settings")
-        assert get_response.json()["variation_prompt"] == custom_prompt
+        data = get_response.json()
+        assert data["image_size"] == "2K"
+        assert data["aspect_ratio"] == "16:9"
 
     def test_settings_persist(self, client, reload_metadata):
         """Settings persist in metadata.json."""
-        custom_prompt = "Persistent test prompt"
-        client.put("/api/settings", json={"variation_prompt": custom_prompt})
+        client.put("/api/settings", json={"seed": 12345})
 
         reload_metadata()
 
         response = client.get("/api/settings")
-        assert response.json()["variation_prompt"] == custom_prompt
-
-    def test_get_default_settings(self, client):
-        """GET /api/settings/defaults returns default prompts from files."""
-        response = client.get("/api/settings/defaults")
-        assert response.status_code == 200
-        data = response.json()
-
-        # Should have both prompts
-        assert "variation_prompt" in data
-        assert "iteration_prompt" in data
-
-        # Default prompts should have required placeholders
-        assert "{count}" in data["variation_prompt"]
-        assert "{base_prompt}" in data["variation_prompt"]
-        # New placeholders should be in the default prompt
-        assert "{title_context}" in data["variation_prompt"]
-        assert "{context_assignment_section}" in data["variation_prompt"]
-
-    def test_default_settings_differ_from_saved(self, client):
-        """Default prompts should be independent of saved settings."""
-        # Save a custom prompt
-        custom_prompt = "Custom prompt without placeholders"
-        client.put("/api/settings", json={"variation_prompt": custom_prompt})
-
-        # Get current settings (should have custom)
-        current = client.get("/api/settings").json()
-        assert current["variation_prompt"] == custom_prompt
-
-        # Get defaults (should have original template)
-        defaults = client.get("/api/settings/defaults").json()
-        assert defaults["variation_prompt"] != custom_prompt
-        assert "{count}" in defaults["variation_prompt"]
+        assert response.json()["seed"] == 12345
 
 
 class TestAxisPreferences:

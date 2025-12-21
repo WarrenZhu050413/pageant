@@ -24,7 +24,7 @@ export interface NavigationSlice {
 export const createNavigationSlice: StateCreator<NavigationSlice> = (set) => ({
   // Initial state
   viewMode: 'single',
-  leftTab: 'prompts',
+  leftTab: 'generations',
   rightTab: 'generate',
   currentPromptId: null,
   currentImageIndex: 0,

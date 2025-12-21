@@ -17,10 +17,14 @@ DEFAULT_FAST_TEXT_MODEL = (
 )
 
 # =============================================================================
+# Timeouts
+# =============================================================================
+GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "300000"))  # 200 seconds
+
+# =============================================================================
 # Paths
 # =============================================================================
 BACKEND_DIR = Path(__file__).parent
-PROMPTS_DIR = BACKEND_DIR / "prompts"
 GENERATED_IMAGES_DIR = BACKEND_DIR.parent / "generated_images"
 METADATA_FILE = BACKEND_DIR.parent / "metadata.json"
 
@@ -62,34 +66,3 @@ def get_gemini_api_key() -> str:
     raise ValueError(
         "Gemini API key not found. Set GEMINI_API_KEY env var or create ~/.gemini/apikey.txt"
     )
-
-
-# =============================================================================
-# Prompt Loading
-# =============================================================================
-def load_prompt(name: str) -> str:
-    """Load a prompt template from the prompts directory.
-
-    Args:
-        name: Prompt filename without extension (e.g., "variation_structured", "iteration")
-
-    Returns:
-        The prompt template content
-
-    Raises:
-        FileNotFoundError: If the prompt file doesn't exist
-    """
-    prompt_path = PROMPTS_DIR / f"{name}.txt"
-    if not prompt_path.exists():
-        raise FileNotFoundError(f"Prompt file not found: {prompt_path}")
-    return prompt_path.read_text()
-
-
-def load_variation_prompt() -> str:
-    """Load the default variation prompt template."""
-    return load_prompt("variation_structured")
-
-
-def load_iteration_prompt() -> str:
-    """Load the default iteration prompt template."""
-    return load_prompt("iteration")

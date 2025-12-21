@@ -19,8 +19,6 @@ const mockStore = {
   regenerateDraftVariation: vi.fn(),
   addMoreDraftVariations: vi.fn(),
   reorderDraftVariations: vi.fn(),
-  polishDraftVariations: vi.fn(),
-  polishDraftVariation: vi.fn(),
   updateDraftVariationNotes: vi.fn(),
   toggleDraftVariationTag: vi.fn(),
   generatingImageDraftIds: new Set<string>(),

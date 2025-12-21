@@ -1,0 +1,45 @@
+/**
+ * Concept Template - For generating concept images from design tokens
+ *
+ * Used when extracting a design dimension from an existing image and
+ * generating a pure abstract representation of that dimension.
+ */
+
+export const CONCEPT_TEMPLATE = `Generate a pure abstract concept image that extracts and amplifies the following design dimension from the attached source image:
+
+Dimension: {dimension_name}
+Axis: {axis}
+Description: {description}
+
+Visual direction:
+{generation_prompt}
+
+Study the attached source image carefully. Your task is to create an ABSTRACT concept image that:
+1. Distills the "{dimension_name}" quality from the source into a pure visual essence
+2. Amplifies and isolates this specific design dimension
+3. Is abstract, textural, or pattern-based - NOT a recreation of the source
+4. Could serve as a mood board or design reference for this quality
+5. Strongly communicates the aesthetic feeling without depicting recognizable objects
+
+The concept image should capture WHAT makes the source image embody "{dimension_name}" - its colors, textures, rhythms, and visual energy - in abstract form.
+`;
+
+/**
+ * Build concept generation prompt from a design dimension
+ */
+export interface ConceptPromptOptions {
+  dimensionName: string;
+  axis: string;
+  description: string;
+  generationPrompt: string;
+}
+
+export function buildConceptPrompt(options: ConceptPromptOptions): string {
+  const { dimensionName, axis, description, generationPrompt } = options;
+
+  return CONCEPT_TEMPLATE
+    .replace(/{dimension_name}/g, dimensionName)
+    .replace('{axis}', axis)
+    .replace('{description}', description)
+    .replace('{generation_prompt}', generationPrompt);
+}

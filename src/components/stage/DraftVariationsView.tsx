@@ -46,17 +46,13 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   // Check if THIS draft is generating images
   const isGeneratingImages = generatingImageDraftIds.has(draft.id);
   const updateImageNotes = useStore((s) => s.updateImageNotes);
-  // Polish workflow actions
+  // Variation editing actions
   const updateDraftVariationNotes = useStore((s) => s.updateDraftVariationNotes);
   const toggleDraftVariationTag = useStore((s) => s.toggleDraftVariationTag);
-  const polishDraftVariation = useStore((s) => s.polishDraftVariation);
-  const polishDraftVariations = useStore((s) => s.polishDraftVariations);
 
   const [regeneratingIds, setRegeneratingIds] = useState<Set<string>>(new Set());
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [revertedAnnotations, setRevertedAnnotations] = useState<Set<string>>(new Set());
-  const [polishingIds, setPolishingIds] = useState<Set<string>>(new Set());
-  const [isPolishingAll, setIsPolishingAll] = useState(false);
 
   // Selection mode state
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -126,35 +122,6 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const handleDelete = () => {
     deleteDraft(draft.id);
   };
-
-  // Polish single variation
-  const handlePolishVariation = async (variationId: string) => {
-    setPolishingIds((prev) => new Set(prev).add(variationId));
-    try {
-      await polishDraftVariation(draft.id, variationId);
-    } finally {
-      setPolishingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(variationId);
-        return next;
-      });
-    }
-  };
-
-  // Polish all variations
-  const handlePolishAll = async () => {
-    setIsPolishingAll(true);
-    try {
-      await polishDraftVariations(draft.id);
-    } finally {
-      setIsPolishingAll(false);
-    }
-  };
-
-  // Check if any variation has notes or emphasized tags
-  const hasAnnotations = draft.variations.some(
-    (v) => (v.userNotes && v.userNotes.trim()) || (v.emphasizedTags && v.emphasizedTags.length > 0)
-  );
 
   // Selection helpers
   const toggleVariationSelection = (variationId: string) => {
@@ -252,7 +219,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                 onClick={handleGenerate}
                 disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating}
               >
-                Generate Images
+                {isGeneratingImages ? 'Generating Images...' : 'Generate Images'}
               </Button>
             </>
           )}
@@ -329,10 +296,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
           <AnimatePresence>
             {draft.variations.map((variation, index) => {
               const isRegenerating = regeneratingIds.has(variation.id);
-              const isPolishing = polishingIds.has(variation.id);
               const isExpanded = expandedIds.has(variation.id);
-              const hasNotes = variation.userNotes && variation.userNotes.trim();
-              const hasEmphasizedTags = variation.emphasizedTags && variation.emphasizedTags.length > 0;
               const isSelected = selectedVariationIds.has(variation.id);
 
               return (
@@ -346,7 +310,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                     'border rounded-lg',
                     'bg-surface hover:bg-canvas-muted/30',
                     'transition-colors',
-                    (isRegenerating || isPolishing) && 'opacity-60',
+                    isRegenerating && 'opacity-60',
                     isSelectionMode && isSelected
                       ? 'border-brass bg-brass/5'
                       : 'border-border'
@@ -390,24 +354,6 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                     {/* Actions - hide in selection mode */}
                     {!isSelectionMode && (
                       <div className="flex items-center gap-1 shrink-0">
-                        {/* Polish button */}
-                        <button
-                          onClick={() => handlePolishVariation(variation.id)}
-                          disabled={isPolishing || isRegenerating || (!hasNotes && !hasEmphasizedTags)}
-                          className={clsx(
-                            'p-1.5 rounded-md transition-colors disabled:opacity-30',
-                            hasNotes || hasEmphasizedTags
-                              ? 'text-brass hover:text-brass hover:bg-brass/10'
-                              : 'text-ink-tertiary hover:text-ink hover:bg-canvas-muted'
-                          )}
-                          title={hasNotes || hasEmphasizedTags ? 'Polish with notes/tags' : 'Add notes or emphasize tags to enable polish'}
-                        >
-                          {isPolishing ? (
-                            <Loader2 size={14} className="animate-spin" />
-                          ) : (
-                            <Sparkles size={14} />
-                          )}
-                        </button>
                         <button
                           onClick={() => toggleExpand(variation.id)}
                           className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors"
@@ -417,7 +363,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
                         </button>
                         <button
                           onClick={() => handleRegenerate(variation.id)}
-                          disabled={isRegenerating || isPolishing}
+                          disabled={isRegenerating}
                           className="p-1.5 rounded-md text-ink-tertiary hover:text-ink hover:bg-canvas-muted transition-colors disabled:opacity-50"
                           title="Regenerate"
                         >
@@ -670,34 +616,23 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
             size="sm"
             leftIcon={draft.isGenerating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
             onClick={() => addMoreDraftVariations(draft.id, 2)}
-            disabled={draft.isGenerating || isGeneratingImages || isPolishingAll}
+            disabled={draft.isGenerating || isGeneratingImages}
           >
             Add More
           </Button>
           <span className="text-xs text-ink-tertiary">
-            {draft.variations.length} variation{draft.variations.length !== 1 ? 's' : ''} ready
+            {isGeneratingImages ? (
+              <span className="flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" />
+                Generating Images...
+              </span>
+            ) : (
+              `${draft.variations.length} variation${draft.variations.length !== 1 ? 's' : ''} ready`
+            )}
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Polish All button - only show when there are annotations */}
-          {hasAnnotations && (
-            <Button
-              variant="secondary"
-              size="sm"
-              leftIcon={
-                isPolishingAll ? (
-                  <Loader2 size={14} className="animate-spin" />
-                ) : (
-                  <Sparkles size={14} />
-                )
-              }
-              onClick={handlePolishAll}
-              disabled={isPolishingAll || isGeneratingImages || draft.isGenerating}
-            >
-              {isPolishingAll ? 'Polishing...' : 'Polish All'}
-            </Button>
-          )}
           <Button
             variant="brass"
             leftIcon={
@@ -708,9 +643,9 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
               )
             }
             onClick={handleGenerate}
-            disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating || isPolishingAll}
+            disabled={draft.variations.length === 0 || isGeneratingImages || draft.isGenerating}
           >
-            Generate Images
+            {isGeneratingImages ? 'Generating Images...' : 'Generate Images'}
           </Button>
         </div>
       </div>

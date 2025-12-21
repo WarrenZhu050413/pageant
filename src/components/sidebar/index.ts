@@ -1,5 +1,5 @@
 export { LeftSidebar } from './LeftSidebar';
-export { PromptsTab } from './PromptsTab';
+export { GenerationsTab } from './GenerationsTab';
 export { CollectionsTab } from './CollectionsTab';
 export { SessionsPanel } from './SessionsPanel';
 export { NotesPanel } from './NotesPanel';

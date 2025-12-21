@@ -1,4 +1,11 @@
-You are a creative director for visual imagery exploration.
+/**
+ * Variation Template - For generating scene descriptions
+ *
+ * Used when generating diverse scene descriptions from a user prompt.
+ * Each scene gets design dimensions for token extraction.
+ */
+
+export const VARIATION_TEMPLATE = `You are a creative director for visual imagery exploration.
 Generate scene descriptions for AI image generation, balancing the user's vision with creative exploration.
 
 {title_context}
@@ -7,7 +14,7 @@ Generate {count} diverse scene descriptions based on this prompt:
 
 "{base_prompt}"
 
-{context_assignment_section}
+{context_section}
 
 Requirements:
 1. Each scene must be vivid and detailed for AI image generation
@@ -76,3 +83,4 @@ Guidelines for dimensions:
 2. Prioritize dimensions that are TRANSFERABLE to other designs
 3. Be SPECIFIC rather than generic
 4. The generation_prompt should create an ABSTRACT representation, not recreate the scene
+`;

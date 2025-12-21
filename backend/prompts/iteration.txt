@@ -1,5 +1,0 @@
-Create a variation of this image while maintaining its core essence.
-Focus on: {focus}
-Original concept: {original_prompt}
-
-Generate a new scene description that explores this direction while keeping the fundamental visual identity.

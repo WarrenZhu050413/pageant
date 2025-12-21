@@ -1,31 +1,30 @@
 import { useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Check, FolderMinus, X, Sparkles } from 'lucide-react';
+import { Check, FolderMinus } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import type { ImageData } from '../../types';
 
-// Extended image data that tracks its parent prompt for navigation
+// Extended image data that tracks its parent generation for navigation
 interface DisplayImage extends ImageData {
-  parentPromptId?: string;
+  parentGenerationId?: string;
 }
 
 export function GridView() {
   // Select primitive values to avoid infinite re-renders
-  const prompts = useStore((s) => s.generations);
+  const generations = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const generationFilter = useStore((s) => s.generationFilter);
-  const setGenerationFilter = useStore((s) => s.setGenerationFilter);
   const lastSeenLibraryAt = useStore((s) => s.lastSeenLibraryAt);
 
   // Compute derived values with useMemo
-  const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentGenerationId) || null,
-    [prompts, currentGenerationId]
+  const currentGeneration = useMemo(
+    () => generations.find((g) => g.id === currentGenerationId) || null,
+    [generations, currentGenerationId]
   );
 
   const currentCollection = useMemo(
@@ -35,31 +34,31 @@ export function GridView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
-    for (const prompt of prompts) {
-      for (const image of prompt.images) {
+    const imageMap = new Map<string, typeof generations[0]['images'][0]>();
+    for (const generation of generations) {
+      for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
-      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
-  }, [prompts, currentCollection]);
+      .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
+  }, [generations, currentCollection]);
 
-  // Concept images - all images from prompts with is_concept: true, sorted newest first
+  // Concept images - all images from generations with is_concept: true, sorted newest first
   const conceptImages = useMemo((): DisplayImage[] => {
-    const conceptPrompts = prompts.filter((p) => p.is_concept);
-    const images = conceptPrompts.flatMap((prompt) =>
-      prompt.images.map((img) => ({
+    const conceptGenerations = generations.filter((g) => g.is_concept);
+    const images = conceptGenerations.flatMap((generation) =>
+      generation.images.map((img) => ({
         ...img,
-        parentPromptId: prompt.id,
+        parentGenerationId: generation.id,
       }))
     );
     // Sort by generated_at date, newest first
     return images.sort((a, b) =>
       new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime()
     );
-  }, [prompts]);
+  }, [generations]);
 
   const setViewMode = useStore((s) => s.setViewMode);
   const removeFromCurrentCollection = useStore((s) => s.removeFromCurrentCollection);
@@ -69,21 +68,21 @@ export function GridView() {
 
   // Determine what we're viewing
   const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
-  const isViewingCollection = !currentPrompt && !!currentCollection && !isViewingConcepts;
+  const isViewingCollection = !currentGeneration && !!currentCollection && !isViewingConcepts;
 
-  // Helper to check if a concept image is "new" (created since last library visit)
+  // Helper to check if an image is "new" (created since last library visit)
   const isNewImage = (image: DisplayImage): boolean => {
-    if (!isViewingConcepts || !lastSeenLibraryAt) return false;
+    if (!lastSeenLibraryAt) return false;
     return new Date(image.generated_at) > new Date(lastSeenLibraryAt);
   };
 
-  // Support prompt, collection, and concepts gallery viewing
+  // Support generation, collection, and concepts gallery viewing
   const displayImages: DisplayImage[] = isViewingConcepts
     ? conceptImages
-    : currentPrompt?.images ?? currentCollectionImages;
+    : currentGeneration?.images ?? currentCollectionImages;
   const displayTitle = isViewingConcepts
     ? 'Design Token Concepts'
-    : currentPrompt?.title ?? currentCollection?.name ?? 'Image';
+    : currentGeneration?.title ?? currentCollection?.name ?? 'Image';
 
   if (displayImages.length === 0) {
     return (
@@ -93,7 +92,7 @@ export function GridView() {
             ? 'No concept images yet'
             : isViewingCollection
               ? 'Empty collection'
-              : 'No prompt selected'}
+              : 'No generation selected'}
         </p>
       </div>
     );
@@ -103,40 +102,14 @@ export function GridView() {
     if (selectionMode !== 'none') {
       toggleSelection(image.id);
     } else {
-      // For all views (prompts, collections, concepts), just switch to single view
+      // For all views (generations, collections, concepts), just switch to single view
       setCurrentImageIndex(index);
       setViewMode('single');
     }
   };
 
-  const handleClearFilter = () => {
-    setGenerationFilter('all');
-  };
-
   return (
     <div className="h-full overflow-y-auto p-4">
-      {/* Concepts filter header */}
-      {isViewingConcepts && (
-        <div className="flex items-center justify-between mb-4 p-3 bg-brass-muted/30 rounded-lg border border-brass/20">
-          <div className="flex items-center gap-2">
-            <Sparkles size={16} className="text-brass" />
-            <span className="text-sm font-medium text-ink">
-              Design Token Concepts
-            </span>
-            <span className="text-xs text-ink-muted">
-              ({conceptImages.length} image{conceptImages.length !== 1 ? 's' : ''})
-            </span>
-          </div>
-          <button
-            onClick={handleClearFilter}
-            className="flex items-center gap-1 px-2 py-1 text-xs text-ink-muted hover:text-ink rounded hover:bg-surface transition-colors"
-          >
-            <X size={12} />
-            Clear filter
-          </button>
-        </div>
-      )}
-
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {displayImages.map((image, index) => {
           const isSelected = selectedIds.has(image.id);
@@ -204,7 +177,7 @@ export function GridView() {
                 </div>
               )}
 
-              {/* "New" badge for recently created concept images */}
+              {/* "New" badge for recently created images */}
               {isNewImage(image) && (
                 <div className="absolute top-2 right-2 px-1.5 py-0.5 rounded bg-brass/90 backdrop-blur-sm">
                   <span className="text-[0.5rem] font-bold text-white uppercase tracking-wide">

@@ -429,7 +429,7 @@ export function LibraryTab() {
               setCurrentGeneration(null);  // Clear to show flat gallery
               setCurrentCollection(null);
               setGenerationFilter('concepts');
-              setLeftTab('prompts');
+              setLeftTab('generations');
               setViewMode('grid');
             }}
             disabled={totalCount === 0}

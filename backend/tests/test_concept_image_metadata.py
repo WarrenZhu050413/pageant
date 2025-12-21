@@ -41,6 +41,7 @@ class TestCreateTokenWithConceptImage:
                     "prompts": [],
                     "creation_method": "ai-extraction",
                     "generate_concept": True,
+                    "concept_prompt": "Generate a pure abstract concept image that extracts and amplifies the following design dimension: Warm Lighting. Abstract warm golden lighting with soft gradients.",
                     "dimension": {
                         "axis": "lighting",
                         "name": "Warm Lighting",
@@ -175,7 +176,12 @@ class TestGenerateTokenConcept:
         with patch("server.gemini") as mock_gemini:
             mock_gemini.generate_concept_image = AsyncMock(return_value=mock_result)
 
-            response = client.post(f"/api/tokens/{token_id}/generate-concept")
+            response = client.post(
+                f"/api/tokens/{token_id}/generate-concept",
+                json={
+                    "prompt": "Generate a pure abstract concept image for Serene Calm. Abstract serene calm with soft flowing forms.",
+                },
+            )
 
             assert response.status_code == 200
             data = response.json()
@@ -260,7 +266,12 @@ class TestGenerateTokenConcept:
         with patch("server.gemini") as mock_gemini:
             mock_gemini.generate_concept_image = AsyncMock(return_value=mock_result)
 
-            response = client.post(f"/api/tokens/{token_id}/generate-concept")
+            response = client.post(
+                f"/api/tokens/{token_id}/generate-concept",
+                json={
+                    "prompt": "Generate a pure abstract concept image for Warm Colors. Abstract warm color palette.",
+                },
+            )
 
             assert response.status_code == 200
 
@@ -307,6 +318,7 @@ class TestConceptPromptMetadataStructure:
                     "prompts": [],
                     "creation_method": "ai-extraction",
                     "generate_concept": True,
+                    "concept_prompt": "Generate a pure abstract concept image for Dreamy Ethereal. Abstract dreamy ethereal atmosphere.",
                     "dimension": {
                         "axis": "aesthetic",
                         "name": "Dreamy Ethereal",
@@ -346,6 +358,8 @@ class TestConceptPromptMetadataStructure:
             assert "generated_at" in image
             assert "varied_prompt" in image
             assert "variation_title" in image
+            assert "variation_type" in image
+            assert image["variation_type"] == "concept"
             assert "design_dimensions" in image
 
             # Check design_dimensions structure

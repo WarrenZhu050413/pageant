@@ -6,7 +6,7 @@ import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
 
-export function PromptsTab() {
+export function GenerationsTab() {
   const prompts = useStore((s) => s.generations);
   const pendingGenerations = useStore((s) => s.pendingGenerations);
   const draftPrompts = useStore((s) => s.draftPrompts);

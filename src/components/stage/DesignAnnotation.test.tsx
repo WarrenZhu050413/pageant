@@ -47,6 +47,8 @@ describe('DesignAnnotation', () => {
     updateImageNotes: vi.fn().mockResolvedValue(undefined),
     createToken: vi.fn().mockResolvedValue(undefined),
     designTokens: [],
+    pendingConceptGenerations: new Set<string>(),
+    deleteToken: vi.fn(),
     ...overrides,
   })
 

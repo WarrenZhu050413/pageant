@@ -53,6 +53,7 @@ export function SelectionTray() {
   const [collectionDescription, setCollectionDescription] = useState('');
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [isCreatingNew, setIsCreatingNew] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Get display images (from prompt or collection)
   const displayImages = useMemo(
@@ -132,8 +133,6 @@ export function SelectionTray() {
     clearSelection();
     setSelectionMode('none');
   };
-
-  const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownload = async () => {
     setIsDownloading(true);

@@ -18,15 +18,18 @@ import os
 import re
 import uuid
 import zipfile
+import aiohttp
 from datetime import datetime
 from pathlib import Path
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, field_validator
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, Optional, TypeVar
 
 # Valid values for image generation parameters
 ImageSizeType = Literal["1K", "2K", "4K"]
@@ -39,15 +42,24 @@ ThinkingLevelType = Literal["low", "high"]
 # - 'import server' from backend directory (uses bare imports in tests)
 try:
     from backend.metadata_manager import MetadataManager
-    from backend.gemini_service import GeminiService
+    from backend.gemini_service import GeminiService, _detect_image_mime_type, _convert_heic_to_jpeg
     from backend import config
+    from backend.search.indexer import get_background_indexer
+    from backend.search.search_service import get_search_service
 except ImportError:
     from metadata_manager import MetadataManager
-    from gemini_service import GeminiService
+    from gemini_service import GeminiService, _detect_image_mime_type, _convert_heic_to_jpeg
     import config
+    from search.indexer import get_background_indexer
+    from search.search_service import get_search_service
+
+# Paths (defined early for use in lifespan)
+BASE_DIR = Path(__file__).parent.parent
+IMAGES_DIR = BASE_DIR / "generated_images"
+METADATA_PATH = IMAGES_DIR / "metadata.json"
 
 # Configure logging
-LOG_DIR = Path(__file__).parent.parent / "logs"
+LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
 
 logging.basicConfig(
@@ -60,7 +72,23 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gemini Pageant API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """App lifespan handler for startup/shutdown tasks."""
+    # Startup: start background indexer
+    logger.info("Starting background indexer...")
+    indexer = get_background_indexer(IMAGES_DIR)
+    await indexer.start()
+
+    yield
+
+    # Shutdown: stop background indexer
+    logger.info("Stopping background indexer...")
+    await indexer.stop()
+
+
+app = FastAPI(title="Gemini Pageant API", lifespan=lifespan)
 
 
 # CORS for local development
@@ -71,11 +99,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# Paths
-BASE_DIR = Path(__file__).parent.parent
-IMAGES_DIR = BASE_DIR / "generated_images"
-METADATA_PATH = IMAGES_DIR / "metadata.json"
 
 # Global metadata manager instance
 _metadata_manager = MetadataManager(METADATA_PATH, IMAGES_DIR)
@@ -90,45 +113,14 @@ ASPECT_RATIO_OPTIONS = ["1:1", "2:3", "3:2", "3:4", "4:3", "9:16", "16:9", "21:9
 SAFETY_LEVEL_OPTIONS = ["BLOCK_NONE", "BLOCK_ONLY_HIGH", "BLOCK_MEDIUM_AND_ABOVE", "BLOCK_LOW_AND_ABOVE"]
 
 
-# Request/Response models
-class GenerateRequest(BaseModel):
-    prompt: str
-    title: str = ""
-    count: int = 4  # Number of images to generate in parallel
-    input_image_id: str | None = None  # For single image-to-image (legacy)
-    context_image_ids: list[str] = []  # Multiple context images
-    collection_id: str | None = None  # Use a collection as context
-    session_id: str | None = None  # Session to associate with
-    # Image generation parameters (validated)
-    image_size: ImageSizeType | None = None
-    aspect_ratio: AspectRatioType | None = None
-    seed: int | None = None  # For reproducibility
-    safety_level: SafetyLevelType | None = None
-    # Nano Banana specific
-    thinking_level: ThinkingLevelType | None = None
-    temperature: float | None = None
-    google_search_grounding: bool | None = None
-
-    @field_validator("seed")
-    @classmethod
-    def validate_seed(cls, v: int | None) -> int | None:
-        if v is not None and v < 0:
-            raise ValueError("seed must be a non-negative integer")
-        return v
-
-    @field_validator("temperature")
-    @classmethod
-    def validate_temperature(cls, v: float | None) -> float | None:
-        if v is not None and (v < 0.0 or v > 2.0):
-            raise ValueError("temperature must be between 0.0 and 2.0")
-        return v
-
-
-# === NEW: Two-Phase Generation Models ===
+# Request/Response models for Two-Phase Generation
 class GeneratePromptsRequest(BaseModel):
-    """Request for generating prompt variations only (phase 1)."""
-    prompt: str
-    title: str | None = None  # Optional - will be auto-generated if not provided
+    """Request for generating prompt variations only (phase 1).
+
+    Frontend sends the complete prompt (including template text).
+    Backend passes it through to Gemini without modification.
+    """
+    prompt: str  # Complete prompt from frontend (includes template + user input)
     count: int = 4
     context_image_ids: list[str] = []
     # Image generation parameters (validated, for phase 2)
@@ -220,38 +212,6 @@ class GenerateFromPromptsRequest(BaseModel):
         return v
 
 
-# === Polish Prompts (Prompt Iteration Workflow) ===
-class VariationToPolish(BaseModel):
-    """A variation to be polished with user annotations."""
-    id: str
-    text: str
-    user_notes: str | None = None
-    mood: str | None = None
-    design: dict[str, list[str]] = {}
-    emphasized_tags: list[str] = []
-
-
-class PolishPromptsRequest(BaseModel):
-    """Request for polishing/refining prompt variations."""
-    base_prompt: str
-    variations: list[VariationToPolish]
-    context_image_ids: list[str] = []
-
-
-class PolishedVariationResponse(BaseModel):
-    """A single polished variation result."""
-    id: str
-    text: str
-    changes_made: str | None = None
-
-
-class PolishPromptsResponse(BaseModel):
-    """Response with polished variations."""
-    success: bool
-    polished_variations: list[PolishedVariationResponse] = []
-    error: str | None = None
-
-
 # === Design Dimension Analysis ===
 class DesignDimension(BaseModel):
     """Rich AI-analyzed design dimension metadata."""
@@ -262,19 +222,6 @@ class DesignDimension(BaseModel):
     generation_prompt: str # Prompt for generating pure concept image
     source: Literal["auto", "user"] = "auto"  # How it was created
     confirmed: bool = False  # User confirmed this suggestion
-
-
-class AnalyzeDimensionsRequest(BaseModel):
-    """Request for analyzing design dimensions of an image."""
-    image_id: str
-    count: int = 5  # Number of dimensions to suggest
-
-
-class AnalyzeDimensionsResponse(BaseModel):
-    """Response with suggested design dimensions."""
-    success: bool
-    dimensions: list[DesignDimension] = []
-    error: str | None = None
 
 
 class UpdateDimensionsRequest(BaseModel):
@@ -311,7 +258,10 @@ class BatchDeleteRequest(BaseModel):
 
 class BatchFavoriteRequest(BaseModel):
     image_ids: list[str]
-    favorite: bool
+
+
+class BatchDownloadRequest(BaseModel):
+    image_ids: list[str]
 
 
 # === Image Notes ===
@@ -361,8 +311,6 @@ class ReorderChaptersRequest(BaseModel):
 
 # === Settings ===
 class SettingsRequest(BaseModel):
-    variation_prompt: str
-    iteration_prompt: str | None = None  # Prompt for "More Like This"
     # Image generation defaults (validated)
     image_size: ImageSizeType | None = None
     aspect_ratio: AspectRatioType | None = None
@@ -437,7 +385,7 @@ def get_metadata_manager() -> MetadataManager:
 
 
 # === Prompt Variation System ===
-# Prompts are now loaded from config.PROMPTS_DIR via config.load_prompt()
+# Prompts are now constructed by frontend and sent as complete prompts to backend
 
 
 def _flatten_design(design: dict) -> list[str]:
@@ -549,6 +497,35 @@ def _format_liked_axes(liked_axes: dict | None) -> str | None:
     return f"User prefers in this image: {', '.join(all_tags)}"
 
 
+def _scene_to_variation(scene: dict) -> PromptVariation:
+    """Convert a scene dict from gemini service to PromptVariation.
+
+    Used by both SSE and non-SSE generate-prompts endpoints to share formatting logic.
+    Handles both dict (from SSE JSON) and Pydantic object (from direct call) inputs.
+    """
+    # Handle design dimensions - may be Pydantic objects or dicts
+    dims = scene.get("design_dimensions", [])
+    if dims and hasattr(dims[0], "model_dump"):
+        dims = [dim.model_dump() for dim in dims]
+
+    # Handle design - may be Pydantic object or dict
+    design = scene.get("design", {})
+    if hasattr(design, "model_dump"):
+        design = design.model_dump()
+
+    return PromptVariation(
+        id=f"var-{uuid.uuid4().hex[:8]}",
+        text=scene.get("description", ""),
+        title=scene.get("title", ""),
+        mood=scene.get("mood", ""),
+        type=scene.get("type", ""),
+        design=design,
+        design_dimensions=dims,
+        recommended_context_ids=scene.get("recommended_context_ids", []),
+        context_reasoning=scene.get("context_reasoning"),
+    )
+
+
 def _load_context_images(metadata: dict, image_ids: list[str]) -> list[tuple[bytes, str, str | None]]:
     """Load multiple context images with preference data for AI generation.
 
@@ -653,12 +630,13 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
 async def generate_prompt_variations_stream(
     prompt: str,
     count: int = 4,
-    title: str | None = None,
     context_image_ids: str | None = None,  # Comma-separated IDs
 ):
     """Stream prompt variation generation via Server-Sent Events.
 
-    Streams progress updates as chunks arrive, then sends the final parsed result.
+    Frontend sends the complete prompt (including template text).
+    Backend passes it through to Gemini without modification.
+
     Events:
     - {"type": "chunk", "text": "..."} - Partial JSON text
     - {"type": "complete", "variations": [...], ...} - Final parsed result
@@ -684,29 +662,19 @@ async def generate_prompt_variations_stream(
     async def event_generator():
         try:
             async for event in gemini.generate_prompt_variations_stream(
-                base_prompt=prompt,
+                prompt=prompt,
                 count=count,
                 context_image_pool=context_image_pool,
-                title=title,
             ):
                 if event["type"] == "chunk":
                     # Stream partial text
                     yield f"data: {json.dumps(event)}\n\n"
                 elif event["type"] == "complete":
-                    # Convert to response format
-                    variations = []
-                    for scene in event["scenes"][:count]:
-                        variations.append({
-                            "id": f"var-{uuid.uuid4().hex[:8]}",
-                            "text": scene["description"],
-                            "title": scene.get("title", ""),
-                            "mood": scene["mood"],
-                            "type": scene["type"],
-                            "design": scene.get("design", {}),
-                            "design_dimensions": scene.get("design_dimensions", []),
-                            "recommended_context_ids": scene.get("recommended_context_ids", []),
-                            "context_reasoning": scene.get("context_reasoning"),
-                        })
+                    # Convert to response format using shared helper
+                    variations = [
+                        _scene_to_variation(scene).model_dump()
+                        for scene in event["scenes"][:count]
+                    ]
 
                     # Convert annotation suggestions
                     annotation_suggestions = []
@@ -778,10 +746,9 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
         # Use structured output for guaranteed JSON response
         logger.info(f"Generating {count} prompt variations (structured output)...")
         generated_title, scene_variations, annotation_suggestions = await gemini.generate_prompt_variations(
-            base_prompt=req.prompt,
+            prompt=req.prompt,
             count=count,
             context_image_pool=context_image_pool,
-            title=req.title,  # Pass user-provided title as context (or None)
         )
         logger.info(f"Received title='{generated_title}', {len(scene_variations)} structured scene variations")
 
@@ -795,22 +762,11 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
                 if ctx_ids:
                     logger.info(f"    Reasoning: {reasoning[:80]}...")
 
-        # Convert SceneVariation objects to response model with per-variation context
-        variations = []
-        for scene in scene_variations[:count]:
-            # Convert design dimensions to list of dicts
-            dims = [dim.model_dump() for dim in scene.design_dimensions] if scene.design_dimensions else []
-            variations.append(PromptVariation(
-                id=f"var-{uuid.uuid4().hex[:8]}",
-                text=scene.description,
-                title=scene.title,
-                mood=scene.mood,
-                type=scene.type,
-                design=scene.design.model_dump() if scene.design else {},
-                design_dimensions=dims,
-                recommended_context_ids=scene.recommended_context_ids or [],
-                context_reasoning=scene.context_reasoning,
-            ))
+        # Convert SceneVariation objects to response model using shared helper
+        variations = [
+            _scene_to_variation(scene.model_dump())
+            for scene in scene_variations[:count]
+        ]
 
         # Convert annotation suggestions if present
         annotation_suggestion_responses = []
@@ -989,210 +945,17 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
     async with _metadata_manager.atomic() as fresh_metadata:
         fresh_metadata["prompts"].append(prompt_entry)
 
+    # Queue images for background indexing (semantic search)
+    indexer = get_background_indexer(IMAGES_DIR)
+    for img in images:
+        indexer.queue_for_indexing(
+            image_id=img["id"],
+            image_path=img["image_path"],
+            prompt_id=prompt_id,
+            prompt_text=img.get("varied_prompt", ""),
+        )
+
     logger.info(f"Generated {len(images)} images from prompts, prompt_id={prompt_id}")
-
-    return PromptResponse(
-        success=True,
-        prompt_id=prompt_id,
-        images=images,
-        errors=errors,
-    )
-
-
-@app.post("/api/polish-prompts", response_model=PolishPromptsResponse)
-async def polish_prompt_variations(req: PolishPromptsRequest):
-    """Polish/refine prompt variations with user feedback.
-
-    Takes variations with user notes and emphasized tags, and uses AI
-    to rewrite them into clean, detailed image generation prompts.
-    This is part of the prompt iteration workflow.
-    """
-    if not req.variations:
-        return PolishPromptsResponse(success=False, error="No variations provided")
-
-    logger.info(f"Polish prompts request: {len(req.variations)} variations, context_images={len(req.context_image_ids)}")
-
-    # Load context images if provided
-    metadata = load_metadata()
-    context_images = None
-    if req.context_image_ids:
-        context_images = _load_context_images(metadata, req.context_image_ids)
-        if context_images:
-            logger.info(f"Loaded {len(context_images)} context images for polish")
-
-    try:
-        # Convert request variations to dict format for gemini service
-        variations_to_polish = [
-            {
-                "id": v.id,
-                "text": v.text,
-                "user_notes": v.user_notes,
-                "mood": v.mood,
-                "design": v.design,
-                "emphasized_tags": v.emphasized_tags,
-            }
-            for v in req.variations
-        ]
-
-        # Call gemini service to polish
-        polished = await gemini.polish_prompts(
-            base_prompt=req.base_prompt,
-            variations=variations_to_polish,
-            context_images=context_images,
-        )
-
-        # Convert to response model
-        polished_variations = [
-            PolishedVariationResponse(
-                id=p.id,
-                text=p.text,
-                changes_made=p.changes_made,
-            )
-            for p in polished
-        ]
-
-        logger.info(f"Successfully polished {len(polished_variations)} variations")
-
-        return PolishPromptsResponse(
-            success=True,
-            polished_variations=polished_variations,
-        )
-
-    except Exception as e:
-        logger.error(f"Polish prompts failed: {e}")
-        return PolishPromptsResponse(
-            success=False,
-            error=str(e),
-        )
-
-
-# ============================================================
-# DIRECT GENERATION (Legacy/Bypass mode)
-# ============================================================
-
-@app.post("/api/generate", response_model=PromptResponse)
-async def generate_images(req: GenerateRequest):
-    """Generate images from a prompt using 2-step variation system (Direct mode).
-
-    Step 1: Generate varied prompt descriptions via text model
-    Step 2: Generate images from those prompts in parallel
-    """
-    count = min(max(1, req.count), 10)  # Clamp between 1 and 10
-    logger.info(f"Generate request: count={count}, title='{req.title}', prompt='{req.prompt[:50]}...'")
-
-    metadata = load_metadata()
-
-    # Resolve context image IDs from various sources
-    context_image_ids = list(req.context_image_ids)  # Make a copy
-
-    # Add legacy single input image if specified
-    if req.input_image_id and req.input_image_id not in context_image_ids:
-        context_image_ids.insert(0, req.input_image_id)
-
-    # Add images from collection if specified
-    if req.collection_id:
-        for coll in metadata.get("collections", []):
-            if coll["id"] == req.collection_id:
-                for img_id in coll.get("image_ids", []):
-                    if img_id not in context_image_ids:
-                        context_image_ids.append(img_id)
-                break
-
-    # Load context images (for image-to-image generation with interleaved notes)
-    context_images = None
-    if context_image_ids:
-        context_images = _load_context_images(metadata, context_image_ids)
-        if context_images:
-            logger.info(f"Using {len(context_images)} context image(s) with interleaved notes")
-
-    # === Step 1: Generate varied prompts via text model (structured output) ===
-    try:
-        logger.info(f"Generating {count} prompt variations (structured output)...")
-        _, scene_variations = await gemini.generate_prompt_variations(
-            base_prompt=req.prompt,
-            count=count,
-        )
-        # Convert SceneVariation objects to dict format for image generation
-        variations = [
-            {
-                "id": str(i + 1),
-                "type": scene.type,
-                "description": scene.description,
-                "mood": scene.mood,
-                "design": scene.design.model_dump() if scene.design else {},
-            }
-            for i, scene in enumerate(scene_variations)
-        ]
-        logger.info(f"Received {len(variations)} scene variations")
-
-        if not variations:
-            logger.error("No variations generated by structured output")
-            return PromptResponse(success=False, errors=["Failed to generate prompt variations"])
-    except Exception as e:
-        logger.error(f"Variation generation failed: {e}")
-        return PromptResponse(success=False, errors=[f"Failed to generate variations: {str(e)}"])
-
-    # === Step 2: Generate images from varied prompts in parallel ===
-    title = req.title or "Untitled"
-    tasks = [
-        _generate_single_image(
-            var["description"],
-            i,
-            title=title,
-            context_images=context_images,
-            image_size=req.image_size,
-            aspect_ratio=req.aspect_ratio,
-            seed=req.seed,
-            safety_level=req.safety_level,
-            thinking_level=req.thinking_level,
-            temperature=req.temperature,
-            google_search_grounding=req.google_search_grounding,
-        )
-        for i, var in enumerate(variations[:count])
-    ]
-    results = await asyncio.gather(*tasks)
-
-    # Process results and add variation metadata
-    images = []
-    errors = []
-    for i, result in enumerate(results):
-        if result.get("success"):
-            del result["success"]
-            # Add variation metadata (mood, type, design) if available
-            if i < len(variations):
-                result["mood"] = variations[i].get("mood", "")
-                result["variation_type"] = variations[i].get("type", "")
-                # Add design tags from variation
-                if "design" in variations[i]:
-                    result["design_tags"] = _flatten_design(variations[i]["design"])
-                    result["annotations"] = variations[i]["design"]
-            images.append(result)
-        else:
-            errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
-
-    if not images:
-        logger.error(f"Generation failed: {errors}")
-        return PromptResponse(success=False, errors=errors)
-
-    # Create prompt entry
-    prompt_id = f"prompt-{uuid.uuid4().hex[:8]}"
-    prompt_entry = {
-        "id": prompt_id,
-        "prompt": req.prompt,
-        "title": req.title or "Untitled",
-        "input_image_id": req.input_image_id,  # Legacy single image
-        "context_image_ids": context_image_ids,  # All context images used
-        "collection_id": req.collection_id,  # Collection used as context
-        "session_id": req.session_id,  # Session this prompt belongs to
-        "created_at": datetime.now().isoformat(),
-        "images": images,
-    }
-
-    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
-    async with _metadata_manager.atomic() as fresh_metadata:
-        fresh_metadata["prompts"].append(prompt_entry)
-
-    logger.info(f"Generated {len(images)} images, prompt_id={prompt_id}" + (f", errors={len(errors)}" if errors else ""))
 
     return PromptResponse(
         success=True,
@@ -1396,24 +1159,45 @@ async def upload_images(
     prompt_id = f"upload-{uuid.uuid4().hex[:8]}"
     images = []
 
+    # HEIC may have non-standard content types from browsers
+    ALLOWED_IMAGE_TYPES = {"image/", "application/octet-stream"}
+    HEIC_EXTENSIONS = {".heic", ".heif"}
+
     for file in files:
-        # Validate file type
-        if not file.content_type or not file.content_type.startswith("image/"):
+        # Validate file type - allow HEIC even with generic content-type
+        filename_ext = Path(file.filename or "").suffix.lower()
+        content_type = file.content_type or ""
+        is_image = content_type.startswith("image/")
+        is_heic_file = filename_ext in HEIC_EXTENSIONS
+        is_generic_binary = content_type == "application/octet-stream"
+
+        if not (is_image or (is_heic_file and is_generic_binary)):
             continue
 
-        # Generate unique filename
-        ext = Path(file.filename or "image.png").suffix or ".png"
+        # Read file content
+        content = await file.read()
+
+        # Detect actual MIME type from file bytes
+        detected_mime_type = _detect_image_mime_type(content)
+
+        # Convert HEIC/HEIF to JPEG for browser compatibility
+        # Browsers don't support HEIC natively
+        if detected_mime_type in ("image/heic", "image/heif", "image/avif"):
+            content, detected_mime_type = _convert_heic_to_jpeg(content)
+            ext = ".jpg"
+        else:
+            ext = Path(file.filename or "image.png").suffix or ".png"
+
+        # Generate unique filename and save
         image_id = f"img-{uuid.uuid4().hex[:8]}"
         filename = f"{image_id}{ext}"
-
-        # Save file
-        content = await file.read()
         image_path = IMAGES_DIR / filename
         image_path.write_bytes(content)
 
         images.append({
             "id": image_id,
             "image_path": filename,
+            "mime_type": detected_mime_type,
             "created_at": datetime.now().isoformat(),
         })
 
@@ -1440,6 +1224,63 @@ async def upload_images(
         "prompt_id": prompt_id,
         "images": images,
     }
+
+
+class AnalyzeRequest(BaseModel):
+    url: str
+
+
+class ImportUrlRequest(BaseModel):
+    url: str
+    tags: list[str] = []
+    pageUrl: str | None = None  # Source page where image was found
+
+
+@app.post("/api/import-url")
+async def import_image_from_url(req: ImportUrlRequest):
+    """Import an image from a URL (used by extension and other clients)."""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(req.url) as resp:
+                if resp.status != 200:
+                    raise HTTPException(status_code=400, detail="Failed to fetch image")
+                image_bytes = await resp.read()
+                mime_type = resp.headers.get("Content-Type", "image/jpeg")
+
+        # Generate filename
+        ext = ".png" if "png" in mime_type else ".jpg"
+        image_id = f"scout-{uuid.uuid4().hex[:8]}"
+        filename = f"{image_id}{ext}"
+        image_path = IMAGES_DIR / filename
+        image_path.write_bytes(image_bytes)
+
+        # Save Metadata (Create a prompt entry for it)
+        prompt_entry = {
+            "id": f"prompt-{image_id}",
+            "title": "Saved from Scout",
+            "prompt": f"Imported from {req.pageUrl or 'web'}",
+            "created_at": datetime.now().isoformat(),
+            "images": [{
+                "id": image_id,
+                "image_path": filename,
+                "mime_type": mime_type,
+                "created_at": datetime.now().isoformat(),
+                "tags": req.tags,
+                "source_url": req.url,
+                "page_url": req.pageUrl
+            }]
+        }
+
+        async with _metadata_manager.atomic() as fresh_metadata:
+            fresh_metadata["prompts"].append(prompt_entry)
+
+        logger.info(f"Imported image from URL: {image_id}")
+        return {"success": True, "id": image_id}
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
+    except Exception as e:
+        logger.error(f"Import from URL failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/favorites")
@@ -1505,12 +1346,6 @@ async def list_images():
 # Design Tokens
 # ============================================================
 
-class SuggestDimensionsRequest(BaseModel):
-    """Request for suggesting design dimensions from multiple images."""
-    image_ids: list[str]
-    count: int = 5
-
-
 class DesignDimensionData(BaseModel):
     """A design dimension for token creation."""
     axis: str
@@ -1532,6 +1367,7 @@ class CreateTokenRequest(BaseModel):
     # For AI extraction only
     dimension: DesignDimensionData | None = None
     generate_concept: bool = False
+    concept_prompt: str | None = None  # Frontend constructs the prompt
 
     # Categorization
     category: str | None = None
@@ -1613,10 +1449,10 @@ async def create_token(req: CreateTokenRequest):
         if not req.tags:
             token["tags"] = req.dimension.tags
 
-    # Generate concept image if requested
-    if req.generate_concept and req.dimension:
+    # Generate concept image if requested (frontend provides the prompt)
+    if req.generate_concept and req.concept_prompt:
         try:
-            dimension_dict = req.dimension.model_dump()
+            dimension_dict = req.dimension.model_dump() if req.dimension else {}
 
             # Get source image to reference during concept generation
             source_image_bytes = None
@@ -1635,7 +1471,7 @@ async def create_token(req: CreateTokenRequest):
                             source_mime_type = "image/jpeg"
 
             result = await gemini.generate_concept_image(
-                dimension=dimension_dict,
+                prompt=req.concept_prompt,
                 aspect_ratio="1:1",
                 source_image_bytes=source_image_bytes,
                 source_image_mime_type=source_mime_type,
@@ -1668,6 +1504,7 @@ async def create_token(req: CreateTokenRequest):
                             "generated_at": now,
                             "varied_prompt": dimension_dict.get("generation_prompt", ""),
                             "variation_title": dimension_dict.get("name", ""),
+                            "variation_type": "concept",
                             "design_dimensions": {
                                 dimension_dict.get("axis", "concept"): dimension_dict
                             },
@@ -1741,13 +1578,20 @@ async def use_token(token_id: str):
     raise HTTPException(status_code=404, detail="Token not found")
 
 
+class GenerateConceptRequest(BaseModel):
+    prompt: str
+    aspect_ratio: str = "1:1"
+
+
 @app.post("/api/tokens/{token_id}/generate-concept")
-async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
+async def generate_token_concept(token_id: str, request: GenerateConceptRequest):
     """Generate a concept image for an existing token.
+
+    Frontend constructs the prompt using templates and dimension data.
 
     Uses a two-phase approach to avoid race conditions when multiple
     concept images are generated concurrently:
-    1. Read phase: Load metadata (no lock) to get generation parameters
+    1. Read phase: Load metadata (no lock) to get token data
     2. Generate phase: Call Gemini API (slow, no lock held)
     3. Write phase: Use context manager with file lock to atomically update metadata
     """
@@ -1792,8 +1636,8 @@ async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
     # Phase 2: Generate image (slow operation, no lock held)
     try:
         result = await gemini.generate_concept_image(
-            dimension=dimension_dict,
-            aspect_ratio=aspect_ratio,
+            prompt=request.prompt,
+            aspect_ratio=request.aspect_ratio,
             source_image_bytes=source_image_bytes,
             source_image_mime_type=source_mime_type,
         )
@@ -1836,6 +1680,7 @@ async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
                             "generated_at": now,
                             "varied_prompt": dimension_dict.get("generation_prompt", ""),
                             "variation_title": dimension_dict.get("name", ""),
+                            "variation_type": "concept",
                             "design_dimensions": {
                                 dimension_dict.get("axis", "concept"): dimension_dict
                             },
@@ -1859,40 +1704,6 @@ async def generate_token_concept(token_id: str, aspect_ratio: str = "1:1"):
         "concept_image_path": concept_filename,
         "concept_image_id": f"concept-{token_id}",
     }
-
-
-@app.post("/api/extract/suggest-dimensions")
-async def suggest_dimensions(req: SuggestDimensionsRequest):
-    """Suggest design dimensions common across multiple images.
-
-    Uses Flash model for speed. Returns dimensions suitable for
-    creating design tokens.
-    """
-    if not req.image_ids:
-        return {"success": False, "error": "No image IDs provided", "dimensions": []}
-
-    metadata = load_metadata()
-
-    # Load images
-    images = []
-    for image_id in req.image_ids:
-        img_data, img_path = _find_image_data(metadata, image_id)
-        if img_data and img_path and img_path.exists():
-            mime_type = img_data.get("mime_type", "image/png")
-            images.append((img_path.read_bytes(), mime_type))
-
-    if not images:
-        return {"success": False, "error": "No valid images found", "dimensions": []}
-
-    try:
-        dimensions = await gemini.suggest_dimensions_multi(
-            images=images,
-            count=req.count,
-        )
-        return {"success": True, "dimensions": dimensions}
-    except Exception as e:
-        logger.error(f"Dimension suggestion failed: {e}")
-        return {"success": False, "error": str(e), "dimensions": []}
 
 
 # ============================================================
@@ -2076,147 +1887,50 @@ async def export_taste_with_images():
     )
 
 
-# ============================================================
-# FEATURE 3: Iteration Workflow (Generate More Like This)
-# ============================================================
-
-@app.post("/api/iterate/{image_id}")
-async def generate_more_like_this(image_id: str, count: int = 4):
-    """Generate variations of a specific image."""
+@app.post("/api/batch/download")
+async def batch_download_images(req: BatchDownloadRequest):
+    """Download multiple images as a ZIP file."""
     metadata = load_metadata()
 
-    # Find the source image and its prompt
-    source_img = None
-    source_prompt = None
+    # Build map of all images
+    image_map: dict[str, dict] = {}
     for prompt in metadata.get("prompts", []):
         for img in prompt.get("images", []):
-            if img["id"] == image_id:
-                source_img = img
-                source_prompt = prompt
-                break
-        if source_img:
-            break
+            image_map[img["id"]] = img
 
-    if not source_img:
-        raise HTTPException(status_code=404, detail="Image not found")
+    # Find requested images
+    found_images = []
+    for img_id in req.image_ids:
+        if img_id in image_map:
+            found_images.append(image_map[img_id])
 
-    # Load the source image with its notes for interleaved context
-    img_path = IMAGES_DIR / source_img["image_path"]
-    if not img_path.exists():
-        raise HTTPException(status_code=404, detail="Image file not found")
+    if not found_images:
+        raise HTTPException(status_code=404, detail="No images found")
 
-    # Only send annotation to API (notes are user workspace only)
-    # Support both old "caption" field and new "annotation" field
-    annotation = source_img.get("annotation") or source_img.get("caption", "") or ""
-    context_desc = annotation.strip() if annotation else None
+    # Create ZIP
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for img in found_images:
+            img_path = IMAGES_DIR / img["image_path"]
+            if img_path.exists():
+                # Use original filename or generate one
+                filename = img["image_path"]
+                zf.write(img_path, filename)
 
-    context_images = [(
-        img_path.read_bytes(),
-        source_img.get("mime_type", "image/png"),
-        context_desc,
-    )]
+    zip_buffer.seek(0)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
 
-    # === Step 1: Generate varied prompts via text model (structured output) ===
-    base_variation_prompt = f"Create a variation of this image while maintaining its core essence. {source_prompt['prompt']}"
-    logger.info(f"Generating {count} variations of {image_id}")
-
-    try:
-        _, scene_variations = await gemini.generate_prompt_variations(
-            base_prompt=base_variation_prompt,
-            count=count,
-        )
-        # Convert SceneVariation objects to dict format for image generation
-        variations = [
-            {
-                "id": str(i + 1),
-                "type": scene.type,
-                "description": scene.description,
-                "mood": scene.mood,
-                "design": scene.design.model_dump() if scene.design else {},
-            }
-            for i, scene in enumerate(scene_variations)
-        ]
-        logger.info(f"Received {len(variations)} variation prompts for iteration")
-
-        if not variations:
-            return {"success": False, "errors": ["Failed to generate variation prompts"]}
-    except Exception as e:
-        logger.error(f"Variation generation failed for iteration: {e}")
-        return {"success": False, "errors": [f"Failed to generate variations: {str(e)}"]}
-
-    # Load default image generation params from settings
-    settings = metadata.get("settings", {})
-
-    # === Step 2: Generate images from varied prompts in parallel ===
-    iteration_title = f"Variations of {source_prompt['title']}"
-    tasks = [
-        _generate_single_image(
-            var["description"],
-            i,
-            title=iteration_title,
-            context_images=context_images,
-            image_size=settings.get("image_size"),
-            aspect_ratio=settings.get("aspect_ratio"),
-            seed=settings.get("seed"),
-            safety_level=settings.get("safety_level"),
-            thinking_level=settings.get("thinking_level"),
-            temperature=settings.get("temperature"),
-            google_search_grounding=settings.get("google_search_grounding"),
-        )
-        for i, var in enumerate(variations[:count])
-    ]
-    results = await asyncio.gather(*tasks)
-
-    # Process results and add variation metadata
-    images = []
-    errors = []
-    for i, result in enumerate(results):
-        if result.get("success"):
-            del result["success"]
-            # Add variation metadata (mood, type, design) if available
-            if i < len(variations):
-                result["mood"] = variations[i].get("mood", "")
-                result["variation_type"] = variations[i].get("type", "")
-                # Add design tags from variation
-                if "design" in variations[i]:
-                    result["design_tags"] = _flatten_design(variations[i]["design"])
-                    result["annotations"] = variations[i]["design"]
-            images.append(result)
-        else:
-            errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
-
-    if not images:
-        logger.error(f"Iteration failed: {errors}")
-        return {"success": False, "errors": errors}
-
-    # Create new prompt entry for iterations
-    prompt_id = f"prompt-{uuid.uuid4().hex[:8]}"
-    prompt_entry = {
-        "id": prompt_id,
-        "prompt": base_variation_prompt,  # Use base prompt, not system prompt
-        "title": f"Variations of {source_prompt['title']}",
-        "input_image_id": image_id,
-        "parent_prompt_id": source_prompt["id"],
-        "created_at": datetime.now().isoformat(),
-        "images": images,
-    }
-
-    # Atomically append to fresh metadata (prevents race condition with concurrent requests)
-    async with _metadata_manager.atomic() as fresh_metadata:
-        fresh_metadata["prompts"].append(prompt_entry)
-
-    logger.info(f"Generated {len(images)} variations, prompt_id={prompt_id}")
-
-    return {
-        "success": True,
-        "prompt_id": prompt_id,
-        "images": images,
-        "errors": errors,
-    }
+    return Response(
+        content=zip_buffer.getvalue(),
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="pageant-images-{timestamp}.zip"'
+        }
+    )
 
 
 # ============================================================
-# FEATURE 4: Batch Operations
+# FEATURE 3: Batch Operations
 # ============================================================
 
 @app.post("/api/batch/delete")
@@ -2827,57 +2541,6 @@ async def toggle_dimension_like(image_id: str, req: LikeDimensionRequest):
     raise HTTPException(status_code=404, detail="Image not found")
 
 
-# === Design Dimension Analysis ===
-
-@app.post("/api/analyze-dimensions", response_model=AnalyzeDimensionsResponse)
-async def analyze_dimensions(req: AnalyzeDimensionsRequest):
-    """Analyze an image and suggest design dimensions.
-
-    Uses fast text model (gemini-3-flash-preview) to analyze the image
-    and suggest distinctive design dimensions that could be used as
-    generation context or for concept image creation.
-    """
-    # Find the image and load its bytes
-    metadata = load_metadata()
-    image_bytes = None
-    image_path = None
-
-    for prompt in metadata.get("prompts", []):
-        for img in prompt.get("images", []):
-            if img["id"] == req.image_id:
-                image_path = IMAGES_DIR / img["image_path"]
-                break
-        if image_path:
-            break
-
-    if not image_path or not image_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    image_bytes = image_path.read_bytes()
-
-    try:
-        dimensions_raw = await gemini.analyze_dimensions(image_bytes, count=req.count)
-
-        # Convert to DesignDimension models with default source/confirmed
-        dimensions = [
-            DesignDimension(
-                axis=d.get("axis", ""),
-                name=d.get("name", ""),
-                description=d.get("description", ""),
-                tags=d.get("tags", []),
-                generation_prompt=d.get("generation_prompt", ""),
-                source="auto",
-                confirmed=False,
-            )
-            for d in dimensions_raw
-        ]
-
-        return AnalyzeDimensionsResponse(success=True, dimensions=dimensions)
-    except Exception as e:
-        logger.error(f"Dimension analysis failed: {e}")
-        return AnalyzeDimensionsResponse(success=False, error=str(e))
-
-
 @app.patch("/api/images/{image_id}/dimensions")
 async def update_dimensions(image_id: str, req: UpdateDimensionsRequest):
     """Update design dimensions for an image.
@@ -3135,18 +2798,10 @@ async def remove_prompts_from_session(session_id: str, prompt_ids: list[str]):
 
 @app.get("/api/settings")
 async def get_settings():
-    """Get app settings including variation/iteration prompts and image generation defaults."""
+    """Get app settings including image generation defaults."""
     metadata = load_metadata()
     settings = metadata.get("settings", {})
     return {
-        "variation_prompt": settings.get(
-            "variation_prompt",
-            config.load_variation_prompt()
-        ),
-        "iteration_prompt": settings.get(
-            "iteration_prompt",
-            config.load_iteration_prompt()
-        ),
         "text_model": config.DEFAULT_TEXT_MODEL,
         "image_model": config.DEFAULT_IMAGE_MODEL,
         # Image generation defaults
@@ -3167,9 +2822,6 @@ async def update_settings(req: SettingsRequest):
     metadata = load_metadata()
     if "settings" not in metadata:
         metadata["settings"] = {}
-    metadata["settings"]["variation_prompt"] = req.variation_prompt
-    if req.iteration_prompt is not None:
-        metadata["settings"]["iteration_prompt"] = req.iteration_prompt
     # Image generation defaults
     if req.image_size is not None:
         metadata["settings"]["image_size"] = req.image_size
@@ -3191,13 +2843,181 @@ async def update_settings(req: SettingsRequest):
     return {"success": True}
 
 
-@app.get("/api/settings/defaults")
-async def get_default_settings():
-    """Get the default system prompts from the prompt files."""
-    return {
-        "variation_prompt": config.load_variation_prompt(),
-        "iteration_prompt": config.load_iteration_prompt(),
-    }
+# =============================================================================
+# Search API Endpoints
+# =============================================================================
+
+
+class SearchRequest(BaseModel):
+    """Request for semantic image search."""
+    query: str
+    limit: int = 50
+    mode: Literal["text", "semantic"] = "semantic"
+
+
+class SearchResult(BaseModel):
+    """A single search result."""
+    id: str
+    image_path: str
+    prompt_id: str
+    score: float  # 0-1 similarity score
+
+
+class SearchResponse(BaseModel):
+    """Response from search endpoints."""
+    success: bool
+    results: list[SearchResult] = []
+    error: Optional[str] = None
+
+
+@app.post("/api/search", response_model=SearchResponse)
+async def search_images(req: SearchRequest):
+    """Search images by text query using semantic embeddings."""
+    if not req.query.strip():
+        return SearchResponse(success=True, results=[])
+
+    try:
+        search_service = get_search_service(IMAGES_DIR)
+        results = search_service.search_by_text(req.query, limit=req.limit)
+
+        return SearchResponse(
+            success=True,
+            results=[
+                SearchResult(
+                    id=r.id,
+                    image_path=r.image_path,
+                    prompt_id=r.prompt_id,
+                    score=r.score,
+                )
+                for r in results
+            ],
+        )
+    except Exception as e:
+        logger.error(f"Search failed: {e}")
+        return SearchResponse(success=False, error=str(e))
+
+
+@app.get("/api/search/similar/{image_id}", response_model=SearchResponse)
+async def find_similar_images(image_id: str, limit: int = 20):
+    """Find images similar to a given image (image-to-image search)."""
+    try:
+        metadata = load_metadata()
+        img_data, img_path = _find_image_by_id(metadata, image_id)
+
+        if not img_data or not img_path:
+            return SearchResponse(success=False, error="Image not found")
+
+        search_service = get_search_service(IMAGES_DIR)
+        results = search_service.search_by_image(
+            image_id=image_id,
+            image_path=img_data.get("image_path", ""),
+            limit=limit,
+        )
+
+        return SearchResponse(
+            success=True,
+            results=[
+                SearchResult(
+                    id=r.id,
+                    image_path=r.image_path,
+                    prompt_id=r.prompt_id,
+                    score=r.score,
+                )
+                for r in results
+            ],
+        )
+    except Exception as e:
+        logger.error(f"Similar search failed: {e}")
+        return SearchResponse(success=False, error=str(e))
+
+
+class IndexRequest(BaseModel):
+    """Request to trigger indexing."""
+    image_ids: Optional[list[str]] = None  # If None, index all missing
+
+
+@app.post("/api/search/index")
+async def trigger_indexing(req: IndexRequest):
+    """Trigger indexing for specific images or all missing images."""
+    try:
+        metadata = load_metadata()
+        search_service = get_search_service(IMAGES_DIR)
+        indexed_ids = search_service.get_indexed_ids()
+
+        images_to_index = []
+
+        if req.image_ids:
+            # Index specific images
+            for img_id in req.image_ids:
+                img_data, img_path = _find_image_by_id(metadata, img_id)
+                if img_data and img_path:
+                    # Find the prompt this image belongs to
+                    for prompt in metadata.get("prompts", []):
+                        for img in prompt.get("images", []):
+                            if img.get("id") == img_id:
+                                images_to_index.append({
+                                    "id": img_id,
+                                    "image_path": img.get("image_path", ""),
+                                    "prompt_id": prompt.get("id", ""),
+                                    "prompt_text": img.get("varied_prompt", ""),
+                                })
+                                break
+        else:
+            # Index all missing images
+            for prompt in metadata.get("prompts", []):
+                for img in prompt.get("images", []):
+                    img_id = img.get("id")
+                    if img_id and img_id not in indexed_ids:
+                        images_to_index.append({
+                            "id": img_id,
+                            "image_path": img.get("image_path", ""),
+                            "prompt_id": prompt.get("id", ""),
+                            "prompt_text": img.get("varied_prompt", ""),
+                        })
+
+        if images_to_index:
+            indexer = get_background_indexer(IMAGES_DIR)
+            count = indexer.queue_multiple(images_to_index)
+            logger.info(f"Queued {count} images for indexing")
+            return {"success": True, "queued": count}
+
+        return {"success": True, "queued": 0, "message": "No images to index"}
+
+    except Exception as e:
+        logger.error(f"Index trigger failed: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@app.get("/api/search/indexed")
+async def get_indexed_image_ids():
+    """Get all indexed image IDs for frontend status indicator."""
+    try:
+        search_service = get_search_service(IMAGES_DIR)
+        indexed_ids = list(search_service.get_indexed_ids())
+        return {"success": True, "indexed_ids": indexed_ids}
+    except Exception as e:
+        logger.error(f"Failed to get indexed IDs: {e}")
+        return {"success": False, "indexed_ids": [], "error": str(e)}
+
+
+@app.get("/api/search/stats")
+async def get_search_stats():
+    """Get search index statistics."""
+    try:
+        search_service = get_search_service(IMAGES_DIR)
+        stats = search_service.get_stats()
+        indexer = get_background_indexer(IMAGES_DIR)
+
+        return {
+            "success": True,
+            "indexed_count": stats["indexed_count"],
+            "embedding_dim": stats["embedding_dim"],
+            "pending_count": indexer.pending_count,
+            "indexer_running": indexer.is_running,
+        }
+    except Exception as e:
+        logger.error(f"Failed to get stats: {e}")
+        return {"success": False, "error": str(e)}
 
 
 # Serve static files

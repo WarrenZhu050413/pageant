@@ -14,14 +14,13 @@ import {
   ChevronUp,
   Images,
   Check,
-  Sparkles,
   Maximize2,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { IconButton, Dialog, Button, Input, Textarea } from '../ui';
 import { DesignAnnotation } from './DesignAnnotation';
-import { ExtractionDialog } from './ExtractionDialog';
 import type { ImageData } from '../../types';
 
 export function SingleView() {
@@ -43,8 +42,8 @@ export function SingleView() {
   const contextImageIds = useStore((s) => s.contextImageIds);
   const createCollection = useStore((s) => s.createCollection);
   const addImagesToCollection = useStore((s) => s.addImagesToCollection);
-  const openExtractionDialog = useStore((s) => s.openExtractionDialog);
   const generationFilter = useStore((s) => s.generationFilter);
+  const findSimilar = useStore((s) => s.findSimilar);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
@@ -480,19 +479,6 @@ export function SingleView() {
                 <div className="flex gap-2">
                   <IconButton
                     variant="default"
-                    tooltip="Extract token"
-                    shortcut="E"
-                    tooltipAlign="left"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      openExtractionDialog([currentImage.id]);
-                    }}
-                    className="bg-surface/90 backdrop-blur-sm"
-                  >
-                    <Sparkles size={18} />
-                  </IconButton>
-                  <IconButton
-                    variant="default"
                     tooltip="Add to context"
                     shortcut="A"
                     onClick={(e) => {
@@ -528,6 +514,18 @@ export function SingleView() {
                     className="bg-surface/90 backdrop-blur-sm"
                   >
                     <Copy size={18} />
+                  </IconButton>
+                  <IconButton
+                    variant="default"
+                    tooltip="Find similar"
+                    shortcut="S"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      findSimilar(currentImage.id);
+                    }}
+                    className="bg-surface/90 backdrop-blur-sm"
+                  >
+                    <Sparkles size={18} />
                   </IconButton>
                   <a
                     href={getImageUrl(currentImage.image_path)}
@@ -824,9 +822,6 @@ export function SingleView() {
         </motion.div>
       )}
     </AnimatePresence>
-
-    {/* Shared Token Extraction dialog */}
-    <ExtractionDialog />
     </>
   );
 }

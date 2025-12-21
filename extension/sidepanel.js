@@ -6,6 +6,7 @@ const PAGEANT_API = "http://localhost:8765";
 const statusEl = document.getElementById("status");
 const mainEl = document.getElementById("main");
 const emptyStateEl = document.getElementById("empty-state");
+const captureBtn = document.getElementById("capture-btn");
 
 // State
 let isConnected = false;
@@ -43,6 +44,19 @@ function setConnectionStatus(connected) {
 // Initialize
 checkConnection();
 setInterval(checkConnection, 5000);
+
+// Capture button click handler
+captureBtn.addEventListener("click", async () => {
+  // Get current active tab
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab) return;
+
+  // Send message to background to start capture
+  chrome.runtime.sendMessage({
+    type: "START_CAPTURE",
+    tabId: tab.id
+  });
+});
 
 // Listen for messages from background script
 chrome.runtime.onMessage.addListener((message) => {
@@ -88,6 +102,14 @@ window.addImageCard = function addImageCard(payload) {
         From ${escapeHtml(sourceDomain)}
       </div>
       <div class="actions">
+        ${payload.saved ? `
+        <button class="btn btn-success" disabled>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20,6 9,17 4,12"/>
+          </svg>
+          Saved
+        </button>
+        ` : `
         <button class="btn btn-primary" id="save-btn-${cardId}" onclick="saveImage(${cardId})">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
@@ -96,6 +118,7 @@ window.addImageCard = function addImageCard(payload) {
           </svg>
           Save to Library
         </button>
+        `}
         <button class="btn btn-secondary" onclick="dismissCard(${cardId})" title="Dismiss">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"/>
@@ -156,7 +179,7 @@ window.saveImage = async function(cardId) {
   btn.innerHTML = '<span class="spinner"></span> Saving...';
 
   try {
-    const res = await fetch(`${PAGEANT_API}/api/extension/save`, {
+    const res = await fetch(`${PAGEANT_API}/api/import-url`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

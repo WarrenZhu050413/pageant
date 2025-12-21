@@ -160,18 +160,42 @@
       if (video && isSaveableMedia(video)) return video;
     }
 
-    // Third: check siblings when target is a button/link overlay
-    // Sites like cosmos.so use transparent buttons positioned over images
-    if (target && (target.tagName === 'BUTTON' || target.tagName === 'A')) {
-      let parent = target.parentElement;
-      for (let i = 0; i < 3 && parent; i++) {
-        const img = parent.querySelector('img');
-        if (img && isSaveableMedia(img)) return img;
+    // Third: check siblings when target is an overlay element
+    // Sites like cosmos.so use buttons, Pinterest uses DIV overlays
+    // Check parent's descendants for media when target isn't media itself
+    if (target) {
+      const targetTag = target.tagName;
+      const isLikelyOverlay = targetTag === 'BUTTON' || targetTag === 'A' || targetTag === 'DIV' || targetTag === 'SPAN';
 
-        const video = parent.querySelector('video');
-        if (video && isSaveableMedia(video)) return video;
+      if (isLikelyOverlay) {
+        let parent = target.parentElement;
+        for (let i = 0; i < 4 && parent; i++) {
+          // Find img/video in parent that is large enough and not the target itself
+          const img = parent.querySelector('img');
+          if (img && img !== target && isSaveableMedia(img)) {
+            // Verify the target overlaps with the image (is actually an overlay)
+            const targetRect = target.getBoundingClientRect();
+            const imgRect = img.getBoundingClientRect();
+            const overlaps = !(targetRect.right < imgRect.left ||
+                              targetRect.left > imgRect.right ||
+                              targetRect.bottom < imgRect.top ||
+                              targetRect.top > imgRect.bottom);
+            if (overlaps) return img;
+          }
 
-        parent = parent.parentElement;
+          const video = parent.querySelector('video');
+          if (video && video !== target && isSaveableMedia(video)) {
+            const targetRect = target.getBoundingClientRect();
+            const vidRect = video.getBoundingClientRect();
+            const overlaps = !(targetRect.right < vidRect.left ||
+                              targetRect.left > vidRect.right ||
+                              targetRect.bottom < vidRect.top ||
+                              targetRect.top > vidRect.bottom);
+            if (overlaps) return video;
+          }
+
+          parent = parent.parentElement;
+        }
       }
     }
 
@@ -319,4 +343,191 @@
   }, { passive: true });
 
   console.log('Pageant Scout: Ready');
+
+  // ==========================================
+  // Region Capture Selection UI
+  // ==========================================
+
+  let selectionOverlay = null;
+  let selectionBox = null;
+  let isSelecting = false;
+  let startX = 0;
+  let startY = 0;
+
+  // Inject selection styles
+  const selectionStyles = document.createElement('style');
+  selectionStyles.textContent = `
+    .pageant-capture-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      cursor: crosshair;
+      z-index: 2147483646;
+      user-select: none;
+    }
+
+    .pageant-selection-box {
+      position: fixed;
+      border: 2px solid #a08a5c;
+      background: rgba(160, 138, 92, 0.15);
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.4);
+      z-index: 2147483647;
+      pointer-events: none;
+    }
+
+    .pageant-selection-box::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border: 1px dashed rgba(255, 255, 255, 0.5);
+    }
+
+    .pageant-selection-hint {
+      position: fixed;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 20px;
+      background: rgba(28, 27, 25, 0.95);
+      color: #f5f3f0;
+      font-family: system-ui, sans-serif;
+      font-size: 13px;
+      border-radius: 8px;
+      z-index: 2147483647;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(8px);
+    }
+
+    .pageant-selection-hint kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+      font-family: inherit;
+      margin: 0 2px;
+    }
+  `;
+  document.head.appendChild(selectionStyles);
+
+  // Listen for start selection message from background
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message.type === "START_SELECTION") {
+      startSelection();
+    }
+  });
+
+  function startSelection() {
+    // Create overlay
+    selectionOverlay = document.createElement('div');
+    selectionOverlay.className = 'pageant-capture-overlay';
+
+    // Create hint
+    const hint = document.createElement('div');
+    hint.className = 'pageant-selection-hint';
+    hint.innerHTML = 'Drag to select region • <kbd>ESC</kbd> to cancel';
+    selectionOverlay.appendChild(hint);
+
+    document.body.appendChild(selectionOverlay);
+
+    // Add event listeners
+    selectionOverlay.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+  }
+
+  function onMouseDown(e) {
+    isSelecting = true;
+    startX = e.clientX;
+    startY = e.clientY;
+
+    // Create selection box
+    selectionBox = document.createElement('div');
+    selectionBox.className = 'pageant-selection-box';
+    selectionBox.style.left = startX + 'px';
+    selectionBox.style.top = startY + 'px';
+    selectionBox.style.width = '0px';
+    selectionBox.style.height = '0px';
+    document.body.appendChild(selectionBox);
+
+    // Hide the hint when dragging starts
+    const hint = selectionOverlay.querySelector('.pageant-selection-hint');
+    if (hint) hint.style.opacity = '0';
+
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+  }
+
+  function onMouseMove(e) {
+    if (!isSelecting || !selectionBox) return;
+
+    const currentX = e.clientX;
+    const currentY = e.clientY;
+
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+
+    selectionBox.style.left = left + 'px';
+    selectionBox.style.top = top + 'px';
+    selectionBox.style.width = width + 'px';
+    selectionBox.style.height = height + 'px';
+  }
+
+  function onMouseUp(e) {
+    if (!isSelecting) return;
+    isSelecting = false;
+
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+
+    const currentX = e.clientX;
+    const currentY = e.clientY;
+
+    const left = Math.min(startX, currentX);
+    const top = Math.min(startY, currentY);
+    const width = Math.abs(currentX - startX);
+    const height = Math.abs(currentY - startY);
+
+    // Clean up UI
+    cleanup();
+
+    // Only send if selection is meaningful (at least 10x10 pixels)
+    if (width >= 10 && height >= 10) {
+      // Account for device pixel ratio for accurate capture
+      const dpr = window.devicePixelRatio || 1;
+
+      chrome.runtime.sendMessage({
+        type: "REGION_SELECTED",
+        selection: {
+          x: Math.round(left * dpr),
+          y: Math.round(top * dpr),
+          width: Math.round(width * dpr),
+          height: Math.round(height * dpr)
+        }
+      });
+    }
+  }
+
+  function onKeyDown(e) {
+    if (e.key === 'Escape') {
+      cleanup();
+      chrome.runtime.sendMessage({ type: "CAPTURE_CANCELLED" });
+    }
+  }
+
+  function cleanup() {
+    document.removeEventListener('keydown', onKeyDown);
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onMouseUp);
+
+    if (selectionOverlay) {
+      selectionOverlay.remove();
+      selectionOverlay = null;
+    }
+    if (selectionBox) {
+      selectionBox.remove();
+      selectionBox = null;
+    }
+    isSelecting = false;
+  }
 })();

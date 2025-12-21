@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Save, Check, Info, Loader2, Sun, Moon, Monitor, RotateCcw } from 'lucide-react';
+import { Save, Check, Loader2, Sun, Moon, Monitor } from 'lucide-react';
 import { useStore } from '../../store';
 import { useTheme, type ThemePreference } from '../../hooks';
-import { Button, Textarea, Badge, Input } from '../ui';
-import { fetchDefaultSettings } from '../../api';
+import { Button, Badge, Input } from '../ui';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS } from '../../types';
 
 // Price per image for display
@@ -25,8 +24,6 @@ export function SettingsTab() {
   const updateSettings = useStore((s) => s.updateSettings);
   const { preference: themePreference, resolvedTheme, setTheme } = useTheme();
 
-  const [variationPrompt, setVariationPrompt] = useState('');
-  const [iterationPrompt, setIterationPrompt] = useState('');
   // Image generation defaults
   const [imageSize, setImageSize] = useState<string>('');
   const [aspectRatio, setAspectRatio] = useState<string>('');
@@ -40,9 +37,7 @@ export function SettingsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  // Sync with settings from backend (backend always returns defaults if not set)
-  const serverVariation = settings?.variation_prompt;
-  const serverIteration = settings?.iteration_prompt;
+  // Sync with settings from backend
   const serverImageSize = settings?.image_size ?? '';
   const serverAspectRatio = settings?.aspect_ratio ?? '';
   const serverSeed = settings?.seed?.toString() ?? '';
@@ -51,14 +46,6 @@ export function SettingsTab() {
   const serverThinkingLevel = settings?.thinking_level ?? '';
   const serverTemperature = settings?.temperature?.toString() ?? '';
   const serverGoogleSearchGrounding = settings?.google_search_grounding ?? false;
-
-  useEffect(() => {
-    if (serverVariation) setVariationPrompt(serverVariation);
-  }, [serverVariation]);
-
-  useEffect(() => {
-    if (serverIteration) setIterationPrompt(serverIteration);
-  }, [serverIteration]);
 
   useEffect(() => {
     setImageSize(serverImageSize);
@@ -92,8 +79,6 @@ export function SettingsTab() {
     setIsSaving(true);
     try {
       await updateSettings({
-        variation_prompt: variationPrompt,
-        iteration_prompt: iterationPrompt,
         image_size: imageSize || undefined,
         aspect_ratio: aspectRatio || undefined,
         seed: seed ? parseInt(seed, 10) : undefined,
@@ -110,27 +95,7 @@ export function SettingsTab() {
     }
   };
 
-  const handleResetVariation = async () => {
-    try {
-      const defaults = await fetchDefaultSettings();
-      setVariationPrompt(defaults.variation_prompt);
-    } catch (error) {
-      console.error('Failed to fetch default prompts:', error);
-    }
-  };
-
-  const handleResetIteration = async () => {
-    try {
-      const defaults = await fetchDefaultSettings();
-      setIterationPrompt(defaults.iteration_prompt);
-    } catch (error) {
-      console.error('Failed to fetch default prompts:', error);
-    }
-  };
-
   const hasChanges =
-    variationPrompt !== serverVariation ||
-    iterationPrompt !== serverIteration ||
     imageSize !== serverImageSize ||
     aspectRatio !== serverAspectRatio ||
     seed !== serverSeed ||
@@ -393,106 +358,6 @@ export function SettingsTab() {
             <p className="text-[0.625rem] text-ink-muted mt-1.5 ml-6">
               Ground image generation in real-time web data
             </p>
-          </div>
-        </div>
-      </section>
-
-      {/* Variation System Prompt */}
-      <section>
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide">
-              Variation System Prompt
-            </h4>
-            <p className="text-[0.625rem] text-ink-muted mt-0.5">
-              Controls how image variations are generated
-            </p>
-          </div>
-          <button
-            onClick={handleResetVariation}
-            className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink-secondary transition-colors"
-            title="Reset to default"
-          >
-            <RotateCcw size={12} />
-            Reset
-          </button>
-        </div>
-
-        <Textarea
-          value={variationPrompt}
-          onChange={(e) => setVariationPrompt(e.target.value)}
-          placeholder="Enter variation system prompt..."
-          className={clsx(
-            'min-h-[300px] text-xs font-[family-name:var(--font-mono)]',
-            'leading-relaxed'
-          )}
-        />
-
-        {/* Info box */}
-        <div className="mt-3 p-3 rounded-lg bg-brass-muted/50 flex gap-2">
-          <Info size={14} className="flex-shrink-0 text-brass-dark mt-0.5" />
-          <div className="text-xs text-brass-dark">
-            <p className="font-medium mb-1">Available placeholders:</p>
-            <ul className="space-y-0.5">
-              <li>
-                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{base_prompt}'}</code>{' '}
-                - The user's original prompt
-              </li>
-              <li>
-                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{count}'}</code>{' '}
-                - Number of variations to generate
-              </li>
-            </ul>
-          </div>
-        </div>
-      </section>
-
-      {/* Iteration System Prompt (More Like This) */}
-      <section>
-        <div className="flex items-start justify-between mb-3">
-          <div>
-            <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide">
-              Iteration Prompt ("More Like This")
-            </h4>
-            <p className="text-[0.625rem] text-ink-muted mt-0.5">
-              Controls how image-to-image variations are generated
-            </p>
-          </div>
-          <button
-            onClick={handleResetIteration}
-            className="flex items-center gap-1 text-xs text-ink-muted hover:text-ink-secondary transition-colors"
-            title="Reset to default"
-          >
-            <RotateCcw size={12} />
-            Reset
-          </button>
-        </div>
-
-        <Textarea
-          value={iterationPrompt}
-          onChange={(e) => setIterationPrompt(e.target.value)}
-          placeholder="Enter iteration prompt..."
-          className={clsx(
-            'min-h-[150px] text-xs font-[family-name:var(--font-mono)]',
-            'leading-relaxed'
-          )}
-        />
-
-        {/* Info box */}
-        <div className="mt-3 p-3 rounded-lg bg-brass-muted/50 flex gap-2">
-          <Info size={14} className="flex-shrink-0 text-brass-dark mt-0.5" />
-          <div className="text-xs text-brass-dark">
-            <p className="font-medium mb-1">Available placeholders:</p>
-            <ul className="space-y-0.5">
-              <li>
-                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{original_prompt}'}</code>{' '}
-                - The original image's prompt
-              </li>
-              <li>
-                <code className="px-1 py-0.5 rounded bg-brass-muted">{'{focus}'}</code>{' '}
-                - What to focus on in the variation
-              </li>
-            </ul>
           </div>
         </div>
       </section>

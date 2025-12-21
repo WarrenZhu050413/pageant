@@ -65,20 +65,7 @@ describe('SingleView', () => {
     contextImageIds: [],
     // Design dimension analysis
     pendingAnalysis: new Set<string>(),
-    analyzeDimensions: vi.fn().mockResolvedValue([]),
     updateImageDimensions: vi.fn(),
-    // Token extraction dialog
-    extractionDialog: {
-      isOpen: false,
-      isExtracting: false,
-      imageIds: [],
-      suggestedDimensions: [],
-      selectedDimensionIndex: null,
-    },
-    openExtractionDialog: vi.fn(),
-    closeExtractionDialog: vi.fn(),
-    selectExtractionDimension: vi.fn(),
-    createTokenFromExtraction: vi.fn(),
     ...overrides,
   })
 
@@ -261,53 +248,6 @@ describe('SingleView', () => {
 
       // Should show correct count with plural
       expect(screen.getByText(/3 reference images/)).toBeInTheDocument()
-    })
-  })
-
-  describe('Extract Token button', () => {
-    it('should have extract token button that opens shared extraction dialog', () => {
-      const mockImage = createMockImage('img-1')
-      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
-
-      const mockState = createMockState({
-        generations: [mockPrompt],
-        currentGenerationId: 'prompt-1',
-      })
-
-      mockUseStore.mockImplementation((selector) => {
-        if (typeof selector === 'function') {
-          return selector(mockState)
-        }
-        return mockState
-      })
-
-      render(<SingleView />)
-
-      // Extract token button exists as IconButton with tooltip (consistent with other overlay actions)
-      // Check that openExtractionDialog is available in the store mock
-      expect(mockState.openExtractionDialog).toBeDefined()
-    })
-
-    it('should not have "more like this" tooltip (removed)', () => {
-      const mockImage = createMockImage('img-1')
-      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
-
-      const mockState = createMockState({
-        generations: [mockPrompt],
-        currentGenerationId: 'prompt-1',
-      })
-
-      mockUseStore.mockImplementation((selector) => {
-        if (typeof selector === 'function') {
-          return selector(mockState)
-        }
-        return mockState
-      })
-
-      render(<SingleView />)
-
-      // "More like this" tooltip should be removed
-      expect(screen.queryByText('More like this')).not.toBeInTheDocument()
     })
   })
 

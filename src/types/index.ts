@@ -145,6 +145,8 @@ export interface DraftPrompt {
   annotationSuggestions?: AnnotationSuggestion[];
   // Per-draft generation state - allows concurrent generations
   isGenerating?: boolean;
+  // Auto-generate flag - when true, auto-trigger image generation after prompts complete
+  autoGenerate?: boolean;
 }
 
 
@@ -224,8 +226,6 @@ export interface ImageGenerationParams {
 }
 
 export interface Settings extends ImageGenerationParams {
-  variation_prompt: string;
-  iteration_prompt?: string;  // Prompt for "More Like This"
   text_model?: string;
   image_model?: string;
 }
@@ -238,16 +238,6 @@ export interface Session {
 }
 
 // API Response types
-export interface GenerateRequest extends ImageGenerationParams {
-  prompt: string;
-  title?: string; // Optional - will be auto-generated if not provided
-  count?: number;
-  input_image_id?: string;
-  context_image_ids?: string[];
-  collection_id?: string;
-  session_id?: string;
-}
-
 export interface GenerateResponse {
   success: boolean;
   prompt_id: string;
@@ -282,8 +272,7 @@ export interface AnnotationSuggestion {
 }
 
 export interface GeneratePromptsRequest extends ImageGenerationParams {
-  prompt: string;
-  title?: string; // Optional - will be auto-generated if not provided
+  prompt: string;  // Complete prompt from frontend (includes template + user input)
   count: number;
   context_image_ids?: string[];
 }
@@ -312,65 +301,13 @@ export interface GenerateFromPromptsRequest extends ImageGenerationParams {
   base_prompt?: string;  // Original prompt that generated variations
 }
 
-// Polish prompts API types
-export interface VariationToPolish {
-  id: string;
-  text: string;
-  user_notes?: string;
-  mood?: string;
-  design?: Record<string, string[]>;
-  emphasized_tags?: string[];
-}
-
-export interface PolishPromptsRequest {
-  base_prompt: string;
-  variations: VariationToPolish[];
-  context_image_ids?: string[];
-}
-
-export interface PolishedVariation {
-  id: string;
-  text: string;
-  changes_made?: string;
-}
-
-export interface PolishPromptsResponse {
-  success: boolean;
-  polished_variations: PolishedVariation[];
-  error?: string;
-}
-
-// Design Dimension Analysis API types
-export interface AnalyzeDimensionsRequest {
-  image_id: string;
-  count?: number;  // Number of dimensions to suggest (default 5)
-}
-
-export interface AnalyzeDimensionsResponse {
-  success: boolean;
-  dimensions: DesignDimension[];
-  error?: string;
-}
-
 export interface UpdateDimensionsRequest {
   dimensions: Record<string, DesignDimension>;
 }
 
 // Design Token API types
 
-// Suggest dimensions from multiple images (AI extraction step 1)
-export interface SuggestDimensionsRequest {
-  image_ids: string[];
-  count?: number;  // Number of dimensions to suggest (default 5)
-}
-
-export interface SuggestDimensionsResponse {
-  success: boolean;
-  dimensions: DesignDimension[];
-  error?: string;
-}
-
-// Create a Design Token (step 2 after suggestion, or manual creation)
+// Create a Design Token
 export interface CreateTokenRequest {
   name: string;
   description?: string;
@@ -381,6 +318,7 @@ export interface CreateTokenRequest {
   // For AI extraction only
   dimension?: DesignDimension;    // The chosen dimension
   generate_concept?: boolean;     // Whether to generate a concept image
+  concept_prompt?: string;        // Frontend-constructed prompt for concept generation
 
   // Categorization
   category?: string;
@@ -413,7 +351,7 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid';
-export type LeftTab = 'prompts' | 'collections' | 'all-images' | 'library';
+export type LeftTab = 'generations' | 'collections' | 'all-images' | 'library';
 export type RightTab = 'generate' | 'settings';
 export type SelectionMode = 'none' | 'select';
 

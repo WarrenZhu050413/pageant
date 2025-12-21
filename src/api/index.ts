@@ -13,7 +13,6 @@ import type {
   Prompt,
   Collection,
   Settings,
-  GenerateRequest,
   GenerateResponse,
   UploadResponse,
   LikedAxes,
@@ -24,10 +23,6 @@ import type {
   GeneratePromptsRequest,
   GeneratePromptsResponse,
   GenerateFromPromptsRequest,
-  PolishPromptsRequest,
-  PolishPromptsResponse,
-  AnalyzeDimensionsResponse,
-  SuggestDimensionsResponse,
   CreateTokenRequest,
   CreateTokenResponse,
   GenerateTokenConceptResponse,
@@ -61,20 +56,6 @@ export async function fetchPrompt(id: string): Promise<Prompt> {
 }
 export const deletePrompt = makeDeleteFetcher('/prompts');
 
-// Generation
-export async function generateImages(data: GenerateRequest): Promise<GenerateResponse> {
-  return request<GenerateResponse>('/generate', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-export async function iterateImage(imageId: string): Promise<GenerateResponse> {
-  return request<GenerateResponse>(`/iterate/${imageId}`, {
-    method: 'POST',
-  });
-}
-
 // Two-Phase Generation
 export async function generatePromptVariations(
   data: GeneratePromptsRequest
@@ -100,11 +81,11 @@ export interface StreamEvent {
 export async function* generatePromptVariationsStream(
   data: GeneratePromptsRequest
 ): AsyncGenerator<StreamEvent> {
+  // Frontend sends the complete prompt (includes template + user input)
   const params = new URLSearchParams({
     prompt: data.prompt,
     count: String(data.count || 4),
   });
-  if (data.title) params.append('title', data.title);
   if (data.context_image_ids?.length) {
     params.append('context_image_ids', data.context_image_ids.join(','));
   }
@@ -161,15 +142,6 @@ export async function generateFromPrompts(
   });
 }
 
-export async function polishPrompts(
-  data: PolishPromptsRequest
-): Promise<PolishPromptsResponse> {
-  return request<PolishPromptsResponse>('/polish-prompts', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
 // Images
 export async function updateImageNotes(
   imageId: string,
@@ -201,6 +173,36 @@ export async function batchDeletePrompts(
   });
 }
 
+export async function batchDownload(imageIds: string[]): Promise<void> {
+  const response = await fetch('/api/batch/download', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image_ids: imageIds }),
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to download images');
+  }
+
+  // Get the blob and trigger download
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+
+  // Extract filename from Content-Disposition header or use default
+  const contentDisposition = response.headers.get('Content-Disposition');
+  const filenameMatch = contentDisposition?.match(/filename="?([^"]+)"?/);
+  const filename = filenameMatch ? filenameMatch[1] : 'pageant-images.zip';
+
+  // Create a link and click it to trigger download
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // Design Tokens
 export const fetchTokens = makeListFetcher<DesignToken>('/tokens', 'tokens');
 export const deleteToken = makeDeleteFetcher('/tokens');
@@ -223,22 +225,12 @@ export async function useToken(id: string): Promise<DesignToken> {
 
 export async function generateTokenConcept(
   tokenId: string,
+  prompt: string,
   aspectRatio: string = '1:1'
 ): Promise<GenerateTokenConceptResponse> {
   return request<GenerateTokenConceptResponse>(`/tokens/${tokenId}/generate-concept`, {
     method: 'POST',
-    body: JSON.stringify({ aspect_ratio: aspectRatio }),
-  });
-}
-
-// Dimension Extraction (for Design Tokens)
-export async function suggestDimensions(
-  imageIds: string[],
-  count: number = 5
-): Promise<SuggestDimensionsResponse> {
-  return request<SuggestDimensionsResponse>('/extract/suggest-dimensions', {
-    method: 'POST',
-    body: JSON.stringify({ image_ids: imageIds, count }),
+    body: JSON.stringify({ prompt, aspect_ratio: aspectRatio }),
   });
 }
 
@@ -292,20 +284,14 @@ export const deleteCollection = makeDeleteFetcher('/collections');
 // Settings
 export const fetchSettings = makeItemFetcher<Settings>('/settings');
 
-export async function fetchDefaultSettings(): Promise<{
-  variation_prompt: string;
-  iteration_prompt: string;
-}> {
-  return request<{ variation_prompt: string; iteration_prompt: string }>('/settings/defaults');
-}
-
 export async function updateSettings(settings: {
-  variation_prompt: string;
-  iteration_prompt?: string;
   image_size?: string;
   aspect_ratio?: string;
   seed?: number;
   safety_level?: string;
+  thinking_level?: string;
+  temperature?: number;
+  google_search_grounding?: boolean;
 }): Promise<{ success: boolean }> {
   return request<{ success: boolean }>('/settings', {
     method: 'PUT',
@@ -387,18 +373,6 @@ export async function resetDesignPreferences(): Promise<{
 }> {
   return request('/preferences/reset', { method: 'POST' });
 }
-
-// Design Dimension Analysis
-export async function analyzeDimensions(
-  imageId: string,
-  count: number = 5
-): Promise<AnalyzeDimensionsResponse> {
-  return request<AnalyzeDimensionsResponse>('/analyze-dimensions', {
-    method: 'POST',
-    body: JSON.stringify({ image_id: imageId, count }),
-  });
-}
-
 
 export async function updateImageDimensions(
   imageId: string,
@@ -488,5 +462,84 @@ export async function removePromptsFromSession(
     method: 'DELETE',
     body: JSON.stringify(promptIds),
   });
+}
+
+// =============================================================================
+// Semantic Search API
+// =============================================================================
+
+export interface SearchResult {
+  id: string;
+  image_path: string;
+  prompt_id: string;
+  score: number; // 0-1 similarity score
+}
+
+export interface SearchResponse {
+  success: boolean;
+  results: SearchResult[];
+  error?: string;
+}
+
+/**
+ * Search images using semantic embeddings.
+ */
+export async function searchImages(
+  query: string,
+  limit: number = 50
+): Promise<SearchResponse> {
+  return request<SearchResponse>('/search', {
+    method: 'POST',
+    body: JSON.stringify({ query, limit, mode: 'semantic' }),
+  });
+}
+
+/**
+ * Find images similar to a given image (image-to-image search).
+ */
+export async function findSimilarImages(
+  imageId: string,
+  limit: number = 20
+): Promise<SearchResponse> {
+  return request<SearchResponse>(`/search/similar/${imageId}?limit=${limit}`);
+}
+
+/**
+ * Get all indexed image IDs for status indicator.
+ */
+export async function getIndexedImageIds(): Promise<{
+  success: boolean;
+  indexed_ids: string[];
+  error?: string;
+}> {
+  return request('/search/indexed');
+}
+
+/**
+ * Trigger indexing for specific images or all missing images.
+ */
+export async function triggerIndexing(imageIds?: string[]): Promise<{
+  success: boolean;
+  queued: number;
+  error?: string;
+}> {
+  return request('/search/index', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
+  });
+}
+
+/**
+ * Get search index statistics.
+ */
+export async function getSearchStats(): Promise<{
+  success: boolean;
+  indexed_count?: number;
+  embedding_dim?: number;
+  pending_count?: number;
+  indexer_running?: boolean;
+  error?: string;
+}> {
+  return request('/search/stats');
 }
 

@@ -8,7 +8,7 @@ import {
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
 import type { LeftTab } from '../../types';
-import { PromptsTab } from './PromptsTab';
+import { GenerationsTab } from './GenerationsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { AllImagesTab } from './AllImagesTab';
 import { LibraryTab } from './LibraryTab';
@@ -16,7 +16,7 @@ import { SessionsPanel } from './SessionsPanel';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
-  { id: 'prompts', label: 'Prompts', icon: <FileText size={14} />, shortcut: 'P' },
+  { id: 'generations', label: 'Generations', icon: <FileText size={14} />, shortcut: 'G' },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} />, shortcut: 'O' },
   { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'I' },
   { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} />, shortcut: 'L' },
@@ -66,7 +66,7 @@ export function LeftSidebar() {
             transition={{ duration: 0.15 }}
             className="h-full overflow-y-auto"
           >
-            {leftTab === 'prompts' && <PromptsTab />}
+            {leftTab === 'generations' && <GenerationsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'all-images' && <AllImagesTab />}
             {leftTab === 'library' && <LibraryTab />}
