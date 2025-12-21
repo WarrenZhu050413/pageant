@@ -1,11 +1,10 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Sparkles, Check } from 'lucide-react';
+import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Check, Download } from 'lucide-react';
 import { useStore } from '../../store';
-import { getImageUrl } from '../../api';
+import { getImageUrl, batchDownload } from '../../api';
 import { Button, Input, Textarea, Dialog, IconButton } from '../ui';
-import { ExtractionDialog } from './ExtractionDialog';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
@@ -46,7 +45,6 @@ export function SelectionTray() {
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const selectAll = useStore((s) => s.selectAll);
   const batchDelete = useStore((s) => s.batchDelete);
-  const openExtractionDialog = useStore((s) => s.openExtractionDialog);
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
@@ -57,19 +55,24 @@ export function SelectionTray() {
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   // Get display images (from prompt or collection)
-  const displayImages = currentPrompt?.images ?? currentCollectionImages;
+  const displayImages = useMemo(
+    () => currentPrompt?.images ?? currentCollectionImages,
+    [currentPrompt?.images, currentCollectionImages]
+  );
   const allSelected = displayImages.length > 0 && selectedIds.size === displayImages.length;
 
-  // Get selected images with their data
-  const selectedImages = Array.from(selectedIds)
-    .map((id) => {
-      for (const prompt of prompts) {
-        const img = prompt.images.find((i) => i.id === id);
-        if (img) return { ...img, promptTitle: prompt.title };
-      }
-      return null;
-    })
-    .filter(Boolean);
+  // Get selected images with their data - memoize to prevent re-creating objects on every render
+  const selectedImages = useMemo(() => {
+    return Array.from(selectedIds)
+      .map((id) => {
+        for (const prompt of prompts) {
+          const img = prompt.images.find((i) => i.id === id);
+          if (img) return { ...img, promptTitle: prompt.title };
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [selectedIds, prompts]);
 
   if (selectedIds.size === 0) return null;
 
@@ -130,8 +133,17 @@ export function SelectionTray() {
     setSelectionMode('none');
   };
 
-  const handleOpenExtractionDialog = () => {
-    openExtractionDialog(Array.from(selectedIds));
+  const [isDownloading, setIsDownloading] = useState(false);
+
+  const handleDownload = async () => {
+    setIsDownloading(true);
+    try {
+      await batchDownload(Array.from(selectedIds));
+    } catch (error) {
+      console.error('Download failed:', error);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return (
@@ -220,10 +232,11 @@ export function SelectionTray() {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<Sparkles size={14} />}
-            onClick={handleOpenExtractionDialog}
+            leftIcon={<Download size={14} />}
+            onClick={handleDownload}
+            disabled={isDownloading}
           >
-            Extract Token
+            {isDownloading ? 'Downloading...' : 'Download'}
           </Button>
           <div className="w-px h-6 bg-border self-center" />
           <IconButton
@@ -375,9 +388,6 @@ export function SelectionTray() {
           </Button>
         </div>
       </Dialog>
-
-      {/* Shared Token Extraction dialog */}
-      <ExtractionDialog />
     </>
   );
 }

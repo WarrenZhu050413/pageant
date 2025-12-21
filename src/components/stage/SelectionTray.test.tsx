@@ -34,13 +34,8 @@ vi.mock('lucide-react', () => ({
   Trash2: () => <span data-testid="icon-trash">🗑</span>,
   CheckSquare: () => <span data-testid="icon-check-square">☑</span>,
   Square: () => <span data-testid="icon-square">☐</span>,
-  Sparkles: () => <span data-testid="icon-sparkles">✨</span>,
   Check: () => <span data-testid="icon-check">✓</span>,
-}))
-
-// Mock ExtractionDialog since it has its own tests
-vi.mock('./ExtractionDialog', () => ({
-  ExtractionDialog: () => <div data-testid="extraction-dialog" />,
+  Download: () => <span data-testid="icon-download">⬇</span>,
 }))
 
 // Import after mocks are set up
@@ -88,7 +83,6 @@ describe('SelectionTray', () => {
     setSelectionMode: vi.fn(),
     selectAll: vi.fn(),
     batchDelete: vi.fn().mockResolvedValue(undefined),
-    openExtractionDialog: vi.fn(),
     contextImageIds: [],
     ...overrides,
   })
@@ -591,55 +585,6 @@ describe('SelectionTray', () => {
       await user.click(confirmButton)
 
       expect(batchDelete).toHaveBeenCalled()
-    })
-  })
-
-  describe('extract token', () => {
-    it('should have Extract Token button', () => {
-      const mockImage = createMockImage('img-1')
-      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
-
-      const mockState = createMockState({
-        selectedIds: new Set(['img-1']),
-        generations: [mockPrompt],
-        currentGenerationId: 'prompt-1',
-      })
-
-      mockUseStore.mockImplementation((selector) => {
-        if (typeof selector === 'function') {
-          return selector(mockState)
-        }
-        return mockState
-      })
-
-      render(<SelectionTray />)
-      expect(screen.getByText('Extract Token')).toBeInTheDocument()
-    })
-
-    it('should call openExtractionDialog with selected IDs when clicked', async () => {
-      const user = userEvent.setup()
-      const openExtractionDialog = vi.fn()
-      const mockImage = createMockImage('img-1')
-      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
-
-      const mockState = createMockState({
-        selectedIds: new Set(['img-1']),
-        generations: [mockPrompt],
-        currentGenerationId: 'prompt-1',
-        openExtractionDialog,
-      })
-
-      mockUseStore.mockImplementation((selector) => {
-        if (typeof selector === 'function') {
-          return selector(mockState)
-        }
-        return mockState
-      })
-
-      render(<SelectionTray />)
-      await user.click(screen.getByText('Extract Token'))
-
-      expect(openExtractionDialog).toHaveBeenCalledWith(['img-1'])
     })
   })
 
