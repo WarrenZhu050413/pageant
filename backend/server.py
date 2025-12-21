@@ -43,12 +43,14 @@ ThinkingLevelType = Literal["low", "high"]
 try:
     from backend.metadata_manager import MetadataManager
     from backend.gemini_service import GeminiService, _detect_image_mime_type, _convert_heic_to_jpeg
+    from backend.prompt_engineering import PromptEngineeringService
     from backend import config
     from backend.search.indexer import get_background_indexer
     from backend.search.search_service import get_search_service
 except ImportError:
     from metadata_manager import MetadataManager
     from gemini_service import GeminiService, _detect_image_mime_type, _convert_heic_to_jpeg
+    from prompt_engineering import PromptEngineeringService
     import config
     from search.indexer import get_background_indexer
     from search.search_service import get_search_service
@@ -110,6 +112,9 @@ _metadata_manager = MetadataManager(METADATA_PATH, IMAGES_DIR)
 
 # Initialize Gemini service (API key loaded from config)
 gemini = GeminiService(api_key=config.get_gemini_api_key())
+
+# Initialize Prompt Engineering service
+pe_service = PromptEngineeringService(api_key=config.get_gemini_api_key())
 
 
 # Image generation parameter options (matching frontend)
@@ -1315,12 +1320,227 @@ async def import_image_from_url(req: ImportUrlRequest):
         async with _metadata_manager.atomic() as fresh_metadata:
             fresh_metadata["prompts"].append(prompt_entry)
 
+        # Queue for background indexing (semantic search)
+        if config.ENABLE_SEARCH:
+            indexer = get_background_indexer(IMAGES_DIR)
+            indexer.queue_for_indexing(
+                image_id=image_id,
+                image_path=filename,
+                prompt_id=f"prompt-{image_id}",
+                prompt_text=f"Imported from {req.pageUrl or 'web'}",
+            )
+
         logger.info(f"Imported image from URL: {image_id}")
         return {"success": True, "id": image_id}
     except HTTPException:
         raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
         logger.error(f"Import from URL failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# Image Analysis & Enhancement (for uploaded images)
+# ============================================================
+
+
+class AnalyzeImagesRequest(BaseModel):
+    """Request to analyze uploaded images for design dimensions."""
+    image_ids: list[str]
+
+
+class EnhanceImageRequest(BaseModel):
+    """Request to enhance an image with professional photoshop-style improvements."""
+    image_id: str
+
+
+@app.post("/api/analyze-uploaded-images")
+async def analyze_uploaded_images(req: AnalyzeImagesRequest):
+    """Analyze uploaded images to extract design dimensions and annotations.
+
+    Sends each image to Gemini for analysis and updates the image metadata
+    with the extracted design dimensions and auto-generated annotation.
+    """
+    if not req.image_ids:
+        raise HTTPException(status_code=400, detail="No image IDs provided")
+
+    metadata = load_metadata()
+    results = []
+    errors = []
+
+    for image_id in req.image_ids:
+        # Find the image in metadata
+        image_data = None
+        prompt_entry = None
+        for prompt in metadata.get("prompts", []):
+            for img in prompt.get("images", []):
+                if img["id"] == image_id:
+                    image_data = img
+                    prompt_entry = prompt
+                    break
+            if image_data:
+                break
+
+        if not image_data:
+            errors.append({"id": image_id, "error": "Image not found"})
+            continue
+
+        # Load the image file
+        image_path = IMAGES_DIR / image_data["image_path"]
+        if not image_path.exists():
+            errors.append({"id": image_id, "error": "Image file not found"})
+            continue
+
+        try:
+            image_bytes = image_path.read_bytes()
+            mime_type = image_data.get("mime_type", "image/jpeg")
+
+            # Analyze with Gemini
+            analysis = await gemini.analyze_image(image_bytes, mime_type)
+
+            # Convert design dimensions to the stored format
+            design_dimensions = {}
+            for dim in analysis.design_dimensions:
+                design_dimensions[dim.axis] = {
+                    "axis": dim.axis,
+                    "name": dim.name,
+                    "description": dim.description,
+                    "tags": dim.tags,
+                    "generation_prompt": dim.generation_prompt,
+                    "source": "auto",
+                    "confirmed": False,
+                }
+
+            # Update image metadata atomically
+            async with _metadata_manager.atomic() as fresh_metadata:
+                for prompt in fresh_metadata.get("prompts", []):
+                    for img in prompt.get("images", []):
+                        if img["id"] == image_id:
+                            img["design_dimensions"] = design_dimensions
+                            img["annotation"] = analysis.annotation
+                            break
+
+            results.append({
+                "id": image_id,
+                "design_dimensions": design_dimensions,
+                "annotation": analysis.annotation,
+            })
+            logger.info(f"Analyzed image {image_id}: {len(design_dimensions)} dimensions extracted")
+
+        except Exception as e:
+            logger.error(f"Failed to analyze image {image_id}: {e}")
+            errors.append({"id": image_id, "error": str(e)})
+
+    return {
+        "success": len(errors) == 0,
+        "analyzed": results,
+        "errors": errors,
+    }
+
+
+@app.post("/api/enhance-image")
+async def enhance_image(req: EnhanceImageRequest):
+    """Generate an enhanced version of an image with professional photoshop-style improvements.
+
+    Creates a new image that is a polished, retouched version of the original,
+    keeping all content the same but improving technical quality.
+    """
+    metadata = load_metadata()
+
+    # Find the source image
+    source_image = None
+    source_prompt = None
+    for prompt in metadata.get("prompts", []):
+        for img in prompt.get("images", []):
+            if img["id"] == req.image_id:
+                source_image = img
+                source_prompt = prompt
+                break
+        if source_image:
+            break
+
+    if not source_image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    # Load the source image
+    source_path = IMAGES_DIR / source_image["image_path"]
+    if not source_path.exists():
+        raise HTTPException(status_code=404, detail="Image file not found")
+
+    try:
+        image_bytes = source_path.read_bytes()
+        mime_type = source_image.get("mime_type", "image/jpeg")
+
+        # Generate enhanced image
+        result = await gemini.enhance_image(image_bytes, mime_type)
+
+        if not result.images:
+            raise HTTPException(status_code=500, detail="No enhanced image generated")
+
+        # Save the enhanced image
+        enhanced_image_data = result.images[0]
+        image_id = f"enhanced-{uuid.uuid4().hex[:8]}"
+
+        # Determine file extension from mime type
+        enhanced_mime = enhanced_image_data.get("mime_type", "image/jpeg")
+        ext = ".jpg" if "jpeg" in enhanced_mime else ".png" if "png" in enhanced_mime else ".jpg"
+        filename = f"{image_id}{ext}"
+
+        # Decode and save
+        image_data_bytes = base64.b64decode(enhanced_image_data["data"])
+        (IMAGES_DIR / filename).write_bytes(image_data_bytes)
+
+        # Create a new prompt entry for the enhanced image
+        prompt_id = f"enhanced-{uuid.uuid4().hex[:8]}"
+        new_image = {
+            "id": image_id,
+            "image_path": filename,
+            "mime_type": enhanced_mime,
+            "created_at": datetime.now().isoformat(),
+            "notes": f"Enhanced version of {req.image_id}",
+            "source_image_id": req.image_id,
+        }
+
+        # Copy over design dimensions and annotation from source if present
+        if source_image.get("design_dimensions"):
+            new_image["design_dimensions"] = source_image["design_dimensions"]
+        if source_image.get("annotation"):
+            new_image["annotation"] = source_image["annotation"]
+
+        prompt_entry = {
+            "id": prompt_id,
+            "title": "Enhanced Image",
+            "prompt": f"Enhanced version of image from '{source_prompt['title']}'",
+            "created_at": datetime.now().isoformat(),
+            "images": [new_image],
+            "parent_generation_id": source_prompt["id"],
+        }
+
+        async with _metadata_manager.atomic() as fresh_metadata:
+            fresh_metadata["prompts"].append(prompt_entry)
+
+        # Queue for background indexing
+        if config.ENABLE_SEARCH:
+            indexer = get_background_indexer(IMAGES_DIR)
+            indexer.queue_for_indexing(
+                image_id=image_id,
+                image_path=filename,
+                prompt_id=prompt_id,
+                prompt_text="Enhanced image",
+            )
+
+        logger.info(f"Enhanced image {req.image_id} -> {image_id}")
+
+        return {
+            "success": True,
+            "prompt_id": prompt_id,
+            "image": new_image,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to enhance image {req.image_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1571,6 +1791,16 @@ async def create_token(req: CreateTokenRequest):
         if concept_prompt_to_add:
             fresh_metadata["prompts"].append(concept_prompt_to_add)
 
+    # Queue concept image for background indexing (semantic search)
+    if config.ENABLE_SEARCH and token.get("concept_image_id"):
+        indexer = get_background_indexer(IMAGES_DIR)
+        indexer.queue_for_indexing(
+            image_id=token["concept_image_id"],
+            image_path=token["concept_image_path"],
+            prompt_id=f"concept-prompt-{token_id}",
+            prompt_text=req.concept_prompt or "",
+        )
+
     logger.info(f"Created token: {token_id} - {req.name} ({req.creation_method})")
     return {"success": True, "token": token}
 
@@ -1738,6 +1968,16 @@ async def generate_token_concept(token_id: str, request: GenerateConceptRequest)
                 ]
                 fresh_metadata["prompts"].append(concept_prompt)
                 break
+
+    # Queue concept image for background indexing (semantic search)
+    if config.ENABLE_SEARCH:
+        indexer = get_background_indexer(IMAGES_DIR)
+        indexer.queue_for_indexing(
+            image_id=f"concept-{token_id}",
+            image_path=concept_filename,
+            prompt_id=f"concept-prompt-{token_id}",
+            prompt_text=request.prompt,
+        )
 
     logger.info(f"Generated concept image: {concept_filename}")
     return {
@@ -3084,6 +3324,155 @@ async def get_search_stats():
     except Exception as e:
         logger.error(f"Failed to get stats: {e}")
         return {"success": False, "error": str(e)}
+
+
+# =============================================================================
+# Prompt Engineering Workspace Endpoints
+# =============================================================================
+
+
+class PEGenerateQuestionsRequest(BaseModel):
+    """Request for generating prompt engineering questions."""
+
+    prompt: str
+    context_image_ids: list[str] = []
+    history: list[dict] = []  # Previous rounds: [{questions, answers, optimized_prompt}]
+
+
+class PEOptionResponse(BaseModel):
+    """Single option in a question."""
+
+    label: str
+    description: str
+
+
+class PEQuestionResponse(BaseModel):
+    """Single question with options."""
+
+    question: str
+    header: str
+    options: list[PEOptionResponse]
+    multiSelect: bool
+
+
+class PEGenerateQuestionsResponse(BaseModel):
+    """Response with generated questions."""
+
+    success: bool
+    questions: list[PEQuestionResponse] = []
+    error: str | None = None
+
+
+class PEOptimizeRequest(BaseModel):
+    """Request for optimizing a prompt based on answers."""
+
+    prompt: str
+    questions: list[dict]  # Questions that were asked
+    answers: dict  # User's answers keyed by question text
+    context_image_ids: list[str] = []
+    history: list[dict] = []  # Previous rounds
+
+
+class PEOptimizeResponse(BaseModel):
+    """Response with optimized prompt."""
+
+    success: bool
+    optimized_prompt: str = ""
+    error: str | None = None
+
+
+@app.post("/api/pe/questions", response_model=PEGenerateQuestionsResponse)
+async def pe_generate_questions(request: PEGenerateQuestionsRequest):
+    """Generate clarifying questions for a prompt.
+
+    Uses Gemini Flash to analyze the prompt and generate targeted questions
+    following the AskUserQuestion schema pattern.
+    """
+    logger.info(f"[PE] Generating questions for prompt: {request.prompt[:100]}...")
+
+    try:
+        # Load context images if provided
+        context_images = None
+        if request.context_image_ids:
+            context_images = []
+            async with _metadata_manager.atomic():
+                for img_id in request.context_image_ids:
+                    metadata = await _metadata_manager.get_image(img_id)
+                    if metadata:
+                        # Load image bytes
+                        img_path = IMAGES_DIR / metadata.get("filename", f"{img_id}.png")
+                        if img_path.exists():
+                            img_bytes = img_path.read_bytes()
+                            mime_type = _detect_image_mime_type(img_bytes)
+                            context_images.append((img_bytes, mime_type))
+
+        # Generate questions
+        result = await pe_service.generate_questions(
+            prompt=request.prompt,
+            context_images=context_images,
+            history=request.history if request.history else None,
+        )
+
+        # Convert to response format
+        questions = []
+        for q in result.questions:
+            questions.append(
+                PEQuestionResponse(
+                    question=q.question,
+                    header=q.header,
+                    options=[
+                        PEOptionResponse(label=o.label, description=o.description)
+                        for o in q.options
+                    ],
+                    multiSelect=q.multiSelect,
+                )
+            )
+
+        return PEGenerateQuestionsResponse(success=True, questions=questions)
+
+    except Exception as e:
+        logger.error(f"[PE] Question generation failed: {e}")
+        return PEGenerateQuestionsResponse(success=False, error=str(e))
+
+
+@app.post("/api/pe/optimize", response_model=PEOptimizeResponse)
+async def pe_optimize_prompt(request: PEOptimizeRequest):
+    """Optimize a prompt based on user's answers to questions.
+
+    Takes the original prompt and user's question answers,
+    returns an enhanced, more specific prompt.
+    """
+    logger.info(f"[PE] Optimizing prompt with {len(request.questions)} Q&A pairs")
+
+    try:
+        # Load context images if provided
+        context_images = None
+        if request.context_image_ids:
+            context_images = []
+            async with _metadata_manager.atomic():
+                for img_id in request.context_image_ids:
+                    metadata = await _metadata_manager.get_image(img_id)
+                    if metadata:
+                        img_path = IMAGES_DIR / metadata.get("filename", f"{img_id}.png")
+                        if img_path.exists():
+                            img_bytes = img_path.read_bytes()
+                            mime_type = _detect_image_mime_type(img_bytes)
+                            context_images.append((img_bytes, mime_type))
+
+        # Optimize prompt
+        result = await pe_service.optimize_prompt(
+            prompt=request.prompt,
+            questions=request.questions,
+            answers=request.answers,
+            history=request.history if request.history else None,
+            context_images=context_images,
+        )
+
+        return PEOptimizeResponse(success=True, optimized_prompt=result.optimized_prompt)
+
+    except Exception as e:
+        logger.error(f"[PE] Prompt optimization failed: {e}")
+        return PEOptimizeResponse(success=False, error=str(e))
 
 
 # Serve static files

@@ -5,6 +5,7 @@ Stores index in generated_images/search_index/
 
 import logging
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -16,6 +17,7 @@ import pyarrow as pa
 from .embedding_service import EmbeddingService
 
 logger = logging.getLogger(__name__)
+_table_lock = threading.Lock()
 
 
 def _escape_sql_string(value: str) -> str:
@@ -48,27 +50,47 @@ class VectorStore:
         self.db = lancedb.connect(str(self.db_path))
         self._table: Optional[lancedb.table.Table] = None
 
+    def _get_table_names(self) -> list[str]:
+        """Get list of table names, handling both old and new LanceDB API."""
+        result = self.db.list_tables()
+        # New API returns ListTablesResponse with .tables attribute
+        if hasattr(result, 'tables'):
+            return result.tables
+        return list(result)
+
     @property
     def table(self) -> lancedb.table.Table:
-        """Get or create the images table."""
+        """Get or create the images table. Thread-safe."""
         if self._table is not None:
             return self._table
 
-        # Check if table exists
-        if self.TABLE_NAME in self.db.list_tables():
-            self._table = self.db.open_table(self.TABLE_NAME)
-        else:
-            # Create table with schema
-            schema = pa.schema([
-                pa.field("id", pa.string()),
-                pa.field("image_path", pa.string()),
-                pa.field("vector", pa.list_(pa.float32(), EmbeddingService.EMBEDDING_DIM)),
-                pa.field("prompt_id", pa.string()),
-                pa.field("prompt_text", pa.string()),
-                pa.field("indexed_at", pa.string()),
-            ])
-            self._table = self.db.create_table(self.TABLE_NAME, schema=schema)
-            logger.info(f"Created LanceDB table: {self.TABLE_NAME}")
+        with _table_lock:
+            # Double-check after acquiring lock
+            if self._table is not None:
+                return self._table
+
+            # Check if table exists
+            if self.TABLE_NAME in self._get_table_names():
+                self._table = self.db.open_table(self.TABLE_NAME)
+            else:
+                # Create table with schema
+                schema = pa.schema([
+                    pa.field("id", pa.string()),
+                    pa.field("image_path", pa.string()),
+                    pa.field("vector", pa.list_(pa.float32(), EmbeddingService.EMBEDDING_DIM)),
+                    pa.field("prompt_id", pa.string()),
+                    pa.field("prompt_text", pa.string()),
+                    pa.field("indexed_at", pa.string()),
+                ])
+                try:
+                    self._table = self.db.create_table(self.TABLE_NAME, schema=schema)
+                    logger.info(f"Created LanceDB table: {self.TABLE_NAME}")
+                except Exception as e:
+                    if "already exists" in str(e):
+                        # Race condition - another thread created it
+                        self._table = self.db.open_table(self.TABLE_NAME)
+                    else:
+                        raise
 
         return self._table
 

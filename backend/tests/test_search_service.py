@@ -77,7 +77,10 @@ class TestVectorStore:
         """Accessing table should create it if not exists."""
         table = vector_store.table
         assert table is not None
-        assert "images" in vector_store.db.list_tables()
+        tables_response = vector_store.db.list_tables()
+        # LanceDB returns ListTablesResponse object with .tables attribute
+        table_names = tables_response.tables if hasattr(tables_response, 'tables') else list(tables_response)
+        assert "images" in table_names
 
     def test_add_and_retrieve_image(self, vector_store):
         """Should be able to add and check if image is indexed."""
@@ -276,3 +279,270 @@ class TestSqlInjectionPrevention:
         """is_indexed should reject SQL injection attempts."""
         result = vector_store.is_indexed("img' OR '1'='1")
         assert result is False  # Should fail gracefully
+
+
+class TestBackgroundIndexer:
+    """Tests for the BackgroundIndexer async worker."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for testing."""
+        temp_dir = tempfile.mkdtemp()
+        yield Path(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @pytest.fixture
+    def indexer(self, temp_dir):
+        """Create a BackgroundIndexer instance for testing."""
+        from backend.search.indexer import BackgroundIndexer
+        return BackgroundIndexer(temp_dir)
+
+    def test_init(self, indexer, temp_dir):
+        """BackgroundIndexer should initialize correctly."""
+        assert indexer.images_dir == temp_dir
+        assert indexer.pending_count == 0
+        assert indexer.is_running is False
+
+    def test_queue_for_indexing(self, indexer):
+        """Should queue jobs for indexing."""
+        indexer.queue_for_indexing(
+            image_id="img-test1234",
+            image_path="test.jpg",
+            prompt_id="prompt-1",
+            prompt_text="test prompt",
+        )
+        assert indexer.pending_count == 1
+
+    def test_queue_multiple(self, indexer):
+        """Should queue multiple jobs."""
+        images = [
+            {"id": "img-001", "image_path": "1.jpg", "prompt_id": "p1", "prompt_text": "text1"},
+            {"id": "img-002", "image_path": "2.jpg", "prompt_id": "p1", "prompt_text": "text2"},
+            {"id": "img-003", "image_path": "3.jpg", "prompt_id": "p2"},
+        ]
+        count = indexer.queue_multiple(images)
+        assert count == 3
+        assert indexer.pending_count == 3
+
+    @pytest.mark.asyncio
+    async def test_start_stop(self, indexer):
+        """Should start and stop cleanly."""
+        await indexer.start()
+        assert indexer.is_running is True
+
+        await indexer.stop()
+        assert indexer.is_running is False
+
+    @pytest.mark.asyncio
+    async def test_start_twice(self, indexer):
+        """Starting twice should be safe."""
+        await indexer.start()
+        await indexer.start()  # Should not raise
+        assert indexer.is_running is True
+        await indexer.stop()
+
+    @pytest.mark.asyncio
+    async def test_stop_when_not_running(self, indexer):
+        """Stopping when not running should be safe."""
+        await indexer.stop()  # Should not raise
+        assert indexer.is_running is False
+
+    def test_queue_full_behavior(self, indexer):
+        """Should handle queue full gracefully."""
+        import asyncio
+        from backend.search.indexer import BackgroundIndexer
+
+        # Create indexer with small queue
+        small_queue_indexer = BackgroundIndexer(indexer.images_dir)
+        small_queue_indexer.queue = MagicMock()
+        # Use asyncio.QueueFull as that's what the code catches
+        small_queue_indexer.queue.put_nowait.side_effect = [None, None, asyncio.QueueFull()]
+
+        # These should not raise
+        small_queue_indexer.queue_for_indexing("img-1", "1.jpg", "p1")
+        small_queue_indexer.queue_for_indexing("img-2", "2.jpg", "p1")
+        small_queue_indexer.queue_for_indexing("img-3", "3.jpg", "p1")  # This one drops silently
+
+
+class TestSearchService:
+    """Tests for the SearchService orchestration layer."""
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for testing."""
+        temp_dir = tempfile.mkdtemp()
+        # Create subdirectories expected by SearchService
+        (Path(temp_dir) / "search_index").mkdir()
+        yield Path(temp_dir)
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+    @pytest.fixture
+    def mock_embedding_service(self):
+        """Create a mock embedding service."""
+        mock = MagicMock()
+        mock.EMBEDDING_DIM = 768
+        # Return a normalized random vector
+        def make_vector(*args, **kwargs):
+            v = np.random.randn(768).astype(np.float32)
+            return v / np.linalg.norm(v)
+        mock.embed_image.side_effect = make_vector
+        mock.embed_text.side_effect = make_vector
+        return mock
+
+    @pytest.fixture
+    def search_service(self, temp_dir, mock_embedding_service):
+        """Create a SearchService with mocked embedding."""
+        from backend.search.search_service import SearchService
+        service = SearchService(temp_dir)
+        service.embedding_service = mock_embedding_service
+        return service
+
+    def test_init(self, search_service, temp_dir):
+        """SearchService should initialize correctly."""
+        assert search_service.images_dir == temp_dir
+        assert search_service.embedding_service is not None
+        assert search_service.vector_store is not None
+
+    def test_search_by_text_empty_query(self, search_service):
+        """Empty text query should return empty results."""
+        results = search_service.search_by_text("")
+        assert results == []
+        results = search_service.search_by_text("   ")
+        assert results == []
+
+    def test_search_by_text(self, search_service, temp_dir):
+        """Text search should work with indexed images."""
+        # Create a test image file
+        test_image = temp_dir / "test.jpg"
+        from PIL import Image
+        img = Image.new("RGB", (100, 100), color="red")
+        img.save(test_image)
+
+        # Index the image
+        search_service.index_image(
+            image_id="img-test001",
+            image_path="test.jpg",
+            prompt_id="prompt-1",
+            prompt_text="a red square",
+        )
+
+        # Search
+        results = search_service.search_by_text("red square")
+        assert len(results) >= 1
+        assert results[0].id == "img-test001"
+
+    def test_index_image_file_not_found(self, search_service):
+        """Should return False for non-existent image."""
+        result = search_service.index_image(
+            image_id="img-missing",
+            image_path="nonexistent.jpg",
+            prompt_id="prompt-1",
+        )
+        assert result is False
+
+    def test_index_image_success(self, search_service, temp_dir):
+        """Should successfully index an image."""
+        # Create a test image file
+        test_image = temp_dir / "test.jpg"
+        from PIL import Image
+        img = Image.new("RGB", (100, 100), color="blue")
+        img.save(test_image)
+
+        result = search_service.index_image(
+            image_id="img-test002",
+            image_path="test.jpg",
+            prompt_id="prompt-1",
+            prompt_text="a blue square",
+        )
+        assert result is True
+        assert "img-test002" in search_service.get_indexed_ids()
+
+    def test_index_image_already_indexed(self, search_service, temp_dir):
+        """Should skip already indexed images."""
+        # Create a test image file
+        test_image = temp_dir / "test.jpg"
+        from PIL import Image
+        img = Image.new("RGB", (100, 100), color="green")
+        img.save(test_image)
+
+        # Index once
+        search_service.index_image(
+            image_id="img-test003",
+            image_path="test.jpg",
+            prompt_id="prompt-1",
+        )
+        # Index again - should return True (already indexed)
+        result = search_service.index_image(
+            image_id="img-test003",
+            image_path="test.jpg",
+            prompt_id="prompt-1",
+        )
+        assert result is True
+
+    def test_index_images_batch(self, search_service, temp_dir):
+        """Should batch index multiple images."""
+        # Create test images
+        from PIL import Image
+        for i in range(3):
+            img = Image.new("RGB", (100, 100), color=(i * 50, i * 50, i * 50))
+            img.save(temp_dir / f"batch{i}.jpg")
+
+        images = [
+            {"id": f"img-batch{i}", "image_path": f"batch{i}.jpg", "prompt_id": "p1"}
+            for i in range(3)
+        ]
+        # Add one non-existent image
+        images.append({"id": "img-missing", "image_path": "missing.jpg", "prompt_id": "p1"})
+
+        indexed, failed = search_service.index_images_batch(images)
+        assert indexed == 3
+        assert failed == 1
+
+    def test_get_stats(self, search_service, temp_dir):
+        """Should return correct stats."""
+        # Create and index a test image
+        from PIL import Image
+        test_image = temp_dir / "stats_test.jpg"
+        img = Image.new("RGB", (100, 100))
+        img.save(test_image)
+
+        # Get count before indexing
+        initial_count = search_service.vector_store.count()
+
+        search_service.index_image(
+            image_id="img-stats",
+            image_path="stats_test.jpg",
+            prompt_id="prompt-1",
+        )
+
+        stats = search_service.get_stats()
+        # Count should have increased by 1
+        assert stats["indexed_count"] == initial_count + 1
+        assert stats["embedding_dim"] == 768
+
+    def test_search_by_image(self, search_service, temp_dir):
+        """Should find similar images."""
+        from PIL import Image
+
+        # Create and index multiple test images
+        for i in range(3):
+            img = Image.new("RGB", (100, 100), color=(i * 80, i * 80, i * 80))
+            img.save(temp_dir / f"similar{i}.jpg")
+            search_service.index_image(
+                image_id=f"img-similar{i}",
+                image_path=f"similar{i}.jpg",
+                prompt_id="prompt-1",
+            )
+
+        # Search by the first image
+        results = search_service.search_by_image(
+            image_id="img-similar0",
+            image_path="similar0.jpg",
+            limit=10,
+        )
+
+        # The source image should be excluded
+        result_ids = [r.id for r in results]
+        assert "img-similar0" not in result_ids
+        # Other images should be in results
+        assert len(results) >= 1

@@ -10,7 +10,7 @@ from pathlib import Path
 # =============================================================================
 # Models
 # =============================================================================
-DEFAULT_TEXT_MODEL = "gemini-3-flash-preview"
+DEFAULT_TEXT_MODEL = "gemini-3-pro-preview"
 DEFAULT_IMAGE_MODEL = "gemini-3-pro-image-preview"
 DEFAULT_FAST_TEXT_MODEL = (
     "gemini-3-flash-preview"  # Fast model for analysis and polish operations
@@ -26,7 +26,7 @@ GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "300000"))  # 200 se
 # =============================================================================
 # Semantic search requires downloading a ~1.5GB embedding model.
 # Set to True when ready to enable, or set ENABLE_SEARCH=true env var.
-ENABLE_SEARCH = os.environ.get("ENABLE_SEARCH", "").lower() in ("true", "1", "yes")
+ENABLE_SEARCH = os.environ.get("ENABLE_SEARCH", "true").lower() in ("true", "1", "yes")
 
 # =============================================================================
 # Paths
