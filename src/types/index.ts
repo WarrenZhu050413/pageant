@@ -228,6 +228,7 @@ export interface ImageGenerationParams {
 export interface Settings extends ImageGenerationParams {
   text_model?: string;
   image_model?: string;
+  max_concurrent_operations?: number;
 }
 
 export interface Session {
@@ -275,6 +276,7 @@ export interface GeneratePromptsRequest extends ImageGenerationParams {
   prompt: string;  // Complete prompt from frontend (includes template + user input)
   count: number;
   context_image_ids?: string[];
+  explore_ratio?: number;  // 0-100, percentage of variations that should explore creative directions (vs faithful)
 }
 
 export interface GeneratePromptsResponse {
@@ -352,6 +354,6 @@ export interface UploadResponse {
 // UI State types
 export type ViewMode = 'single' | 'grid';
 export type LeftTab = 'generations' | 'collections' | 'all-images' | 'library';
-export type RightTab = 'generate' | 'settings';
+export type RightTab = 'generate' | 'settings' | 'import';
 export type SelectionMode = 'none' | 'select';
 

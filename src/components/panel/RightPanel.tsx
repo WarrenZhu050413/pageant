@@ -1,16 +1,18 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
-import { Wand2, Settings, ChevronDown } from 'lucide-react';
+import { Wand2, Settings, ChevronDown, Import } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
 import type { RightTab } from '../../types';
 import { GenerateTab } from './GenerateTab';
 import { SettingsTab } from './SettingsTab';
+import { ImportTab } from './ImportTab';
 import { NotesPanel } from '../sidebar/NotesPanel';
 
 const tabs = [
   { id: 'generate', label: 'Generate', icon: <Wand2 size={14} />, shortcut: 'G' },
+  { id: 'import', label: 'Import', icon: <Import size={14} />, shortcut: 'I' },
   { id: 'settings', label: 'Settings', icon: <Settings size={14} />, shortcut: 'T' },
 ];
 
@@ -28,7 +30,7 @@ export function RightPanel() {
         onChange={(id) => setRightTab(id as RightTab)}
       />
 
-      {/* Tab Content - both tabs always mounted to preserve state */}
+      {/* Tab Content - all tabs always mounted to preserve state */}
       <div className="flex-1 overflow-hidden relative">
         <div
           className={`h-full overflow-y-auto absolute inset-0 transition-opacity duration-150 ${
@@ -36,6 +38,13 @@ export function RightPanel() {
           }`}
         >
           <GenerateTab />
+        </div>
+        <div
+          className={`h-full overflow-y-auto absolute inset-0 transition-opacity duration-150 ${
+            rightTab === 'import' ? 'opacity-100 z-10' : 'opacity-0 z-0 pointer-events-none'
+          }`}
+        >
+          <ImportTab />
         </div>
         <div
           className={`h-full overflow-y-auto absolute inset-0 transition-opacity duration-150 ${
