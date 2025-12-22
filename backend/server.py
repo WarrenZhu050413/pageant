@@ -882,10 +882,9 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
             ]
             logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: using {len(variation_context)} per-variation context: {per_var_ids}")
         else:
-            # No per-variation context assigned - fall back to global context images
-            variation_context = global_context_images
-            ctx_count = len(global_context_images) if global_context_images else 0
-            logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: no per-variation context, using {ctx_count} global context images")
+            # No per-variation context assigned - use no context (not global fallback)
+            variation_context = None
+            logger.info(f"[CONTEXT TRACE] Prompt #{i+1}: no per-variation context assigned, using 0 context images")
 
         tasks.append(
             _generate_single_image(
