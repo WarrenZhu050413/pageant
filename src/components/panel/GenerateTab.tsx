@@ -13,6 +13,9 @@ import {
   Settings2,
   Pencil,
   Palette,
+  Sparkles,
+  ScanSearch,
+  Paintbrush,
 } from "lucide-react";
 import { useStore } from "../../store";
 import { getImageUrl } from "../../api";
@@ -20,6 +23,7 @@ import { Button, Input, Textarea } from "../ui";
 import { PromptPreviewModal } from "../modals/PromptPreviewModal";
 import { ImagePickerModal } from "../modals/ImagePickerModal";
 import { ContextAnnotationModal } from "../modals/ContextAnnotationModal";
+import { PromptWorkspaceModal } from "../prompt-workspace";
 import type { ImageSize, AspectRatio, SafetyLevel } from "../../types";
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from "../../types";
 
@@ -34,6 +38,10 @@ const SIZE_PRICES: Record<string, string> = {
 const IMAGE_COUNT_KEY = "pageant:defaultImageCount";
 // LocalStorage key for skip optimization preference
 const SKIP_OPTIMIZATION_KEY = "pageant:skipOptimization";
+// LocalStorage key for auto-analyze on upload preference
+const AUTO_ANALYZE_KEY = "pageant:autoAnalyzeOnUpload";
+// LocalStorage key for auto-enhance on upload preference
+const AUTO_ENHANCE_KEY = "pageant:autoEnhanceOnUpload";
 
 export function GenerateTab() {
   const [title, setTitle] = useState("");
@@ -52,6 +60,7 @@ export function GenerateTab() {
   });
   const [countInput, setCountInput] = useState<string | null>(null); // Temporary input while editing
   const [showImagePicker, setShowImagePicker] = useState(false);
+  const [showPromptWorkspace, setShowPromptWorkspace] = useState(false);
   const [editingContextImageId, setEditingContextImageId] = useState<
     string | null
   >(null);
@@ -71,8 +80,11 @@ export function GenerateTab() {
   const clearContextImages = useStore((s) => s.clearContextImages);
   const setContextImages = useStore((s) => s.setContextImages);
   const isGenerating = useStore((s) => s.isGenerating);
+  const isAnalyzing = useStore((s) => s.isAnalyzing);
   const generateVariations = useStore((s) => s.generateVariations);
   const uploadImages = useStore((s) => s.uploadImages);
+  const analyzeUploadedImages = useStore((s) => s.analyzeUploadedImages);
+  const enhanceImage = useStore((s) => s.enhanceImage);
   const prompts = useStore((s) => s.generations);
   const selectedIds = useStore((s) => s.selectedIds);
   const collections = useStore((s) => s.collections);
@@ -493,16 +505,36 @@ export function GenerateTab() {
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
         onKeyDown={(e) => {
-          // Shift+Enter to generate directly
-          if (e.key === "Enter" && e.shiftKey && !e.metaKey && !e.ctrlKey) {
+          // Cmd/Ctrl+Enter to generate
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
             e.preventDefault();
             handleGenerate();
           }
+          // Shift+Enter inserts newline (default behavior, no action needed)
         }}
         placeholder="Describe the image you want to generate..."
         className="min-h-[150px]"
         data-prompt-input
       />
+
+      {/* Prompt Engineering Workspace Button */}
+      {prompt.trim() && (
+        <button
+          type="button"
+          onClick={() => setShowPromptWorkspace(true)}
+          className={clsx(
+            "w-full px-3 py-2 rounded-lg",
+            "flex items-center justify-center gap-2",
+            "text-xs font-medium text-brass",
+            "bg-brass-muted/30 hover:bg-brass-muted/50",
+            "border border-brass/30",
+            "transition-colors",
+          )}
+        >
+          <Sparkles size={14} />
+          Enter Prompt Engineering Workspace
+        </button>
+      )}
 
       {/* Advanced Options */}
       <div className="border border-border rounded-lg overflow-hidden">
@@ -856,8 +888,17 @@ export function GenerateTab() {
         onClose={() => setEditingContextImageId(null)}
       />
 
+      {/* Prompt Engineering Workspace Modal */}
+      <PromptWorkspaceModal
+        isOpen={showPromptWorkspace}
+        onClose={() => setShowPromptWorkspace(false)}
+        initialPrompt={prompt}
+        contextImageIds={contextImageIds}
+        onApply={(optimizedPrompt) => setPrompt(optimizedPrompt)}
+      />
+
       {/* Upload Section */}
-      <div className="pt-4 border-t border-border space-y-2">
+      <div className="pt-4 border-t border-border space-y-3">
         <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
           Upload Images
         </label>
@@ -883,6 +924,50 @@ export function GenerateTab() {
             Folder
           </Button>
         </div>
+
+        {/* Auto-analyze and enhance buttons */}
+        <div className="space-y-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<ScanSearch size={14} />}
+            onClick={() => {
+              // Get image IDs to analyze - use selected images or current image
+              const imageIds =
+                selectedIds.size > 0
+                  ? Array.from(selectedIds)
+                  : getCurrentImage()
+                    ? [getCurrentImage()!.id]
+                    : [];
+              if (imageIds.length > 0) {
+                analyzeUploadedImages(imageIds);
+              }
+            }}
+            className="w-full justify-start text-ink-secondary hover:text-ink"
+            disabled={isGenerating || isAnalyzing || (selectedIds.size === 0 && !getCurrentImage())}
+          >
+            {isAnalyzing
+              ? "Analyzing..."
+              : `Auto-analyze dimensions${selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}`}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            leftIcon={<Paintbrush size={14} />}
+            onClick={() => {
+              // Enhance the current image
+              const currentImage = getCurrentImage();
+              if (currentImage) {
+                enhanceImage(currentImage.id);
+              }
+            }}
+            className="w-full justify-start text-ink-secondary hover:text-ink"
+            disabled={isGenerating || !getCurrentImage()}
+          >
+            Enhance current image
+          </Button>
+        </div>
+
         <input
           ref={fileInputRef}
           type="file"

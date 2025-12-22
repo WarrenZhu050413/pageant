@@ -3395,12 +3395,12 @@ async def pe_generate_questions(request: PEGenerateQuestionsRequest):
         context_images = None
         if request.context_image_ids:
             context_images = []
-            async with _metadata_manager.atomic():
+            async with _metadata_manager.atomic() as data:
                 for img_id in request.context_image_ids:
-                    metadata = await _metadata_manager.get_image(img_id)
-                    if metadata:
+                    img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
+                    if img_data:
                         # Load image bytes
-                        img_path = IMAGES_DIR / metadata.get("filename", f"{img_id}.png")
+                        img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
                         if img_path.exists():
                             img_bytes = img_path.read_bytes()
                             mime_type = _detect_image_mime_type(img_bytes)
@@ -3449,11 +3449,11 @@ async def pe_optimize_prompt(request: PEOptimizeRequest):
         context_images = None
         if request.context_image_ids:
             context_images = []
-            async with _metadata_manager.atomic():
+            async with _metadata_manager.atomic() as data:
                 for img_id in request.context_image_ids:
-                    metadata = await _metadata_manager.get_image(img_id)
-                    if metadata:
-                        img_path = IMAGES_DIR / metadata.get("filename", f"{img_id}.png")
+                    img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
+                    if img_data:
+                        img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
                         if img_path.exists():
                             img_bytes = img_path.read_bytes()
                             mime_type = _detect_image_mime_type(img_bytes)

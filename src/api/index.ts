@@ -543,3 +543,134 @@ export async function getSearchStats(): Promise<{
   return request('/search/stats');
 }
 
+// =============================================================================
+// Prompt Engineering Workspace
+// =============================================================================
+
+export interface PEOption {
+  label: string;
+  description: string;
+}
+
+export interface PEQuestion {
+  question: string;
+  header: string;
+  options: PEOption[];
+  multiSelect: boolean;
+}
+
+export interface PERound {
+  questions: PEQuestion[];
+  answers: Record<string, string | string[]>;
+  optimized_prompt: string;
+}
+
+export interface PEGenerateQuestionsRequest {
+  prompt: string;
+  context_image_ids?: string[];
+  history?: PERound[];
+}
+
+export interface PEGenerateQuestionsResponse {
+  success: boolean;
+  questions: PEQuestion[];
+  error?: string;
+}
+
+export interface PEOptimizeRequest {
+  prompt: string;
+  questions: PEQuestion[];
+  answers: Record<string, string | string[]>;
+  context_image_ids?: string[];
+  history?: PERound[];
+}
+
+export interface PEOptimizeResponse {
+  success: boolean;
+  optimized_prompt: string;
+  error?: string;
+}
+
+/**
+ * Generate clarifying questions for a prompt.
+ * Uses Gemini Flash to analyze the prompt and suggest targeted questions.
+ */
+export async function peGenerateQuestions(
+  data: PEGenerateQuestionsRequest
+): Promise<PEGenerateQuestionsResponse> {
+  return request<PEGenerateQuestionsResponse>('/pe/questions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Optimize a prompt based on user's answers to questions.
+ */
+export async function peOptimizePrompt(
+  data: PEOptimizeRequest
+): Promise<PEOptimizeResponse> {
+  return request<PEOptimizeResponse>('/pe/optimize', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// =============================================================================
+// Image Analysis & Enhancement (for uploaded images)
+// =============================================================================
+
+export interface AnalyzeImagesResponse {
+  success: boolean;
+  analyzed: Array<{
+    id: string;
+    design_dimensions: Record<string, DesignDimension>;
+    annotation: string;
+  }>;
+  errors: Array<{
+    id: string;
+    error: string;
+  }>;
+}
+
+export interface EnhanceImageResponse {
+  success: boolean;
+  prompt_id: string;
+  image: {
+    id: string;
+    image_path: string;
+    mime_type: string;
+    created_at: string;
+    notes?: string;
+    source_image_id?: string;
+    design_dimensions?: Record<string, DesignDimension>;
+    annotation?: string;
+  };
+}
+
+/**
+ * Analyze uploaded images to extract design dimensions and annotations.
+ * Sends each image to Gemini for analysis.
+ */
+export async function analyzeUploadedImages(
+  imageIds: string[]
+): Promise<AnalyzeImagesResponse> {
+  return request<AnalyzeImagesResponse>('/analyze-uploaded-images', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
+  });
+}
+
+/**
+ * Enhance an image with professional photoshop-style improvements.
+ * Creates a new image that is a polished, retouched version of the original.
+ */
+export async function enhanceImage(
+  imageId: string
+): Promise<EnhanceImageResponse> {
+  return request<EnhanceImageResponse>('/enhance-image', {
+    method: 'POST',
+    body: JSON.stringify({ image_id: imageId }),
+  });
+}
+

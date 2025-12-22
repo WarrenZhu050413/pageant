@@ -230,6 +230,11 @@ interface AppStore {
   // Upload
   uploadImages: (files: File[]) => Promise<void>;
 
+  // Image Analysis & Enhancement (for uploaded images)
+  isAnalyzing: boolean;
+  analyzeUploadedImages: (imageIds: string[]) => Promise<void>;
+  enhanceImage: (imageId: string) => Promise<void>;
+
   // Sessions (server-side)
   createSession: (name: string) => Promise<void>;
   switchSession: (id: string) => Promise<void>;
@@ -1861,6 +1866,44 @@ export const useStore = create<AppStore>()(
 
         try {
           const response = await api.uploadImages(files);
+          await get().refreshData();
+
+          set({
+            currentGenerationId: response.prompt_id,
+            currentImageIndex: 0,
+            isGenerating: false,
+          });
+        } catch (error) {
+          set({ isGenerating: false, error: (error as Error).message });
+        }
+      },
+
+      // Image Analysis & Enhancement (for uploaded images)
+      isAnalyzing: false,
+
+      analyzeUploadedImages: async (imageIds) => {
+        set({ isAnalyzing: true, error: null });
+
+        try {
+          const response = await api.analyzeUploadedImages(imageIds);
+          await get().refreshData();
+
+          if (response.errors.length > 0) {
+            const errorMessages = response.errors.map((e) => `${e.id}: ${e.error}`).join(", ");
+            set({ isAnalyzing: false, error: `Some images failed: ${errorMessages}` });
+          } else {
+            set({ isAnalyzing: false });
+          }
+        } catch (error) {
+          set({ isAnalyzing: false, error: (error as Error).message });
+        }
+      },
+
+      enhanceImage: async (imageId) => {
+        set({ isGenerating: true, error: null });
+
+        try {
+          const response = await api.enhanceImage(imageId);
           await get().refreshData();
 
           set({

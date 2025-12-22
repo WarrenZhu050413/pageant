@@ -81,6 +81,16 @@ class SceneVariationsResponse(BaseModel):
     )
 
 
+class ImageAnalysisResponse(BaseModel):
+    """Response from analyzing an image for design dimensions."""
+    design_dimensions: list[DesignDimensionOutput] = Field(
+        description="3-4 substantial design dimensions capturing the visual essence"
+    )
+    annotation: str = Field(
+        description="A brief, evocative description of the image for AI context (1-2 sentences)"
+    )
+
+
 def _detect_image_mime_type(data: bytes) -> str:
     """Detect actual image MIME type from magic bytes."""
     if data[:8] == b'\x89PNG\r\n\x1a\n':
@@ -633,6 +643,83 @@ class GeminiService:
         return await self.generate_image(
             prompt=prompt,
             aspect_ratio=aspect_ratio,
+            context_images=context_images,
+        )
+
+    async def analyze_image(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+    ) -> ImageAnalysisResponse:
+        """Analyze an image to extract design dimensions and generate annotation.
+
+        Args:
+            image_bytes: The image data
+            mime_type: MIME type of the image
+
+        Returns:
+            ImageAnalysisResponse with design dimensions and annotation
+        """
+        prompt = """Analyze this image and extract its key design dimensions. For each dimension:
+1. Identify the axis (e.g., lighting, mood, colors, composition, texture, style)
+2. Give it an evocative 2-4 word name that captures its essence
+3. Write a 2-3 sentence description of how this dimension manifests in the image
+4. Provide 2-3 design vocabulary tags
+5. Write a prompt that could generate a pure concept image representing just this dimension
+
+Also provide a brief, evocative annotation (1-2 sentences) describing the image for AI context.
+
+Focus on the most distinctive and impactful visual qualities. Extract 3-4 substantial dimensions."""
+
+        # Normalize image format for Gemini
+        norm_bytes, norm_mime = _normalize_image_for_gemini(image_bytes, mime_type)
+
+        result = await self._generate_structured(
+            prompt=prompt,
+            images=[(norm_bytes, norm_mime, None)],
+            response_schema=ImageAnalysisResponse,
+            operation_name="analyze_image",
+        )
+
+        return result
+
+    async def enhance_image(
+        self,
+        image_bytes: bytes,
+        mime_type: str,
+    ) -> ImageResult:
+        """Generate an enhanced version of an image with professional photoshop-style improvements.
+
+        Args:
+            image_bytes: The original image data
+            mime_type: MIME type of the image
+
+        Returns:
+            ImageResult with the enhanced image
+        """
+        prompt = """Generate a new image based on this reference that keeps ALL of its content exactly the same.
+However, apply professional photoshop-style enhancements to make it look polished and refined:
+
+- Remove any blemishes, dust spots, or imperfections
+- Correct and balance the lighting - fix overexposed or underexposed areas
+- Enhance color balance and saturation for a more vibrant but natural look
+- Improve contrast and tonal range
+- Sharpen details where appropriate
+- Reduce noise and grain
+- Correct any color casts or white balance issues
+- Smooth out any harsh shadows
+- Fix any lens distortion or perspective issues
+- Enhance skin tones if people are present (remove blemishes, even out skin)
+- Make colors more consistent and harmonious
+
+IMPORTANT: Keep the exact same subject, composition, framing, and content. Only improve the technical quality and polish of the image. The result should look like the same photo after professional retouching."""
+
+        # Normalize image format for Gemini
+        norm_bytes, norm_mime = _normalize_image_for_gemini(image_bytes, mime_type)
+        context_images = [(norm_bytes, norm_mime, "Image to enhance")]
+
+        return await self.generate_image(
+            prompt=prompt,
             context_images=context_images,
         )
 
