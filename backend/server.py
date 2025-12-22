@@ -471,6 +471,7 @@ async def _generate_single_image(
             "mime_type": img_data["mime_type"],
             "generated_at": now.isoformat(),
             "varied_prompt": prompt,  # Store the actual prompt used for this image
+            "is_imported": False,
         }
     except Exception as e:
         error_type = type(e).__name__
@@ -1312,6 +1313,7 @@ async def import_image_from_url(req: ImportUrlRequest):
                 "image_path": filename,
                 "mime_type": mime_type,
                 "created_at": datetime.now().isoformat(),
+                "is_imported": True,
                 "tags": req.tags,
                 "source_url": req.url,
                 "page_url": req.pageUrl
@@ -1503,6 +1505,7 @@ async def enhance_image(req: EnhanceImageRequest):
             "image_path": filename,
             "mime_type": enhanced_mime,
             "created_at": datetime.now().isoformat(),
+            "is_imported": False,
             "notes": f"Enhanced version of {req.image_id}",
             "source_image_id": req.image_id,
         }
