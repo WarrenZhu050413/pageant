@@ -1234,6 +1234,7 @@ async def upload_images(
             "image_path": filename,
             "mime_type": detected_mime_type,
             "created_at": datetime.now().isoformat(),
+            "is_imported": True,
         })
 
     if not images:
@@ -1352,6 +1353,11 @@ class AnalyzeImagesRequest(BaseModel):
 class EnhanceImageRequest(BaseModel):
     """Request to enhance an image with professional photoshop-style improvements."""
     image_id: str
+
+
+class EnhanceImagesRequest(BaseModel):
+    """Request to batch enhance multiple images into a single generation."""
+    image_ids: list[str]
 
 
 @app.post("/api/analyze-uploaded-images")
@@ -1542,6 +1548,129 @@ async def enhance_image(req: EnhanceImageRequest):
     except Exception as e:
         logger.error(f"Failed to enhance image {req.image_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/enhance-images")
+async def enhance_images_batch(req: EnhanceImagesRequest):
+    """Batch enhance multiple images into a single 'Enhanced Uploaded Images' generation.
+
+    Processes images in parallel (up to MAX_CONCURRENT_OPERATIONS at a time).
+    All enhanced images are grouped into one prompt entry.
+    """
+    import asyncio
+
+    if not req.image_ids:
+        raise HTTPException(status_code=400, detail="No image IDs provided")
+
+    metadata = load_metadata()
+    semaphore = asyncio.Semaphore(config.MAX_CONCURRENT_OPERATIONS)
+
+    async def enhance_single(image_id: str) -> dict | None:
+        """Enhance a single image with concurrency limiting."""
+        async with semaphore:
+            # Find the source image
+            source_image = None
+            source_prompt = None
+            for prompt in metadata.get("prompts", []):
+                for img in prompt.get("images", []):
+                    if img["id"] == image_id:
+                        source_image = img
+                        source_prompt = prompt
+                        break
+                if source_image:
+                    break
+
+            if not source_image:
+                logger.warning(f"Image not found for enhancement: {image_id}")
+                return None
+
+            source_path = IMAGES_DIR / source_image["image_path"]
+            if not source_path.exists():
+                logger.warning(f"Image file not found: {source_path}")
+                return None
+
+            try:
+                image_bytes = source_path.read_bytes()
+                mime_type = source_image.get("mime_type", "image/jpeg")
+
+                result = await gemini.enhance_image(image_bytes, mime_type)
+
+                if not result.images:
+                    logger.warning(f"No enhanced image generated for {image_id}")
+                    return None
+
+                enhanced_image_data = result.images[0]
+                new_image_id = f"enhanced-{uuid.uuid4().hex[:8]}"
+
+                enhanced_mime = enhanced_image_data.get("mime_type", "image/jpeg")
+                ext = ".jpg" if "jpeg" in enhanced_mime else ".png" if "png" in enhanced_mime else ".jpg"
+                filename = f"{new_image_id}{ext}"
+
+                image_data_bytes = base64.b64decode(enhanced_image_data["data"])
+                (IMAGES_DIR / filename).write_bytes(image_data_bytes)
+
+                new_image = {
+                    "id": new_image_id,
+                    "image_path": filename,
+                    "mime_type": enhanced_mime,
+                    "created_at": datetime.now().isoformat(),
+                    "notes": f"Enhanced version of {image_id}",
+                    "source_image_id": image_id,
+                }
+
+                # Copy design dimensions and annotation from source
+                if source_image.get("design_dimensions"):
+                    new_image["design_dimensions"] = source_image["design_dimensions"]
+                if source_image.get("annotation"):
+                    new_image["annotation"] = source_image["annotation"]
+
+                logger.info(f"Enhanced image {image_id} -> {new_image_id}")
+                return new_image
+
+            except Exception as e:
+                logger.error(f"Failed to enhance image {image_id}: {e}")
+                return None
+
+    # Process all images in parallel
+    results = await asyncio.gather(*[enhance_single(img_id) for img_id in req.image_ids])
+    enhanced_images = [r for r in results if r is not None]
+
+    if not enhanced_images:
+        raise HTTPException(status_code=500, detail="No images were successfully enhanced")
+
+    # Create a single generation for all enhanced images
+    prompt_id = f"enhanced-batch-{uuid.uuid4().hex[:8]}"
+    prompt_entry = {
+        "id": prompt_id,
+        "title": "Enhanced Uploaded Images",
+        "prompt": f"Professional retouching applied to {len(enhanced_images)} uploaded images",
+        "created_at": datetime.now().isoformat(),
+        "images": enhanced_images,
+    }
+
+    async with _metadata_manager.atomic() as fresh_metadata:
+        fresh_metadata["prompts"].append(prompt_entry)
+
+    # Queue all for background indexing
+    if config.ENABLE_SEARCH:
+        indexer = get_background_indexer(IMAGES_DIR)
+        for img in enhanced_images:
+            indexer.queue_for_indexing(
+                image_id=img["id"],
+                image_path=img["image_path"],
+                prompt_id=prompt_id,
+                prompt_text="Enhanced uploaded image",
+            )
+
+    logger.info(f"Batch enhanced {len(enhanced_images)}/{len(req.image_ids)} images -> {prompt_id}")
+
+    return {
+        "success": True,
+        "prompt_id": prompt_id,
+        "images": enhanced_images,
+        "total_requested": len(req.image_ids),
+        "total_enhanced": len(enhanced_images),
+    }
 
 
 @app.post("/api/favorites")
@@ -3104,6 +3233,8 @@ async def get_settings():
         "thinking_level": settings.get("thinking_level"),  # None = high (default)
         "temperature": settings.get("temperature"),  # None = 1.0 (default)
         "google_search_grounding": settings.get("google_search_grounding"),  # None = disabled
+        # Concurrency
+        "max_concurrent_operations": config.MAX_CONCURRENT_OPERATIONS,
     }
 
 

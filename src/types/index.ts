@@ -89,6 +89,7 @@ export interface ImageData {
   image_path: string;
   mime_type: string;
   generated_at: string;
+  is_imported?: boolean;  // True if image was uploaded/imported (not AI-generated)
   varied_prompt?: string;
   variation_title?: string;  // Short title for this specific variation (2-5 words)
   mood?: string;
@@ -147,6 +148,8 @@ export interface DraftPrompt {
   isGenerating?: boolean;
   // Auto-generate flag - when true, auto-trigger image generation after prompts complete
   autoGenerate?: boolean;
+  // Explore ratio used for this draft (0-100)
+  exploreRatio?: number;
 }
 
 
