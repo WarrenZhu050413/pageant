@@ -24,6 +24,7 @@ export function ImportTab() {
   // Store
   const isGenerating = useStore((s) => s.isGenerating);
   const isAnalyzing = useStore((s) => s.isAnalyzing);
+  const analysisProgress = useStore((s) => s.analysisProgress);
   const uploadImages = useStore((s) => s.uploadImages);
   const analyzeUploadedImages = useStore((s) => s.analyzeUploadedImages);
   const enhanceImage = useStore((s) => s.enhanceImage);
@@ -129,7 +130,11 @@ export function ImportTab() {
       {(isGenerating || isAnalyzing) && (
         <div className="flex items-center gap-2 text-sm text-ink-secondary">
           <div className="w-4 h-4 border-2 border-brass/30 border-t-brass rounded-full animate-spin" />
-          {isAnalyzing ? "Analyzing images..." : "Processing..."}
+          {isAnalyzing && analysisProgress
+            ? `Analyzing ${analysisProgress.current}/${analysisProgress.total} images...`
+            : isAnalyzing
+              ? "Analyzing images..."
+              : "Uploading..."}
         </div>
       )}
 

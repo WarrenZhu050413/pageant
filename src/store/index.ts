@@ -37,6 +37,7 @@ import { buildPrompt, buildConceptPrompt } from '../prompts';
 interface PendingGeneration {
   title?: string;  // Optional - will be auto-generated if not provided
   count: number;
+  prompt: string;  // The prompt being used for all images
 }
 
 interface AppStore {
@@ -64,6 +65,7 @@ interface AppStore {
   // UI State
   isGenerating: boolean;
   pendingGenerations: Map<string, PendingGeneration>;
+  currentPendingId: string | null;  // Currently viewed pending generation
   pendingConceptGenerations: Set<string>; // Token IDs currently generating concept images
   isGeneratingReference: boolean; // Generating a reference image from prompt
   error: string | null;
@@ -112,6 +114,7 @@ interface AppStore {
 
   // Generation navigation
   setCurrentGeneration: (id: string | null) => void;
+  setCurrentPending: (id: string | null) => void;
   setCurrentImageIndex: (index: number) => void;
   nextImage: () => void;
   prevImage: () => void;
@@ -302,6 +305,7 @@ export const useStore = create<AppStore>()(
 
       isGenerating: false,
       pendingGenerations: new Map(),
+      currentPendingId: null,
       pendingConceptGenerations: new Set(),
       isGeneratingReference: false,
       error: null,
@@ -432,7 +436,11 @@ export const useStore = create<AppStore>()(
 
       // Generation navigation
       setCurrentGeneration: (id) => {
-        set({ currentGenerationId: id, currentImageIndex: 0, currentCollectionId: null });
+        set({ currentGenerationId: id, currentImageIndex: 0, currentCollectionId: null, currentPendingId: null });
+      },
+
+      setCurrentPending: (id) => {
+        set({ currentPendingId: id, currentGenerationId: null, currentCollectionId: null, currentImageIndex: 0 });
       },
 
       setCurrentImageIndex: (index) => {
@@ -576,7 +584,7 @@ export const useStore = create<AppStore>()(
         // Create pending generation
         const tempId = `pending-${Date.now()}`;
         const newPending = new Map(pendingGenerations);
-        newPending.set(tempId, { title, count: count || 4 });
+        newPending.set(tempId, { title, count: count || 4, prompt });
 
         // isGenerating is true if any pending generations exist
         set({ isGenerating: true, pendingGenerations: newPending, error: null });
@@ -670,11 +678,14 @@ export const useStore = create<AppStore>()(
 
           // Don't auto-navigate to new generation - only update generation state
           // User can click on the new generation in the left panel to view it
+          // Clear currentPendingId if this was the one being viewed
+          const { currentPendingId } = get();
           set({
             isGenerating: updatedPending.size > 0,
             pendingGenerations: updatedPending,
             contextImageIds: [],
             contextAnnotationOverrides: {},
+            ...(currentPendingId === tempId ? { currentPendingId: null } : {}),
           });
 
           // Show success toast with option to view
@@ -696,10 +707,12 @@ export const useStore = create<AppStore>()(
         } catch (error) {
           const updatedPending = new Map(get().pendingGenerations);
           updatedPending.delete(tempId);
+          const { currentPendingId: viewingPendingId } = get();
           set({
             isGenerating: updatedPending.size > 0,
             pendingGenerations: updatedPending,
             error: (error as Error).message,
+            ...(viewingPendingId === tempId ? { currentPendingId: null } : {}),
           });
 
           // Show error toast
@@ -1879,7 +1892,15 @@ export const useStore = create<AppStore>()(
           const imageIds = response.images.map((img) => img.id);
           const maxConcurrent = get().settings?.max_concurrent_operations ?? 6;
 
-          // Auto-analyze if enabled - process in parallel with concurrency limit
+          // Immediately show uploaded images to user
+          await get().refreshData();
+          set({
+            currentGenerationId: response.prompt_id,
+            currentImageIndex: 0,
+            isGenerating: false,
+          });
+
+          // Auto-analyze if enabled - runs in background after images are visible
           if (options?.analyze && imageIds.length > 0) {
             set({
               isAnalyzing: true,
@@ -1900,6 +1921,8 @@ export const useStore = create<AppStore>()(
 
               try {
                 await api.analyzeUploadedImages([imageId]);
+                // Refresh to show analysis results as they complete
+                await get().refreshData();
               } catch (analyzeError) {
                 console.error(`Auto-analyze failed for ${imageId}:`, analyzeError);
               }
@@ -1926,25 +1949,20 @@ export const useStore = create<AppStore>()(
           }
 
           // Auto-enhance if enabled - use batch API (backend handles parallelism)
-          let enhancePromptId: string | undefined;
           if (options?.enhance && imageIds.length > 0) {
             try {
               const enhanceResponse = await api.enhanceImages(imageIds);
-              enhancePromptId = enhanceResponse.prompt_id;
               console.log(`Enhanced ${enhanceResponse.total_enhanced}/${enhanceResponse.total_requested} images`);
+              // Refresh and navigate to enhanced images
+              await get().refreshData();
+              set({
+                currentGenerationId: enhanceResponse.prompt_id,
+                currentImageIndex: 0,
+              });
             } catch (enhanceError) {
               console.error('Batch enhance failed:', enhanceError);
             }
           }
-
-          await get().refreshData();
-
-          set({
-            // Navigate to enhanced generation if created, otherwise to uploaded
-            currentGenerationId: enhancePromptId ?? response.prompt_id,
-            currentImageIndex: 0,
-            isGenerating: false,
-          });
         } catch (error) {
           set({ isGenerating: false, isAnalyzing: false, analysisProgress: null, error: (error as Error).message });
         }
