@@ -27,6 +27,7 @@ export interface PromptBuildOptions {
   title?: string;
   contextImageCount?: number;
   template?: 'variation' | 'reference';
+  exploreRatio?: number;  // 0-100, percentage of variations that explore creative directions
 }
 
 /**
@@ -34,7 +35,7 @@ export interface PromptBuildOptions {
  * The backend receives this as-is without any template processing.
  */
 export function buildPrompt(options: PromptBuildOptions): string {
-  const { basePrompt, count, title, contextImageCount = 0, template = 'variation' } = options;
+  const { basePrompt, count, title, contextImageCount = 0, template = 'variation', exploreRatio = 50 } = options;
 
   // Select template
   const templateText = template === 'reference' ? REFERENCE_TEMPLATE : VARIATION_TEMPLATE;
@@ -65,12 +66,45 @@ If any image's caption is inadequate for generation context, suggest improvement
 `;
   }
 
+  // Build explore ratio section
+  // Calculate how many should explore vs be faithful (round up for explore)
+  const exploreCount = Math.ceil(count * exploreRatio / 100);
+  const faithfulCount = count - exploreCount;
+  let exploreSection = '';
+  if (exploreRatio === 0) {
+    exploreSection = `
+CRITICAL - VARIATION STYLE: FAITHFUL
+ALL ${count} scenes must faithfully interpret the prompt exactly as written.
+- DO NOT add unexpected elements, themes, or creative departures
+- DO NOT reinterpret or transform the core concept
+- Vary only technical aspects: lighting angles, camera positions, color grading
+- Keep the same subject, mood, and intent the user specified
+- Think of these as ${count} different "takes" of the same scene`;
+  } else if (exploreRatio === 100) {
+    exploreSection = `
+CRITICAL - VARIATION STYLE: EXPLORATORY
+ALL ${count} scenes should explore unexpected creative directions.
+- Push boundaries and surprise the user
+- Take artistic liberties with the prompt
+- Reinterpret the concept in unexpected ways
+- Vary subjects, moods, styles, and themes dramatically
+- Think of these as ${count} different "remixes" of the original idea`;
+  } else {
+    exploreSection = `
+CRITICAL - VARIATION STYLE: MIXED
+- ${faithfulCount} scene(s): FAITHFUL - interpret the prompt exactly, vary only technical aspects (lighting, angle, color grading)
+- ${exploreCount} scene(s): EXPLORATORY - take creative liberties, reinterpret, surprise
+
+Clearly distinguish between faithful takes and exploratory remixes in your ${count} variations.`;
+  }
+
   // Substitute placeholders
   return templateText
     .replace('{base_prompt}', basePrompt)
     .replace('{count}', String(count))
     .replace('{title_context}', titleContext)
-    .replace('{context_section}', contextSection);
+    .replace('{context_section}', contextSection)
+    .replace('{explore_section}', exploreSection);
 }
 
 /**

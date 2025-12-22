@@ -5,24 +5,23 @@
  * Each scene gets design dimensions for token extraction.
  */
 
-export const VARIATION_TEMPLATE = `You are a creative director for visual imagery exploration.
-Generate scene descriptions for AI image generation, balancing the user's vision with creative exploration.
+export const VARIATION_TEMPLATE = `You are a creative director for visual imagery.
+Generate scene descriptions for AI image generation based on the user's prompt.
 
 {title_context}
 
-Generate {count} diverse scene descriptions based on this prompt:
+Generate {count} scene descriptions based on this prompt:
 
 "{base_prompt}"
 
 {context_section}
 
+{explore_section}
+
 Requirements:
 1. Each scene must be vivid and detailed for AI image generation
-2. Vary lighting, composition, and style across scenes
-3. Some scenes should faithfully interpret the prompt
-4. Some scenes should explore unexpected creative directions
-5. All scenes should be visually striking and interesting
-6. Each scene needs a SHORT, EVOCATIVE TITLE (2-5 words) that captures its unique character
+2. All scenes should be visually striking and interesting
+3. Each scene needs a SHORT, EVOCATIVE TITLE (2-5 words) that captures its unique character
 
 Design tag guidelines (select 1-3 per axis based on the scene):
 NOTE: These are SUGGESTED tags. You may use novel, specific tags when they better describe the scene.
