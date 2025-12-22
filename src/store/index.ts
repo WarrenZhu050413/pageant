@@ -153,6 +153,7 @@ interface AppStore {
     prompt: string;
     title?: string; // Optional - will be auto-generated if not provided
     count?: number;
+    exploreRatio?: number; // 0-100, percentage of variations that explore creative directions
     template?: 'variation' | 'reference'; // Which prompt template to use
     autoGenerate?: boolean; // Auto-trigger image generation after prompts complete
   } & ImageGenerationParams) => Promise<void>;
@@ -232,6 +233,7 @@ interface AppStore {
 
   // Image Analysis & Enhancement (for uploaded images)
   isAnalyzing: boolean;
+  analysisProgress: { current: number; total: number; currentImageId: string | null } | null;
   analyzeUploadedImages: (imageIds: string[]) => Promise<void>;
   enhanceImage: (imageId: string) => Promise<void>;
 
@@ -604,12 +606,16 @@ export const useStore = create<AppStore>()(
             }
           }
 
-          let prompts: { text: string; mood?: string; design?: Record<string, string[]> }[];
+          let prompts: { text: string; mood?: string; design?: Record<string, string[]>; recommended_context_ids?: string[] }[];
           let generatedTitle = title || 'Untitled';
 
           if (skipOptimization) {
             // Skip optimization: use the original prompt directly
-            prompts = Array.from({ length: count || 4 }, () => ({ text: prompt }));
+            // Attach context images to each prompt so backend uses them
+            prompts = Array.from({ length: count || 4 }, () => ({
+              text: prompt,
+              recommended_context_ids: contextImageIds.length > 0 ? contextImageIds : undefined,
+            }));
           } else {
             // Phase 1: Generate prompt variations via streaming
             // Build complete prompt using frontend template
@@ -715,7 +721,7 @@ export const useStore = create<AppStore>()(
       },
 
       // Two-Phase Generation Actions
-      generateVariations: async ({ prompt, title, count = 4, image_size, aspect_ratio, seed, safety_level, template = 'variation', autoGenerate = false }) => {
+      generateVariations: async ({ prompt, title, count = 4, exploreRatio = 50, image_size, aspect_ratio, seed, safety_level, template = 'variation', autoGenerate = false }) => {
         const { contextImageIds, draftPrompts } = get();
 
         // Create a draft prompt immediately with placeholder title if not provided
@@ -731,6 +737,7 @@ export const useStore = create<AppStore>()(
           contextImageIds: contextImageIds.length > 0 ? [...contextImageIds] : undefined,
           isGenerating: true, // Per-draft generating state for concurrent support
           autoGenerate, // Auto-trigger image generation after prompts complete
+          exploreRatio, // Store explore ratio for regeneration
         };
 
         // Note: isGeneratingVariations kept for backwards compatibility but not used to block UI
@@ -756,6 +763,7 @@ export const useStore = create<AppStore>()(
             title: title || undefined,
             contextImageCount: contextImageIds.length,
             template,
+            exploreRatio,
           });
 
           // Use streaming API for real-time progress
@@ -1178,6 +1186,7 @@ export const useStore = create<AppStore>()(
             count: 1,
             contextImageCount: draft.contextImageIds?.length || 0,
             template: 'variation',
+            exploreRatio: draft.exploreRatio ?? 50,
           });
 
           const response = await api.generatePromptVariations({
@@ -1226,6 +1235,7 @@ export const useStore = create<AppStore>()(
             count,
             contextImageCount: draft.contextImageIds?.length || 0,
             template: 'variation',
+            exploreRatio: draft.exploreRatio ?? 50,
           });
 
           const response = await api.generatePromptVariations({
@@ -1867,61 +1877,137 @@ export const useStore = create<AppStore>()(
         try {
           const response = await api.uploadImages(files);
           const imageIds = response.images.map((img) => img.id);
+          const maxConcurrent = get().settings?.max_concurrent_operations ?? 6;
 
-          // Auto-analyze if enabled
+          // Auto-analyze if enabled - process in parallel with concurrency limit
           if (options?.analyze && imageIds.length > 0) {
-            set({ isAnalyzing: true });
-            try {
-              await api.analyzeUploadedImages(imageIds);
-            } catch (analyzeError) {
-              console.error("Auto-analyze failed:", analyzeError);
-              // Continue even if analyze fails
+            set({
+              isAnalyzing: true,
+              analysisProgress: { current: 0, total: imageIds.length, currentImageId: null }
+            });
+
+            let completed = 0;
+            const queue = [...imageIds];
+            const inFlight = new Set<Promise<void>>();
+
+            const processNext = async (): Promise<void> => {
+              if (queue.length === 0) return;
+
+              const imageId = queue.shift()!;
+              set({
+                analysisProgress: { current: completed + inFlight.size + 1, total: imageIds.length, currentImageId: imageId }
+              });
+
+              try {
+                await api.analyzeUploadedImages([imageId]);
+              } catch (analyzeError) {
+                console.error(`Auto-analyze failed for ${imageId}:`, analyzeError);
+              }
+
+              completed++;
+              set({
+                analysisProgress: { current: completed, total: imageIds.length, currentImageId: null }
+              });
+            };
+
+            // Process queue with concurrency limit
+            while (queue.length > 0 || inFlight.size > 0) {
+              while (inFlight.size < maxConcurrent && queue.length > 0) {
+                const promise = processNext();
+                inFlight.add(promise);
+                promise.finally(() => inFlight.delete(promise));
+              }
+              if (inFlight.size > 0) {
+                await Promise.race(inFlight);
+              }
             }
-            set({ isAnalyzing: false });
+
+            set({ isAnalyzing: false, analysisProgress: null });
           }
 
-          // Auto-enhance if enabled (process each image sequentially)
+          // Auto-enhance if enabled - use batch API (backend handles parallelism)
+          let enhancePromptId: string | undefined;
           if (options?.enhance && imageIds.length > 0) {
-            for (const imageId of imageIds) {
-              try {
-                await api.enhanceImage(imageId);
-              } catch (enhanceError) {
-                console.error(`Failed to enhance image ${imageId}:`, enhanceError);
-                // Continue with next image
-              }
+            try {
+              const enhanceResponse = await api.enhanceImages(imageIds);
+              enhancePromptId = enhanceResponse.prompt_id;
+              console.log(`Enhanced ${enhanceResponse.total_enhanced}/${enhanceResponse.total_requested} images`);
+            } catch (enhanceError) {
+              console.error('Batch enhance failed:', enhanceError);
             }
           }
 
           await get().refreshData();
 
           set({
-            currentGenerationId: response.prompt_id,
+            // Navigate to enhanced generation if created, otherwise to uploaded
+            currentGenerationId: enhancePromptId ?? response.prompt_id,
             currentImageIndex: 0,
             isGenerating: false,
           });
         } catch (error) {
-          set({ isGenerating: false, isAnalyzing: false, error: (error as Error).message });
+          set({ isGenerating: false, isAnalyzing: false, analysisProgress: null, error: (error as Error).message });
         }
       },
 
       // Image Analysis & Enhancement (for uploaded images)
       isAnalyzing: false,
+      analysisProgress: null,
 
       analyzeUploadedImages: async (imageIds) => {
-        set({ isAnalyzing: true, error: null });
+        set({
+          isAnalyzing: true,
+          error: null,
+          analysisProgress: { current: 0, total: imageIds.length, currentImageId: null }
+        });
 
-        try {
-          const response = await api.analyzeUploadedImages(imageIds);
-          await get().refreshData();
+        const maxConcurrent = get().settings?.max_concurrent_operations ?? 6;
+        const errors: { id: string; error: string }[] = [];
 
-          if (response.errors.length > 0) {
-            const errorMessages = response.errors.map((e) => `${e.id}: ${e.error}`).join(", ");
-            set({ isAnalyzing: false, error: `Some images failed: ${errorMessages}` });
-          } else {
-            set({ isAnalyzing: false });
+        let completed = 0;
+        const queue = [...imageIds];
+        const inFlight = new Set<Promise<void>>();
+
+        const processNext = async (): Promise<void> => {
+          if (queue.length === 0) return;
+
+          const imageId = queue.shift()!;
+          set({
+            analysisProgress: { current: completed + inFlight.size + 1, total: imageIds.length, currentImageId: imageId }
+          });
+
+          try {
+            await api.analyzeUploadedImages([imageId]);
+          } catch (error) {
+            console.error(`Failed to analyze image ${imageId}:`, error);
+            errors.push({ id: imageId, error: (error as Error).message });
           }
-        } catch (error) {
-          set({ isAnalyzing: false, error: (error as Error).message });
+
+          completed++;
+          set({
+            analysisProgress: { current: completed, total: imageIds.length, currentImageId: null }
+          });
+        };
+
+        // Process queue with concurrency limit
+        while (queue.length > 0 || inFlight.size > 0) {
+          while (inFlight.size < maxConcurrent && queue.length > 0) {
+            const promise = processNext();
+            inFlight.add(promise);
+            promise.finally(() => inFlight.delete(promise));
+          }
+          if (inFlight.size > 0) {
+            await Promise.race(inFlight);
+          }
+        }
+
+        await get().refreshData();
+
+        if (errors.length > 0) {
+          const errorMessages = errors.map((e) => `${e.id}: ${e.error}`).join(", ");
+          set({ isAnalyzing: false, analysisProgress: null, error: `Some images failed: ${errorMessages}` });
+        } else {
+          set({ isAnalyzing: false, analysisProgress: null });
         }
       },
 
