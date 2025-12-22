@@ -44,6 +44,10 @@ const AUTO_ANALYZE_KEY = "pageant:autoAnalyzeOnUpload";
 const AUTO_ENHANCE_KEY = "pageant:autoEnhanceOnUpload";
 
 export function GenerateTab() {
+  // Sub-tab state
+  const [subTab, setSubTab] = useState<"create" | "import">("create");
+
+  // Create tab state
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
   const [skipOptimization, setSkipOptimization] = useState(() => {
@@ -57,6 +61,16 @@ export function GenerateTab() {
     // Load saved count from localStorage, default to 4
     const saved = localStorage.getItem(IMAGE_COUNT_KEY);
     return saved ? parseInt(saved, 10) : 4;
+  });
+
+  // Import tab state
+  const [autoAnalyze, setAutoAnalyze] = useState(() => {
+    const saved = localStorage.getItem(AUTO_ANALYZE_KEY);
+    return saved === "true";
+  });
+  const [autoEnhance, setAutoEnhance] = useState(() => {
+    const saved = localStorage.getItem(AUTO_ENHANCE_KEY);
+    return saved === "true";
   });
   const [countInput, setCountInput] = useState<string | null>(null); // Temporary input while editing
   const [showImagePicker, setShowImagePicker] = useState(false);
@@ -278,23 +292,80 @@ export function GenerateTab() {
     setShowImagePicker(false);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
-      uploadImages(Array.from(files));
+      await uploadImages(Array.from(files), {
+        analyze: autoAnalyze,
+        enhance: autoEnhance,
+      });
     }
     e.target.value = "";
   };
 
+  // Persist auto-analyze preference
+  const handleAutoAnalyzeChange = (checked: boolean) => {
+    setAutoAnalyze(checked);
+    localStorage.setItem(AUTO_ANALYZE_KEY, checked.toString());
+  };
+
+  // Persist auto-enhance preference
+  const handleAutoEnhanceChange = (checked: boolean) => {
+    setAutoEnhance(checked);
+    localStorage.setItem(AUTO_ENHANCE_KEY, checked.toString());
+  };
+
   return (
-    <div className="p-4 space-y-5">
-      {/* Title (optional) */}
-      <Input
-        label="Title (optional)"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Auto-generate from prompt"
-      />
+    <div className="flex flex-col h-full">
+      {/* Sub-tab bar */}
+      <div className="flex border-b border-border px-4 pt-2">
+        <button
+          onClick={() => setSubTab("create")}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium transition-colors relative",
+            subTab === "create"
+              ? "text-ink"
+              : "text-ink-secondary hover:text-ink"
+          )}
+        >
+          Create
+          {subTab === "create" && (
+            <motion.div
+              layoutId="subtab-indicator"
+              className="absolute bottom-0 left-0 right-0 h-0.5 bg-brass"
+            />
+          )}
+        </button>
+        <button
+          onClick={() => setSubTab("import")}
+          className={clsx(
+            "px-4 py-2 text-sm font-medium transition-colors relative",
+            subTab === "import"
+              ? "text-ink"
+              : "text-ink-secondary hover:text-ink"
+          )}
+        >
+          Import
+          {subTab === "import" && (
+            <motion.div
+              layoutId="subtab-indicator"
+              className="absolute bottom-0 left-0 right-0 h-0.5 bg-brass"
+            />
+          )}
+        </button>
+      </div>
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {subTab === "create" ? (
+          <>
+            {/* Title (optional) */}
+            <Input
+              label="Title (optional)"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Auto-generate from prompt"
+            />
 
       {/* Count - Inline Editable Number */}
       <div className="flex items-center gap-3">
@@ -897,77 +968,137 @@ export function GenerateTab() {
         onApply={(optimizedPrompt) => setPrompt(optimizedPrompt)}
       />
 
-      {/* Upload Section */}
-      <div className="pt-4 border-t border-border space-y-3">
-        <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
-          Upload Images
-        </label>
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<Upload size={14} />}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex-1"
-            disabled={isGenerating}
-          >
-            Files
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<FolderUp size={14} />}
-            onClick={() => folderInputRef.current?.click()}
-            className="flex-1"
-            disabled={isGenerating}
-          >
-            Folder
-          </Button>
-        </div>
+          </>
+        ) : (
+          /* Import Tab Content */
+          <div className="space-y-6">
+            {/* Upload buttons */}
+            <div className="space-y-3">
+              <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
+                Upload Images
+              </label>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<Upload size={14} />}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex-1"
+                  disabled={isGenerating || isAnalyzing}
+                >
+                  Files
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  leftIcon={<FolderUp size={14} />}
+                  onClick={() => folderInputRef.current?.click()}
+                  className="flex-1"
+                  disabled={isGenerating || isAnalyzing}
+                >
+                  Folder
+                </Button>
+              </div>
+            </div>
 
-        {/* Auto-analyze and enhance buttons */}
-        <div className="space-y-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<ScanSearch size={14} />}
-            onClick={() => {
-              // Get image IDs to analyze - use selected images or current image
-              const imageIds =
-                selectedIds.size > 0
-                  ? Array.from(selectedIds)
-                  : getCurrentImage()
-                    ? [getCurrentImage()!.id]
-                    : [];
-              if (imageIds.length > 0) {
-                analyzeUploadedImages(imageIds);
-              }
-            }}
-            className="w-full justify-start text-ink-secondary hover:text-ink"
-            disabled={isGenerating || isAnalyzing || (selectedIds.size === 0 && !getCurrentImage())}
-          >
-            {isAnalyzing
-              ? "Analyzing..."
-              : `Auto-analyze dimensions${selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}`}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            leftIcon={<Paintbrush size={14} />}
-            onClick={() => {
-              // Enhance the current image
-              const currentImage = getCurrentImage();
-              if (currentImage) {
-                enhanceImage(currentImage.id);
-              }
-            }}
-            className="w-full justify-start text-ink-secondary hover:text-ink"
-            disabled={isGenerating || !getCurrentImage()}
-          >
-            Enhance current image
-          </Button>
-        </div>
+            {/* Upload options */}
+            <div className="space-y-3">
+              <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
+                On Upload
+              </label>
 
+              {/* Auto-analyze checkbox */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={autoAnalyze}
+                  onChange={(e) => handleAutoAnalyzeChange(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-border bg-canvas-muted text-brass focus:ring-brass/30"
+                />
+                <div>
+                  <div className="text-sm text-ink group-hover:text-ink-bold transition-colors">
+                    Auto-analyze dimensions
+                  </div>
+                  <div className="text-xs text-ink-secondary mt-0.5">
+                    Extract design dimensions and tags from uploaded images
+                  </div>
+                </div>
+              </label>
+
+              {/* Auto-enhance checkbox */}
+              <label className="flex items-start gap-3 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={autoEnhance}
+                  onChange={(e) => handleAutoEnhanceChange(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-border bg-canvas-muted text-brass focus:ring-brass/30"
+                />
+                <div>
+                  <div className="text-sm text-ink group-hover:text-ink-bold transition-colors">
+                    Auto-enhance images
+                  </div>
+                  <div className="text-xs text-ink-secondary mt-0.5">
+                    Apply professional retouching to all uploaded images
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {/* Processing status */}
+            {(isGenerating || isAnalyzing) && (
+              <div className="flex items-center gap-2 text-sm text-ink-secondary">
+                <div className="w-4 h-4 border-2 border-brass/30 border-t-brass rounded-full animate-spin" />
+                {isAnalyzing ? "Analyzing images..." : "Processing..."}
+              </div>
+            )}
+
+            {/* Manual actions for existing images */}
+            <div className="pt-4 border-t border-border space-y-3">
+              <label className="block text-xs font-medium text-ink-secondary uppercase tracking-wide">
+                Existing Images
+              </label>
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<ScanSearch size={14} />}
+                onClick={() => {
+                  const imageIds =
+                    selectedIds.size > 0
+                      ? Array.from(selectedIds)
+                      : getCurrentImage()
+                        ? [getCurrentImage()!.id]
+                        : [];
+                  if (imageIds.length > 0) {
+                    analyzeUploadedImages(imageIds);
+                  }
+                }}
+                className="w-full justify-start text-ink-secondary hover:text-ink"
+                disabled={isGenerating || isAnalyzing || (selectedIds.size === 0 && !getCurrentImage())}
+              >
+                {isAnalyzing
+                  ? "Analyzing..."
+                  : `Analyze selected${selectedIds.size > 0 ? ` (${selectedIds.size})` : ""}`}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                leftIcon={<Paintbrush size={14} />}
+                onClick={() => {
+                  const currentImage = getCurrentImage();
+                  if (currentImage) {
+                    enhanceImage(currentImage.id);
+                  }
+                }}
+                className="w-full justify-start text-ink-secondary hover:text-ink"
+                disabled={isGenerating || !getCurrentImage()}
+              >
+                Enhance current image
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Hidden file inputs - always rendered */}
         <input
           ref={fileInputRef}
           type="file"

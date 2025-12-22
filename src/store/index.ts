@@ -228,7 +228,7 @@ interface AppStore {
   }) => Promise<void>;
 
   // Upload
-  uploadImages: (files: File[]) => Promise<void>;
+  uploadImages: (files: File[], options?: { analyze?: boolean; enhance?: boolean }) => Promise<void>;
 
   // Image Analysis & Enhancement (for uploaded images)
   isAnalyzing: boolean;
@@ -1861,11 +1861,37 @@ export const useStore = create<AppStore>()(
       },
 
       // Upload
-      uploadImages: async (files) => {
+      uploadImages: async (files, options) => {
         set({ isGenerating: true, error: null });
 
         try {
           const response = await api.uploadImages(files);
+          const imageIds = response.images.map((img) => img.id);
+
+          // Auto-analyze if enabled
+          if (options?.analyze && imageIds.length > 0) {
+            set({ isAnalyzing: true });
+            try {
+              await api.analyzeUploadedImages(imageIds);
+            } catch (analyzeError) {
+              console.error("Auto-analyze failed:", analyzeError);
+              // Continue even if analyze fails
+            }
+            set({ isAnalyzing: false });
+          }
+
+          // Auto-enhance if enabled (process each image sequentially)
+          if (options?.enhance && imageIds.length > 0) {
+            for (const imageId of imageIds) {
+              try {
+                await api.enhanceImage(imageId);
+              } catch (enhanceError) {
+                console.error(`Failed to enhance image ${imageId}:`, enhanceError);
+                // Continue with next image
+              }
+            }
+          }
+
           await get().refreshData();
 
           set({
@@ -1874,7 +1900,7 @@ export const useStore = create<AppStore>()(
             isGenerating: false,
           });
         } catch (error) {
-          set({ isGenerating: false, error: (error as Error).message });
+          set({ isGenerating: false, isAnalyzing: false, error: (error as Error).message });
         }
       },
 
