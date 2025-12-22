@@ -15,7 +15,7 @@ import {
   Images,
   Check,
   Maximize2,
-  Sparkles,
+  ScanSearch,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
@@ -25,7 +25,7 @@ import type { ImageData } from '../../types';
 
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
-  const prompts = useStore((s) => s.generations);
+  const generations = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
@@ -46,9 +46,9 @@ export function SingleView() {
   const findSimilar = useStore((s) => s.findSimilar);
 
   // Compute derived values with useMemo to avoid infinite re-renders
-  const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentGenerationId) || null,
-    [prompts, currentGenerationId]
+  const currentGeneration = useMemo(
+    () => generations.find((g) => g.id === currentGenerationId) || null,
+    [generations, currentGenerationId]
   );
 
   const currentCollection = useMemo(
@@ -58,75 +58,75 @@ export function SingleView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
-    for (const prompt of prompts) {
-      for (const image of prompt.images) {
+    const imageMap = new Map<string, typeof generations[0]['images'][0]>();
+    for (const generation of generations) {
+      for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
-      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
-  }, [prompts, currentCollection]);
+      .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
+  }, [generations, currentCollection]);
 
   // Concept images from store (already sorted newest first)
   const conceptImages = useMemo(() => {
-    const conceptPrompts = prompts.filter((p) => p.is_concept);
-    const images = conceptPrompts.flatMap((prompt) => prompt.images);
+    const conceptGenerations = generations.filter((g) => g.is_concept);
+    const images = conceptGenerations.flatMap((generation) => generation.images);
     return images.sort(
       (a, b) =>
         new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime()
     );
-  }, [prompts]);
+  }, [generations]);
 
   // Determine what we're viewing
   const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
-  const isViewingCollection = !currentPrompt && !!currentCollection && !isViewingConcepts;
+  const isViewingCollection = !currentGeneration && !!currentCollection && !isViewingConcepts;
 
-  // Support prompt, collection, and concepts gallery viewing
+  // Support generation, collection, and concepts gallery viewing
   const displayImages = isViewingConcepts
     ? conceptImages
-    : currentPrompt?.images ?? currentCollectionImages;
+    : currentGeneration?.images ?? currentCollectionImages;
   const displayTitle = isViewingConcepts
     ? 'Design Library'
-    : currentPrompt?.title ?? currentCollection?.name ?? 'Image';
+    : currentGeneration?.title ?? currentCollection?.name ?? 'Image';
 
   const currentImage = displayImages[currentImageIndex] || null;
 
   // Build a map of all images for resolving context image IDs
   const allImagesMap = useMemo(() => {
     const map = new Map<string, ImageData>();
-    for (const prompt of prompts) {
-      for (const image of prompt.images) {
+    for (const generation of generations) {
+      for (const image of generation.images) {
         map.set(image.id, image);
       }
     }
     return map;
-  }, [prompts]);
+  }, [generations]);
 
-  // Get context images used for this prompt's generation
-  // For concept images, find the parent concept prompt and use its context_image_ids
+  // Get context images used for this generation
+  // For concept images, find the parent concept generation and use its context_image_ids
   // eslint-disable-next-line react-hooks/preserve-manual-memoization
-  const promptContextImages = useMemo(() => {
-    // If viewing a regular prompt, use its context
-    if (currentPrompt?.context_image_ids) {
-      return currentPrompt.context_image_ids
+  const generationContextImages = useMemo(() => {
+    // If viewing a regular generation, use its context
+    if (currentGeneration?.context_image_ids) {
+      return currentGeneration.context_image_ids
         .map((id) => allImagesMap.get(id))
         .filter((img): img is ImageData => img !== undefined);
     }
-    // If viewing concepts and we have a current image, find its parent prompt's context
+    // If viewing concepts and we have a current image, find its parent generation's context
     if (isViewingConcepts && currentImage) {
-      const parentPrompt = prompts.find(
-        (p) => p.is_concept && p.images.some((img) => img.id === currentImage.id)
+      const parentGeneration = generations.find(
+        (g) => g.is_concept && g.images.some((img) => img.id === currentImage.id)
       );
-      if (parentPrompt?.context_image_ids) {
-        return parentPrompt.context_image_ids
+      if (parentGeneration?.context_image_ids) {
+        return parentGeneration.context_image_ids
           .map((id) => allImagesMap.get(id))
           .filter((img): img is ImageData => img !== undefined);
       }
     }
     return [];
-  }, [currentPrompt?.context_image_ids, allImagesMap, isViewingConcepts, currentImage, prompts]);
+  }, [currentGeneration?.context_image_ids, allImagesMap, isViewingConcepts, currentImage, generations]);
 
   // State for context display - MUST be before any early returns (React hooks rule)
   const [isContextExpanded, setIsContextExpanded] = useState(false);
@@ -333,7 +333,7 @@ export function SingleView() {
     <>
     <div className="h-full flex flex-col">
       {/* Context Images Display - Above Image (only shown if context images exist) */}
-      {promptContextImages.length > 0 && (
+      {generationContextImages.length > 0 && (
         <div className="border-b border-border bg-surface shrink-0">
           <button
             onClick={() => setIsContextExpanded(!isContextExpanded)}
@@ -348,7 +348,7 @@ export function SingleView() {
                 Context
               </span>
               <span className="text-xs text-ink-tertiary">
-                {promptContextImages.length} reference {promptContextImages.length === 1 ? 'image' : 'images'}
+                {generationContextImages.length} reference {generationContextImages.length === 1 ? 'image' : 'images'}
               </span>
             </div>
             {isContextExpanded ? (
@@ -370,7 +370,7 @@ export function SingleView() {
               >
                 <div className="px-4 pb-3 pt-1 border-t border-border/50">
                   <div className="flex gap-2 flex-wrap">
-                    {promptContextImages.map((img) => (
+                    {generationContextImages.map((img) => (
                       <div
                         key={img.id}
                         className="relative group"
@@ -525,7 +525,7 @@ export function SingleView() {
                     }}
                     className="bg-surface/90 backdrop-blur-sm"
                   >
-                    <Sparkles size={18} />
+                    <ScanSearch size={18} />
                   </IconButton>
                   <a
                     href={getImageUrl(currentImage.image_path)}

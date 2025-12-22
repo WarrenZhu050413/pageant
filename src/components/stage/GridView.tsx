@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Check, FolderMinus } from 'lucide-react';
+import { Check, FolderMinus, ScanSearch } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
+import { ImageContextMenu, type ContextMenuPosition } from '../ui';
 import type { ImageData } from '../../types';
 
 // Extended image data that tracks its parent generation for navigation
@@ -65,6 +66,22 @@ export function GridView() {
   const selectionMode = useStore((s) => s.selectionMode);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const selectedIds = useStore((s) => s.selectedIds);
+  const findSimilar = useStore((s) => s.findSimilar);
+  const deleteImage = useStore((s) => s.deleteImage);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    position: ContextMenuPosition;
+    imageId: string;
+  } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent, imageId: string) => {
+    e.preventDefault();
+    setContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      imageId,
+    });
+  };
 
   // Determine what we're viewing
   const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
@@ -81,7 +98,7 @@ export function GridView() {
     ? conceptImages
     : currentGeneration?.images ?? currentCollectionImages;
   const displayTitle = isViewingConcepts
-    ? 'Design Token Concepts'
+    ? 'Design Library'
     : currentGeneration?.title ?? currentCollection?.name ?? 'Image';
 
   if (displayImages.length === 0) {
@@ -129,6 +146,7 @@ export function GridView() {
                   : 'hover:shadow-lg hover:scale-[1.02]'
               )}
               onClick={() => handleImageClick(index, image)}
+              onContextMenu={(e) => handleContextMenu(e, image.id)}
             >
               <img
                 src={getImageUrl(image.image_path)}
@@ -143,6 +161,25 @@ export function GridView() {
                   'opacity-0 group-hover:opacity-100 transition-opacity'
                 )}
               />
+
+              {/* Find Similar button (top-left, on hover) */}
+              {selectionMode === 'none' && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    findSimilar(image.id);
+                  }}
+                  className={clsx(
+                    'absolute top-2 left-2 w-8 h-8 rounded-full',
+                    'flex items-center justify-center',
+                    'transition-all duration-200',
+                    'bg-surface/80 text-ink-muted opacity-0 group-hover:opacity-100 hover:text-brass'
+                  )}
+                  title="Find similar"
+                >
+                  <ScanSearch size={16} />
+                </button>
+              )}
 
               {/* Remove from collection button (when viewing collections) */}
               {isViewingCollection && (
@@ -205,6 +242,22 @@ export function GridView() {
           );
         })}
       </div>
+
+      {/* Context Menu */}
+      <ImageContextMenu
+        position={contextMenu?.position ?? null}
+        onClose={() => setContextMenu(null)}
+        onFindSimilar={
+          contextMenu
+            ? () => findSimilar(contextMenu.imageId)
+            : undefined
+        }
+        onDelete={
+          contextMenu
+            ? () => deleteImage(contextMenu.imageId)
+            : undefined
+        }
+      />
     </div>
   );
 }

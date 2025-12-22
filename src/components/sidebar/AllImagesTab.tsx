@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { Images, Check, Square, CheckSquare, Search, X, Loader2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { Button } from '../ui';
+import { Button, ImageContextMenu, type ContextMenuPosition } from '../ui';
 import type { ImageData } from '../../types';
 
 type ConceptFilter = 'all' | 'concepts' | 'non-concepts';
@@ -41,6 +41,22 @@ export function AllImagesTab() {
   const clearSemanticSearch = useStore((s) => s.clearSemanticSearch);
   const fetchIndexedIds = useStore((s) => s.fetchIndexedIds);
   const indexedImageIds = useStore((s) => s.indexedImageIds);
+  const findSimilar = useStore((s) => s.findSimilar);
+  const deleteImage = useStore((s) => s.deleteImage);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    position: ContextMenuPosition;
+    imageId: string;
+  } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent, imageId: string) => {
+    e.preventDefault();
+    setContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      imageId,
+    });
+  };
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -370,6 +386,7 @@ export function AllImagesTab() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ delay: Math.min(index * 0.01, 0.3) }}
                 onClick={() => handleImageClick(item)}
+                onContextMenu={(e) => handleContextMenu(e, item.image.id)}
                 className={clsx(
                   'relative aspect-square overflow-hidden cursor-pointer group',
                   isSelected && 'ring-2 ring-brass ring-offset-1 ring-offset-surface',
@@ -429,6 +446,22 @@ export function AllImagesTab() {
         </div>
         )}
       </div>
+
+      {/* Context Menu */}
+      <ImageContextMenu
+        position={contextMenu?.position ?? null}
+        onClose={() => setContextMenu(null)}
+        onFindSimilar={
+          contextMenu
+            ? () => findSimilar(contextMenu.imageId)
+            : undefined
+        }
+        onDelete={
+          contextMenu
+            ? () => deleteImage(contextMenu.imageId)
+            : undefined
+        }
+      />
     </div>
   );
 }
