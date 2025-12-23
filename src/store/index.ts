@@ -61,6 +61,9 @@ interface AppStore {
   contextImageIds: string[];
   // Ephemeral annotation overrides for context images (not persisted)
   contextAnnotationOverrides: Record<string, string>;
+  // Reedit data (for loading a generation's prompt+context back into GenerateTab)
+  reeditPrompt: string | null;
+  reeditContextIds: string[] | null;
 
   // UI State
   isGenerating: boolean;
@@ -142,6 +145,9 @@ interface AppStore {
   setContextAnnotationOverride: (imageId: string, annotation: string) => void;
   clearContextAnnotationOverride: (imageId: string) => void;
   getContextAnnotationOverride: (imageId: string) => string | undefined;
+  // Reedit data actions
+  setReeditData: (prompt: string, contextIds: string[]) => void;
+  clearReeditData: () => void;
 
   // Generation
   generate: (params: {
@@ -188,6 +194,16 @@ interface AppStore {
   deleteGeneration: (generationId: string) => Promise<void>;
   batchDelete: () => Promise<void>;
   batchDeleteGenerations: (generationIds: string[]) => Promise<void>;
+
+  // Archive (hide from generations but keep for collections)
+  archivedPrompts: api.ArchivedPrompt[];
+  archiveImage: (imageId: string) => Promise<void>;
+  archiveGeneration: (generationId: string) => Promise<void>;
+  archiveSelectedImages: () => Promise<void>;
+  archiveSelectedGenerations: () => Promise<void>;
+  unarchiveImage: (imageId: string) => Promise<void>;
+  unarchiveGeneration: (generationId: string) => Promise<void>;
+  refreshArchived: () => Promise<void>;
 
   // Generation selection (for bulk operations)
   selectedGenerationIds: Set<string>;
@@ -302,6 +318,8 @@ export const useStore = create<AppStore>()(
       selectedIds: new Set(),
       contextImageIds: [],
       contextAnnotationOverrides: {},
+      reeditPrompt: null,
+      reeditContextIds: null,
 
       isGenerating: false,
       pendingGenerations: new Map(),
@@ -340,6 +358,9 @@ export const useStore = create<AppStore>()(
       // Generation selection for bulk operations
       selectedGenerationIds: new Set(),
 
+      // Archived prompts
+      archivedPrompts: [],
+
       // Design Axis System
       designPreferences: null,
       totalRated: 0,
@@ -357,12 +378,13 @@ export const useStore = create<AppStore>()(
       // Initialize app
       initialize: async () => {
         try {
-          const [generations, designTokens, collections, settings, sessions] = await Promise.all([
+          const [generations, designTokens, collections, settings, sessions, archivedData] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
             api.fetchSettings(),
             api.fetchSessions(),
+            api.fetchArchived(),
           ]);
 
           // Convert SessionData to Session type
@@ -373,19 +395,34 @@ export const useStore = create<AppStore>()(
             created_at: s.created_at,
           }));
 
+          // Filter out archived generations and images
+          const archivedPromptIds = new Set(archivedData.archived_prompts.filter(p => p.archived).map(p => p.id));
+          const archivedImageIds = new Set(
+            archivedData.archived_prompts.flatMap(p => p.images.filter(img => img.archived).map(img => img.id))
+          );
+
+          const activeGenerations = generations
+            .filter(g => !archivedPromptIds.has(g.id))
+            .map(g => ({
+              ...g,
+              images: g.images.filter(img => !archivedImageIds.has(img.id)),
+            }))
+            .filter(g => g.images.length > 0); // Remove generations with no visible images
+
           // Find the newest generation by created_at (matches sidebar sort order)
-          const newestGeneration = generations.length > 0
-            ? generations.reduce((latest, g) =>
+          const newestGeneration = activeGenerations.length > 0
+            ? activeGenerations.reduce((latest, g) =>
                 new Date(g.created_at) > new Date(latest.created_at) ? g : latest
               )
             : null;
 
           set({
-            generations,
+            generations: activeGenerations,
             designTokens,
             collections,
             settings,
             sessions: sessionsTyped,
+            archivedPrompts: archivedData.archived_prompts,
             currentGenerationId: newestGeneration?.id || null,
           });
         } catch (error) {
@@ -395,13 +432,28 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [generations, designTokens, collections] = await Promise.all([
+          const [generations, designTokens, collections, archivedData] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
+            api.fetchArchived(),
           ]);
 
-          set({ generations, designTokens, collections });
+          // Filter out archived generations and images
+          const archivedPromptIds = new Set(archivedData.archived_prompts.filter(p => p.archived).map(p => p.id));
+          const archivedImageIds = new Set(
+            archivedData.archived_prompts.flatMap(p => p.images.filter(img => img.archived).map(img => img.id))
+          );
+
+          const activeGenerations = generations
+            .filter(g => !archivedPromptIds.has(g.id))
+            .map(g => ({
+              ...g,
+              images: g.images.filter(img => !archivedImageIds.has(img.id)),
+            }))
+            .filter(g => g.images.length > 0);
+
+          set({ generations: activeGenerations, designTokens, collections, archivedPrompts: archivedData.archived_prompts });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -409,8 +461,26 @@ export const useStore = create<AppStore>()(
 
       refreshGenerations: async () => {
         try {
-          const generations = await api.fetchPrompts();
-          set({ generations });
+          const [generations, archivedData] = await Promise.all([
+            api.fetchPrompts(),
+            api.fetchArchived(),
+          ]);
+
+          // Filter out archived generations and images
+          const archivedPromptIds = new Set(archivedData.archived_prompts.filter(p => p.archived).map(p => p.id));
+          const archivedImageIds = new Set(
+            archivedData.archived_prompts.flatMap(p => p.images.filter(img => img.archived).map(img => img.id))
+          );
+
+          const activeGenerations = generations
+            .filter(g => !archivedPromptIds.has(g.id))
+            .map(g => ({
+              ...g,
+              images: g.images.filter(img => !archivedImageIds.has(img.id)),
+            }))
+            .filter(g => g.images.length > 0);
+
+          set({ generations: activeGenerations, archivedPrompts: archivedData.archived_prompts });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -576,6 +646,14 @@ export const useStore = create<AppStore>()(
         return get().contextAnnotationOverrides[imageId];
       },
 
+      // Reedit data actions
+      setReeditData: (prompt, contextIds) => {
+        set({ reeditPrompt: prompt, reeditContextIds: contextIds });
+      },
+      clearReeditData: () => {
+        set({ reeditPrompt: null, reeditContextIds: null });
+      },
+
       // Generation (supports concurrent generations)
       // Uses two-phase flow: generate variations -> generate images
       generate: async ({ prompt, title, count, image_size, aspect_ratio, seed, safety_level, skipOptimization }) => {
@@ -683,7 +761,7 @@ export const useStore = create<AppStore>()(
           set({
             isGenerating: updatedPending.size > 0,
             pendingGenerations: updatedPending,
-            contextImageIds: [],
+            // Keep context images - don't clear them so user can continue generating with same context
             contextAnnotationOverrides: {},
             ...(currentPendingId === tempId ? { currentPendingId: null } : {}),
           });
@@ -754,13 +832,12 @@ export const useStore = create<AppStore>()(
         };
 
         // Note: isGeneratingVariations kept for backwards compatibility but not used to block UI
+        // Note: We don't navigate to the draft (no currentDraftId change) - user stays on their current view
         set({
           isGeneratingVariations: true,
           error: null,
           streamingText: '', // Reset streaming text
           draftPrompts: [newDraft, ...draftPrompts],
-          currentDraftId: draftId,
-          currentGenerationId: null, // Clear current generation to show draft view
           // Legacy modal state (keep for backwards compat during transition)
           variationsBasePrompt: prompt,
           variationsTitle: initialTitle,
@@ -1026,7 +1103,7 @@ export const useStore = create<AppStore>()(
             ...variationsImageParams,
           });
 
-          // Clear variations and refresh
+          // Clear variations and refresh (keep context images)
           const titleForToast = variationsTitle || 'Untitled';
           set({
             promptVariations: [],
@@ -1035,7 +1112,6 @@ export const useStore = create<AppStore>()(
             variationsImageParams: {},
             streamingText: '',
             isGenerating: false,
-            contextImageIds: [],
           });
 
           await get().refreshData();
@@ -1371,10 +1447,7 @@ export const useStore = create<AppStore>()(
             },
           });
 
-          // Clear context but don't navigate
-          set({
-            contextImageIds: [],
-          });
+          // Keep context images - don't clear them so user can continue generating with same context
         } catch (error) {
           // Remove from generating set on error
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
@@ -1488,6 +1561,113 @@ export const useStore = create<AppStore>()(
           }
         } catch (error) {
           set({ error: (error as Error).message });
+        }
+      },
+
+      // Archive actions
+      archiveImage: async (imageId) => {
+        try {
+          await api.archiveImages([imageId]);
+          await get().refreshData();
+          await get().refreshArchived();
+          toast.success('Image archived');
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to archive image');
+        }
+      },
+
+      archiveGeneration: async (generationId) => {
+        try {
+          await api.archivePrompts([generationId]);
+          await get().refreshData();
+          await get().refreshArchived();
+
+          // Navigate away if current generation was archived
+          const { currentGenerationId, generations } = get();
+          if (currentGenerationId === generationId) {
+            set({ currentGenerationId: generations[0]?.id || null, currentImageIndex: 0 });
+          }
+          toast.success('Generation archived');
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to archive generation');
+        }
+      },
+
+      archiveSelectedImages: async () => {
+        const { selectedIds } = get();
+        if (selectedIds.size === 0) return;
+
+        try {
+          await api.archiveImages(Array.from(selectedIds));
+          await get().refreshData();
+          await get().refreshArchived();
+          set({ selectedIds: new Set(), selectionMode: 'none' });
+          toast.success(`${selectedIds.size} image(s) archived`);
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to archive images');
+        }
+      },
+
+      archiveSelectedGenerations: async () => {
+        const { selectedGenerationIds } = get();
+        if (selectedGenerationIds.size === 0) return;
+
+        try {
+          await api.archivePrompts(Array.from(selectedGenerationIds));
+          await get().refreshData();
+          await get().refreshArchived();
+
+          // Clear selection and navigate if needed
+          const { currentGenerationId, generations } = get();
+          if (currentGenerationId && selectedGenerationIds.has(currentGenerationId)) {
+            set({
+              currentGenerationId: generations[0]?.id || null,
+              currentImageIndex: 0,
+              selectedGenerationIds: new Set(),
+            });
+          } else {
+            set({ selectedGenerationIds: new Set() });
+          }
+          toast.success(`${selectedGenerationIds.size} generation(s) archived`);
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to archive generations');
+        }
+      },
+
+      unarchiveImage: async (imageId) => {
+        try {
+          await api.unarchiveImages([imageId]);
+          await get().refreshData();
+          await get().refreshArchived();
+          toast.success('Image restored');
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to restore image');
+        }
+      },
+
+      unarchiveGeneration: async (generationId) => {
+        try {
+          await api.unarchivePrompts([generationId]);
+          await get().refreshData();
+          await get().refreshArchived();
+          toast.success('Generation restored');
+        } catch (error) {
+          set({ error: (error as Error).message });
+          toast.error('Failed to restore generation');
+        }
+      },
+
+      refreshArchived: async () => {
+        try {
+          const data = await api.fetchArchived();
+          set({ archivedPrompts: data.archived_prompts });
+        } catch (error) {
+          console.error('Failed to fetch archived:', error);
         }
       },
 

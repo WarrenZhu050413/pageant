@@ -2503,6 +2503,121 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
 
 
 # ============================================================
+# FEATURE: Archive (Hide from Generations without Deleting)
+# ============================================================
+
+class ArchiveImagesRequest(BaseModel):
+    image_ids: list[str]
+
+
+class ArchivePromptsRequest(BaseModel):
+    prompt_ids: list[str]
+
+
+@app.post("/api/archive/images")
+async def archive_images(req: ArchiveImagesRequest):
+    """Archive images (hide from generations but keep for collections)."""
+    metadata = load_metadata()
+    archived = []
+
+    for image_id in req.image_ids:
+        for prompt in metadata.get("prompts", []):
+            for img in prompt.get("images", []):
+                if img["id"] == image_id:
+                    img["archived"] = True
+                    archived.append(image_id)
+                    break
+
+    save_metadata(metadata)
+    logger.info(f"Archived {len(archived)} images")
+    return {"success": True, "archived": archived}
+
+
+@app.post("/api/archive/prompts")
+async def archive_prompts(req: ArchivePromptsRequest):
+    """Archive entire prompts (hide from generations but keep for collections)."""
+    metadata = load_metadata()
+    archived = []
+
+    for prompt_id in req.prompt_ids:
+        for prompt in metadata.get("prompts", []):
+            if prompt["id"] == prompt_id:
+                prompt["archived"] = True
+                archived.append(prompt_id)
+                break
+
+    save_metadata(metadata)
+    logger.info(f"Archived {len(archived)} prompts")
+    return {"success": True, "archived": archived}
+
+
+@app.post("/api/unarchive/images")
+async def unarchive_images(req: ArchiveImagesRequest):
+    """Unarchive images (restore to generations)."""
+    metadata = load_metadata()
+    unarchived = []
+
+    for image_id in req.image_ids:
+        for prompt in metadata.get("prompts", []):
+            for img in prompt.get("images", []):
+                if img["id"] == image_id:
+                    img.pop("archived", None)
+                    unarchived.append(image_id)
+                    break
+
+    save_metadata(metadata)
+    logger.info(f"Unarchived {len(unarchived)} images")
+    return {"success": True, "unarchived": unarchived}
+
+
+@app.post("/api/unarchive/prompts")
+async def unarchive_prompts(req: ArchivePromptsRequest):
+    """Unarchive prompts (restore to generations)."""
+    metadata = load_metadata()
+    unarchived = []
+
+    for prompt_id in req.prompt_ids:
+        for prompt in metadata.get("prompts", []):
+            if prompt["id"] == prompt_id:
+                prompt.pop("archived", None)
+                unarchived.append(prompt_id)
+                break
+
+    save_metadata(metadata)
+    logger.info(f"Unarchived {len(unarchived)} prompts")
+    return {"success": True, "unarchived": unarchived}
+
+
+@app.get("/api/archived")
+async def get_archived():
+    """Get all archived prompts and their images."""
+    metadata = load_metadata()
+    archived_prompts = []
+
+    for prompt in metadata.get("prompts", []):
+        # Check if prompt is archived OR has any archived images
+        prompt_archived = prompt.get("archived", False)
+        archived_images = [img for img in prompt.get("images", []) if img.get("archived", False)]
+
+        if prompt_archived or archived_images:
+            # For archived prompts, include all images
+            # For non-archived prompts with archived images, only include archived images
+            images_to_include = prompt.get("images", []) if prompt_archived else archived_images
+
+            archived_prompts.append({
+                "id": prompt["id"],
+                "prompt": prompt.get("prompt", ""),
+                "title": prompt.get("title", "Untitled"),
+                "created_at": prompt.get("created_at"),
+                "archived": prompt_archived,
+                "images": images_to_include,
+                "context_image_ids": prompt.get("context_image_ids", []),
+            })
+
+    return {"archived_prompts": archived_prompts}
+
+
+# ============================================================
 # FEATURE 5: Collections (Multi-Image Context)
 # ============================================================
 

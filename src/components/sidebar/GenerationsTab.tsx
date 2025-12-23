@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, Archive } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
 
 export function GenerationsTab() {
-  const prompts = useStore((s) => s.generations);
+  const generations = useStore((s) => s.generations);
   const pendingGenerations = useStore((s) => s.pendingGenerations);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
@@ -21,6 +21,8 @@ export function GenerationsTab() {
   const selectAllGenerations = useStore((s) => s.selectAllGenerations);
   const clearGenerationSelection = useStore((s) => s.clearGenerationSelection);
   const batchDeleteGenerations = useStore((s) => s.batchDeleteGenerations);
+  const archiveGeneration = useStore((s) => s.archiveGeneration);
+  const archiveSelectedGenerations = useStore((s) => s.archiveSelectedGenerations);
   const deleteDraft = useStore((s) => s.deleteDraft);
   const generationFilter = useStore((s) => s.generationFilter);
   const setGenerationFilter = useStore((s) => s.setGenerationFilter);
@@ -28,16 +30,21 @@ export function GenerationsTab() {
   const setViewMode = useStore((s) => s.setViewMode);
   const pendingConceptGenerations = useStore((s) => s.pendingConceptGenerations);
   const pendingConceptCount = pendingConceptGenerations.size;
+  const addContextImages = useStore((s) => s.addContextImages);
+  const setRightTab = useStore((s) => s.setRightTab);
+  const setReeditData = useStore((s) => s.setReeditData);
+  const currentPendingId = useStore((s) => s.currentPendingId);
+  const setCurrentPending = useStore((s) => s.setCurrentPending);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
 
   // Count concept images for the pinned Design Library entry
   const conceptCount = useMemo(() => {
-    return prompts
-      .filter((p) => p.is_concept)
-      .reduce((sum, p) => sum + p.images.length, 0);
-  }, [prompts]);
+    return generations
+      .filter((g) => g.is_concept)
+      .reduce((sum, g) => sum + g.images.length, 0);
+  }, [generations]);
 
   // Check if Design Library is currently active
   const isDesignLibraryActive = generationFilter === 'concepts' && !currentGenerationId && !currentDraftId;
@@ -54,6 +61,8 @@ export function GenerationsTab() {
     variationCount?: number;
     isGenerating?: boolean; // Per-draft generating variations state
     isGeneratingImages?: boolean; // Per-draft generating images state
+    imageIds?: string[]; // Image IDs for "Add to Context" action
+    contextImageIds?: string[]; // Context image IDs used for generation
   };
 
   const allItems: PromptItem[] = [
@@ -76,21 +85,24 @@ export function GenerationsTab() {
       count: data.count,
       itemType: 'pending' as const,
       created_at: new Date().toISOString(),
+      prompt: data.prompt,
     })),
     // Sort actual generations by created_at descending (newest first)
     // Filter out concepts - they appear in the pinned Design Library entry
-    ...prompts
-      .filter((p: { is_concept?: boolean }) => !p.is_concept)
+    ...generations
+      .filter((g: { is_concept?: boolean }) => !g.is_concept)
       .slice()
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .map((p) => ({
-        id: p.id,
-        title: p.title,
-        prompt: p.prompt,
-        count: p.images.length,
+      .map((g) => ({
+        id: g.id,
+        title: g.title,
+        prompt: g.prompt,
+        count: g.images.length,
         itemType: 'prompt' as const,
-        created_at: p.created_at,
-        thumbnail: p.images[0]?.image_path,
+        created_at: g.created_at,
+        thumbnail: g.images[0]?.image_path,
+        imageIds: g.images.map((img) => img.id),
+        contextImageIds: g.context_image_ids,
       })),
   ];
 
@@ -161,6 +173,18 @@ export function GenerationsTab() {
             <div className="flex items-center gap-1">
               <Button
                 size="sm"
+                variant="ghost"
+                leftIcon={<Archive size={14} />}
+                onClick={async () => {
+                  await archiveSelectedGenerations();
+                  setIsSelectionMode(false);
+                }}
+                disabled={selectedGenerationIds.size === 0}
+              >
+                Archive
+              </Button>
+              <Button
+                size="sm"
                 variant="danger"
                 leftIcon={<Trash2 size={14} />}
                 onClick={() => setIsDeleteDialogOpen(true)}
@@ -178,14 +202,26 @@ export function GenerationsTab() {
             </div>
           </>
         ) : (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handleToggleSelectionMode}
-            className="ml-auto"
-          >
-            Select
-          </Button>
+          <div className="flex items-center gap-1 ml-auto">
+            <Button
+              size="sm"
+              variant="ghost"
+              leftIcon={<Square size={14} />}
+              onClick={() => {
+                setIsSelectionMode(true);
+                selectAllGenerations();
+              }}
+            >
+              All
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handleToggleSelectionMode}
+            >
+              Select
+            </Button>
+          </div>
         )}
       </div>
 
@@ -273,6 +309,8 @@ export function GenerationsTab() {
           const isPrompt = item.itemType === 'prompt';
           const isActive = isDraft
             ? item.id === currentDraftId
+            : isPending
+            ? item.id === currentPendingId
             : item.id === currentGenerationId;
           const isSelected = selectedGenerationIds.has(item.id);
           const isSelectable = isPrompt || isDraft;
@@ -284,13 +322,15 @@ export function GenerationsTab() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.02 }}
               className={clsx(
-                'flex items-center gap-2 rounded-lg overflow-hidden',
+                'group relative flex items-center gap-2 rounded-lg overflow-visible',
                 'transition-all duration-150',
-                isPending && 'shimmer cursor-wait',
+                isPending && !isActive && 'shimmer',
                 isDraft && 'border border-dashed border-brass/40',
                 isActive && !isSelectionMode
                   ? isDraft
                     ? 'bg-brass/10 ring-1 ring-brass/40'
+                    : isPending
+                    ? 'bg-generating/15 ring-1 ring-generating/30'
                     : 'bg-brass-muted ring-1 ring-brass/30'
                   : 'hover:bg-canvas-subtle',
                 isSelected && 'bg-brass-muted/50'
@@ -327,13 +367,16 @@ export function GenerationsTab() {
                     toggleGenerationSelection(item.id);
                   } else if (isDraft) {
                     setCurrentDraft(item.id);
+                  } else if (isPending) {
+                    setCurrentPending(item.id);
+                    setCurrentDraft(null);
+                    setGenerationFilter('all');
                   } else if (isPrompt) {
                     setCurrentDraft(null); // Clear any selected draft
                     setGenerationFilter('all'); // Clear concepts filter when selecting a prompt
                     setCurrentGeneration(item.id);
                   }
                 }}
-                disabled={isPending}
                 className="flex-1 text-left"
               >
                 <div className="flex gap-3 p-2.5 pl-0">
@@ -429,6 +472,49 @@ export function GenerationsTab() {
                   </div>
                 </div>
               </button>
+
+              {/* Action buttons (prompts only, on hover) - in flex flow with opacity transition */}
+              {isPrompt && item.imageIds && item.imageIds.length > 0 && !isSelectionMode && (
+                <div className="flex-shrink-0 pr-2 self-center opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                  {/* Reedit button - loads prompt + context into Generate tab */}
+                  {item.prompt && item.contextImageIds && item.contextImageIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      leftIcon={<RotateCcw size={12} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setReeditData(item.prompt!, item.contextImageIds!);
+                        setRightTab('generate');
+                      }}
+                    >
+                      Reedit
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    leftIcon={<Plus size={12} />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      addContextImages(item.imageIds!);
+                      setRightTab('generate');
+                    }}
+                  >
+                    Add to Context
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    leftIcon={<Archive size={12} />}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      archiveGeneration(item.id);
+                    }}
+                    title="Archive"
+                  />
+                </div>
+              )}
             </motion.div>
           );
         })}

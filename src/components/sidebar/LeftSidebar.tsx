@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
   FolderOpen,
-  BookmarkIcon,
+  Archive,
   Images,
 } from 'lucide-react';
 import { useStore } from '../../store';
@@ -11,28 +11,28 @@ import type { LeftTab } from '../../types';
 import { GenerationsTab } from './GenerationsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { AllImagesTab } from './AllImagesTab';
-import { LibraryTab } from './LibraryTab';
+import { ArchivedTab } from './ArchivedTab';
 import { SessionsPanel } from './SessionsPanel';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
-  { id: 'generations', label: 'Generations', icon: <FileText size={14} />, shortcut: 'G' },
+  { id: 'generations', label: 'Generations', icon: <FileText size={14} />, shortcut: 'H' },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} />, shortcut: 'O' },
-  { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'I' },
-  { id: 'library', label: 'Library', icon: <BookmarkIcon size={14} />, shortcut: 'L' },
+  { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'M' },
+  { id: 'archived', label: 'Archived', icon: <Archive size={14} />, shortcut: 'L' },
 ];
 
 export function LeftSidebar() {
   const leftTab = useStore((s) => s.leftTab);
   const setLeftTab = useStore((s) => s.setLeftTab);
-  const getNewTokenCount = useStore((s) => s.getNewTokenCount);
+  const archivedPrompts = useStore((s) => s.archivedPrompts);
 
-  // Get new token count for library badge
-  const newTokenCount = getNewTokenCount();
+  // Get archived count for badge
+  const archivedCount = archivedPrompts.length;
 
-  // Build tabs with dynamic badge for library
+  // Build tabs with dynamic badge for archived
   const tabsWithBadges = tabs.map((tab) =>
-    tab.id === 'library' ? { ...tab, badge: newTokenCount } : tab
+    tab.id === 'archived' ? { ...tab, badge: archivedCount } : tab
   );
 
   return (
@@ -69,7 +69,7 @@ export function LeftSidebar() {
             {leftTab === 'generations' && <GenerationsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'all-images' && <AllImagesTab />}
-            {leftTab === 'library' && <LibraryTab />}
+            {leftTab === 'archived' && <ArchivedTab />}
           </motion.div>
         </AnimatePresence>
       </div>

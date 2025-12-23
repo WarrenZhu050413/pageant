@@ -21,7 +21,11 @@ export function useKeyboardShortcuts() {
     currentCollectionId,
     contextImageIds,
     setContextImages,
+    addContextImages,
+    selectedIds,
+    clearSelection,
     deleteImage,
+    archiveImage,
     toggleGenerationMode,
   } = useStore();
 
@@ -68,21 +72,38 @@ export function useKeyboardShortcuts() {
           }
           break;
 
-        // Add to context
+        // Add to context (selection mode: add all selected; otherwise: add current)
         case 'a':
         case 'A':
           if (!isMeta) {
             event.preventDefault();
-            const imageToAdd = getCurrentImage();
-            if (imageToAdd && !contextImageIds.includes(imageToAdd.id)) {
-              setContextImages([...contextImageIds, imageToAdd.id]);
+            // If in selection mode with selected images, add all selected
+            if (selectionMode === 'select' && selectedIds.size > 0) {
+              addContextImages(Array.from(selectedIds));
+              clearSelection();
+              setRightTab('generate'); // Switch to Generate tab to show context
+            } else {
+              // Single image mode - add current image
+              const imageToAdd = getCurrentImage();
+              if (imageToAdd && !contextImageIds.includes(imageToAdd.id)) {
+                setContextImages([...contextImageIds, imageToAdd.id]);
+              }
             }
           }
           break;
 
-        // Generations tab (left sidebar)
+        // Generate tab (right panel)
         case 'g':
         case 'G':
+          if (!isMeta) {
+            event.preventDefault();
+            setRightTab('generate');
+          }
+          break;
+
+        // Generations tab (left sidebar)
+        case 'h':
+        case 'H':
           if (!isMeta) {
             event.preventDefault();
             setLeftTab('generations');
@@ -133,8 +154,17 @@ export function useKeyboardShortcuts() {
             setLeftTab('collections');
           }
           break;
+        // Import tab (right panel)
         case 'i':
         case 'I':
+          if (!isMeta) {
+            event.preventDefault();
+            setRightTab('import');
+          }
+          break;
+        // All images tab (left sidebar)
+        case 'm':
+        case 'M':
           if (!isMeta) {
             event.preventDefault();
             setLeftTab('all-images');
@@ -144,7 +174,7 @@ export function useKeyboardShortcuts() {
         case 'L':
           if (!isMeta) {
             event.preventDefault();
-            setLeftTab('library');
+            setLeftTab('archived');
           }
           break;
 
@@ -207,6 +237,18 @@ export function useKeyboardShortcuts() {
           }
           break;
 
+        // Archive current image
+        case 'x':
+        case 'X':
+          if (!isMeta) {
+            event.preventDefault();
+            const imageToArchive = getCurrentImage();
+            if (imageToArchive) {
+              archiveImage(imageToArchive.id);
+            }
+          }
+          break;
+
         case 'Backspace':
         case 'Delete':
           if (!isMeta) {
@@ -254,7 +296,11 @@ export function useKeyboardShortcuts() {
       currentCollectionId,
       contextImageIds,
       setContextImages,
+      addContextImages,
+      selectedIds,
+      clearSelection,
       deleteImage,
+      archiveImage,
       toggleGenerationMode,
     ]
   );

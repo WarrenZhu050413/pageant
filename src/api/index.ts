@@ -203,6 +203,53 @@ export async function batchDownload(imageIds: string[]): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
+// Archive operations
+export interface ArchivedPrompt {
+  id: string;
+  prompt: string;
+  title: string;
+  created_at: string;
+  archived: boolean;
+  images: Array<{
+    id: string;
+    image_path: string;
+    archived?: boolean;
+  }>;
+  context_image_ids: string[];
+}
+
+export async function archiveImages(imageIds: string[]): Promise<{ success: boolean; archived: string[] }> {
+  return request('/archive/images', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
+  });
+}
+
+export async function archivePrompts(promptIds: string[]): Promise<{ success: boolean; archived: string[] }> {
+  return request('/archive/prompts', {
+    method: 'POST',
+    body: JSON.stringify({ prompt_ids: promptIds }),
+  });
+}
+
+export async function unarchiveImages(imageIds: string[]): Promise<{ success: boolean; unarchived: string[] }> {
+  return request('/unarchive/images', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
+  });
+}
+
+export async function unarchivePrompts(promptIds: string[]): Promise<{ success: boolean; unarchived: string[] }> {
+  return request('/unarchive/prompts', {
+    method: 'POST',
+    body: JSON.stringify({ prompt_ids: promptIds }),
+  });
+}
+
+export async function fetchArchived(): Promise<{ archived_prompts: ArchivedPrompt[] }> {
+  return request('/archived');
+}
+
 // Design Tokens
 export const fetchTokens = makeListFetcher<DesignToken>('/tokens', 'tokens');
 export const deleteToken = makeDeleteFetcher('/tokens');
