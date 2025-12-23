@@ -39,9 +39,38 @@ echo "your-api-key" > ~/.gemini/apikey.txt
 make dev
 ```
 
-Open **http://localhost:5173**.
+Open **http://localhost:5180**.
 
 > **Tip:** `make install` includes sample design tokens and concept images so you can explore the UI right away.
+
+## Docker
+
+Run Pageant with Docker for a simpler setup. Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/) (or an alternative like Colima).
+
+```bash
+# Build the image
+docker build -t pageant .
+
+# Run with your API key
+docker run -p 8080:8080 \
+  -v $(pwd)/output:/app/generated_images \
+  -v ~/.gemini/apikey.txt:/run/secrets/gemini_api_key:ro \
+  pageant
+```
+
+Or use docker-compose:
+
+```bash
+# Copy and configure .env
+cp .env.example .env
+
+# Start
+docker-compose up
+```
+
+Open **http://localhost:8080**.
+
+Generated images are saved to `./output` on your host machine for easy access. Use Settings > "Open Images Folder" to open this folder directly.
 
 ## Other Features
 

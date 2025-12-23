@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  pageant:
+    build: .
+    ports:
+      - "${PAGEANT_PORT:-8080}:8080"
+    volumes:
+      # Generated images accessible from host at ./output
+      - ${PAGEANT_OUTPUT_DIR:-./output}:/app/generated_images
+      # Persist metadata
+      - ./metadata.json:/app/generated_images/metadata.json
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GEMINI_API_KEY_PATH=/run/secrets/gemini_api_key
+      - ENABLE_SEARCH=${ENABLE_SEARCH:-true}
+      # Host path for "Open Folder" feature (set to actual path on your machine)
+      - IMAGES_HOST_PATH=${IMAGES_HOST_PATH:-}
+    secrets:
+      - gemini_api_key
+    restart: unless-stopped
+
+secrets:
+  gemini_api_key:
+    file: ${GEMINI_API_KEY_FILE:-~/.gemini/apikey.txt}

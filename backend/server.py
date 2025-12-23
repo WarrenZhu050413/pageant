@@ -3268,6 +3268,48 @@ async def update_settings(req: SettingsRequest):
     return {"success": True}
 
 
+@app.post("/api/open-folder")
+async def open_images_folder():
+    """Open the images folder in the system file explorer.
+
+    Works natively on macOS/Windows/Linux. In Docker, returns the path
+    for manual navigation (set IMAGES_HOST_PATH env var for the host path).
+    """
+    import subprocess
+    import sys
+
+    # Check if a host path is configured (for Docker deployments)
+    host_path = os.environ.get("IMAGES_HOST_PATH")
+    folder_path = Path(host_path) if host_path else IMAGES_DIR
+
+    # Ensure the folder exists
+    folder_path.mkdir(parents=True, exist_ok=True)
+
+    try:
+        if sys.platform == "darwin":  # macOS
+            subprocess.run(["open", str(folder_path)], check=True)
+        elif sys.platform == "win32":  # Windows
+            subprocess.run(["explorer", str(folder_path)], check=True)
+        else:  # Linux and others
+            subprocess.run(["xdg-open", str(folder_path)], check=True)
+
+        return {
+            "success": True,
+            "path": str(folder_path),
+            "opened": True,
+        }
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        # Can't open (likely running in Docker without display)
+        # Return the path so the UI can show it to the user
+        logger.warning(f"Could not open folder: {e}")
+        return {
+            "success": True,
+            "path": str(folder_path),
+            "opened": False,
+            "message": "Folder path returned (could not open automatically)",
+        }
+
+
 # =============================================================================
 # Search API Endpoints
 # =============================================================================
@@ -3512,6 +3554,7 @@ class PEOptimizeResponse(BaseModel):
 
     success: bool
     optimized_prompt: str = ""
+    prompt_summary: dict[str, str] = {}
     error: str | None = None
 
 
@@ -3602,7 +3645,14 @@ async def pe_optimize_prompt(request: PEOptimizeRequest):
             context_images=context_images,
         )
 
-        return PEOptimizeResponse(success=True, optimized_prompt=result.optimized_prompt)
+        # Convert list of PromptSummaryItem to dict for API response
+        prompt_summary_dict = {item.category: item.value for item in result.prompt_summary}
+
+        return PEOptimizeResponse(
+            success=True,
+            optimized_prompt=result.optimized_prompt,
+            prompt_summary=prompt_summary_dict,
+        )
 
     except Exception as e:
         logger.error(f"[PE] Prompt optimization failed: {e}")

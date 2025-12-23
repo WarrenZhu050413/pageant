@@ -299,6 +299,23 @@ export async function updateSettings(settings: {
   });
 }
 
+// Open folder in system file explorer
+export async function openImagesFolder(): Promise<{
+  success: boolean;
+  path: string;
+  opened: boolean;
+  message?: string;
+}> {
+  return request<{
+    success: boolean;
+    path: string;
+    opened: boolean;
+    message?: string;
+  }>('/open-folder', {
+    method: 'POST',
+  });
+}
+
 // Upload
 export async function uploadImages(files: File[]): Promise<UploadResponse> {
   const formData = new FormData();
@@ -588,6 +605,7 @@ export interface PEOptimizeRequest {
 export interface PEOptimizeResponse {
   success: boolean;
   optimized_prompt: string;
+  prompt_summary: Record<string, string>;  // e.g. {"Style": "Photorealistic", "Lighting": "Golden Hour"}
   error?: string;
 }
 
@@ -671,6 +689,36 @@ export async function enhanceImage(
   return request<EnhanceImageResponse>('/enhance-image', {
     method: 'POST',
     body: JSON.stringify({ image_id: imageId }),
+  });
+}
+
+export interface EnhanceImagesResponse {
+  success: boolean;
+  prompt_id: string;
+  images: Array<{
+    id: string;
+    image_path: string;
+    mime_type: string;
+    created_at: string;
+    notes?: string;
+    source_image_id?: string;
+    design_dimensions?: Record<string, DesignDimension>;
+    annotation?: string;
+  }>;
+  total_requested: number;
+  total_enhanced: number;
+}
+
+/**
+ * Batch enhance multiple images with professional retouching.
+ * All enhanced images are grouped into a single "Enhanced Uploaded Images" generation.
+ */
+export async function enhanceImages(
+  imageIds: string[]
+): Promise<EnhanceImagesResponse> {
+  return request<EnhanceImagesResponse>('/enhance-images', {
+    method: 'POST',
+    body: JSON.stringify({ image_ids: imageIds }),
   });
 }
 

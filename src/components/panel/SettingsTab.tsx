@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Save, Check, Loader2, Sun, Moon, Monitor } from 'lucide-react';
+import { Save, Check, Loader2, Sun, Moon, Monitor, FolderOpen, Copy, CheckCheck } from 'lucide-react';
 import { useStore } from '../../store';
 import { useTheme, type ThemePreference } from '../../hooks';
 import { Button, Badge, Input } from '../ui';
+import { openImagesFolder } from '../../api';
 import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS } from '../../types';
 
 // Price per image for display
@@ -36,6 +37,9 @@ export function SettingsTab() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [folderPath, setFolderPath] = useState<string | null>(null);
+  const [isOpeningFolder, setIsOpeningFolder] = useState(false);
+  const [pathCopied, setPathCopied] = useState(false);
 
   // Sync with settings from backend
   const serverImageSize = settings?.image_size ?? '';
@@ -92,6 +96,32 @@ export function SettingsTab() {
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleOpenFolder = async () => {
+    setIsOpeningFolder(true);
+    try {
+      const result = await openImagesFolder();
+      if (result.opened) {
+        // Folder was opened successfully
+        setFolderPath(null);
+      } else {
+        // Couldn't open, show the path
+        setFolderPath(result.path);
+      }
+    } catch {
+      // API error, show nothing
+    } finally {
+      setIsOpeningFolder(false);
+    }
+  };
+
+  const handleCopyPath = async () => {
+    if (folderPath) {
+      await navigator.clipboard.writeText(folderPath);
+      setPathCopied(true);
+      setTimeout(() => setPathCopied(false), 2000);
     }
   };
 
@@ -372,6 +402,51 @@ export function SettingsTab() {
       >
         {saved ? 'Saved!' : isSaving ? 'Saving...' : 'Save Settings'}
       </Button>
+
+      {/* Storage */}
+      <section className="pt-4 border-t border-border">
+        <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-3">
+          Storage
+        </h4>
+        <div className="space-y-3">
+          <Button
+            variant="secondary"
+            leftIcon={isOpeningFolder ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
+            onClick={handleOpenFolder}
+            disabled={isOpeningFolder}
+            className="w-full"
+          >
+            {isOpeningFolder ? 'Opening...' : 'Open Images Folder'}
+          </Button>
+          {folderPath && (
+            <div className="p-3 rounded-lg bg-canvas-subtle border border-border">
+              <p className="text-xs text-ink-muted mb-2">
+                Images are stored at:
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs text-ink-secondary font-[family-name:var(--font-mono)] break-all">
+                  {folderPath}
+                </code>
+                <button
+                  type="button"
+                  onClick={handleCopyPath}
+                  className="p-1.5 rounded hover:bg-canvas-muted transition-colors"
+                  title="Copy path"
+                >
+                  {pathCopied ? (
+                    <CheckCheck size={14} className="text-brass" />
+                  ) : (
+                    <Copy size={14} className="text-ink-muted" />
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+          <p className="text-[0.625rem] text-ink-muted">
+            Generated images are saved locally for easy access
+          </p>
+        </div>
+      </section>
 
       {/* Keyboard Shortcuts */}
       <section className="pt-4 border-t border-border">
