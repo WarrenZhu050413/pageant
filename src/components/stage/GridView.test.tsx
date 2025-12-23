@@ -25,7 +25,13 @@ vi.mock('framer-motion', () => ({
 vi.mock('lucide-react', () => ({
   Check: () => <span data-testid="icon-check">✓</span>,
   FolderMinus: () => <span data-testid="icon-folder-minus">-</span>,
+  ScanSearch: () => <span data-testid="icon-scan-search">🔍</span>,
+  ChevronLeft: () => <span data-testid="icon-chevron-left">‹</span>,
+  ChevronRight: () => <span data-testid="icon-chevron-right">›</span>,
 }))
+
+// Mock scrollIntoView
+Element.prototype.scrollIntoView = vi.fn()
 
 // Import after mocks
 import { GridView } from './GridView'
@@ -62,12 +68,18 @@ describe('GridView', () => {
     collections: [],
     currentGenerationId: null,
     currentCollectionId: null,
+    currentImageIndex: 0,
     setCurrentImageIndex: vi.fn(),
     setViewMode: vi.fn(),
     removeFromCurrentCollection: vi.fn(),
     selectionMode: 'none',
     toggleSelection: vi.fn(),
     selectedIds: new Set<string>(),
+    generationFilter: 'all',
+    lastSeenLibraryAt: null,
+    findSimilar: vi.fn(),
+    deleteImage: vi.fn(),
+    archiveImage: vi.fn(),
     ...overrides,
   })
 
@@ -76,7 +88,7 @@ describe('GridView', () => {
   })
 
   describe('empty state', () => {
-    it('should show "No prompt selected" when no prompt or collection', () => {
+    it('should show "No generation selected" when no prompt or collection', () => {
       const mockState = createMockState({
         generations: [],
         currentGenerationId: null,
@@ -91,7 +103,7 @@ describe('GridView', () => {
       })
 
       render(<GridView />)
-      expect(screen.getByText('No prompt selected')).toBeInTheDocument()
+      expect(screen.getByText('No generation selected')).toBeInTheDocument()
     })
 
     it('should show "Empty collection" when viewing empty collection', () => {
@@ -451,6 +463,142 @@ describe('GridView', () => {
       // Grid should have responsive column classes
       const grid = document.querySelector('[class*="grid-cols-2"][class*="md:grid-cols-3"][class*="lg:grid-cols-4"]')
       expect(grid).toBeInTheDocument()
+    })
+  })
+
+  describe('focused image highlight', () => {
+    it('should highlight the currently focused image with a ring', () => {
+      const images = [
+        createMockImage('img-1'),
+        createMockImage('img-2'),
+        createMockImage('img-3'),
+      ]
+      const mockPrompt = createMockPrompt('prompt-1', images)
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        currentImageIndex: 1, // Focus on second image
+        selectionMode: 'none',
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<GridView />)
+
+      // Focused image (index 1) should have ring-2 ring-brass/70 class
+      const focusedCard = document.querySelector('[class*="ring-2"][class*="ring-brass"]')
+      expect(focusedCard).toBeInTheDocument()
+    })
+
+    it('should NOT show focus highlight when in selection mode', () => {
+      const images = [
+        createMockImage('img-1'),
+        createMockImage('img-2'),
+      ]
+      const mockPrompt = createMockPrompt('prompt-1', images)
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        currentImageIndex: 0,
+        selectionMode: 'select',
+        selectedIds: new Set<string>(),
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<GridView />)
+
+      // Should NOT have focus ring (only selection ring when selected)
+      const focusRing = document.querySelector('[class*="ring-2"][class*="ring-brass/70"]')
+      expect(focusRing).not.toBeInTheDocument()
+    })
+  })
+
+  describe('keyboard navigation hint', () => {
+    it('should show navigation hint when multiple images exist', () => {
+      const images = [
+        createMockImage('img-1'),
+        createMockImage('img-2'),
+      ]
+      const mockPrompt = createMockPrompt('prompt-1', images)
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        selectionMode: 'none',
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<GridView />)
+
+      expect(screen.getByText('Arrow keys to navigate')).toBeInTheDocument()
+      expect(screen.getByTestId('icon-chevron-left')).toBeInTheDocument()
+      expect(screen.getByTestId('icon-chevron-right')).toBeInTheDocument()
+    })
+
+    it('should NOT show navigation hint with only one image', () => {
+      const images = [createMockImage('img-1')]
+      const mockPrompt = createMockPrompt('prompt-1', images)
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        selectionMode: 'none',
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<GridView />)
+
+      expect(screen.queryByText('Arrow keys to navigate')).not.toBeInTheDocument()
+    })
+
+    it('should NOT show navigation hint in selection mode', () => {
+      const images = [
+        createMockImage('img-1'),
+        createMockImage('img-2'),
+      ]
+      const mockPrompt = createMockPrompt('prompt-1', images)
+
+      const mockState = createMockState({
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        selectionMode: 'select',
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<GridView />)
+
+      expect(screen.queryByText('Arrow keys to navigate')).not.toBeInTheDocument()
     })
   })
 })

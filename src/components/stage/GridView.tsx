@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Check, FolderMinus, ScanSearch } from 'lucide-react';
+import { Check, FolderMinus, ScanSearch, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { ImageContextMenu, type ContextMenuPosition } from '../ui';
@@ -18,6 +18,7 @@ export function GridView() {
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
+  const currentImageIndex = useStore((s) => s.currentImageIndex);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const generationFilter = useStore((s) => s.generationFilter);
   const lastSeenLibraryAt = useStore((s) => s.lastSeenLibraryAt);
@@ -68,12 +69,26 @@ export function GridView() {
   const selectedIds = useStore((s) => s.selectedIds);
   const findSimilar = useStore((s) => s.findSimilar);
   const deleteImage = useStore((s) => s.deleteImage);
+  const archiveImage = useStore((s) => s.archiveImage);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
     position: ContextMenuPosition;
     imageId: string;
   } | null>(null);
+
+  // Ref for scrolling focused image into view
+  const focusedImageRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to focused image when currentImageIndex changes
+  useEffect(() => {
+    if (focusedImageRef.current) {
+      focusedImageRef.current.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+      });
+    }
+  }, [currentImageIndex]);
 
   const handleContextMenu = (e: React.MouseEvent, imageId: string) => {
     e.preventDefault();
@@ -130,10 +145,12 @@ export function GridView() {
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         {displayImages.map((image, index) => {
           const isSelected = selectedIds.has(image.id);
+          const isFocused = index === currentImageIndex && selectionMode === 'none';
 
           return (
             <motion.div
               key={image.id}
+              ref={isFocused ? focusedImageRef : null}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05 }}
@@ -143,7 +160,9 @@ export function GridView() {
                 'transition-all duration-200',
                 isSelected
                   ? 'ring-4 ring-brass shadow-lg scale-[0.98]'
-                  : 'hover:shadow-lg hover:scale-[1.02]'
+                  : isFocused
+                    ? 'ring-2 ring-brass/70 shadow-lg'
+                    : 'hover:shadow-lg hover:scale-[1.02]'
               )}
               onClick={() => handleImageClick(index, image)}
               onContextMenu={(e) => handleContextMenu(e, image.id)}
@@ -243,6 +262,15 @@ export function GridView() {
         })}
       </div>
 
+      {/* Keyboard navigation hint */}
+      {displayImages.length > 1 && selectionMode === 'none' && (
+        <div className="flex items-center justify-center gap-2 py-3 text-ink-muted">
+          <ChevronLeft size={14} />
+          <span className="text-xs">Arrow keys to navigate</span>
+          <ChevronRight size={14} />
+        </div>
+      )}
+
       {/* Context Menu */}
       <ImageContextMenu
         position={contextMenu?.position ?? null}
@@ -250,6 +278,11 @@ export function GridView() {
         onFindSimilar={
           contextMenu
             ? () => findSimilar(contextMenu.imageId)
+            : undefined
+        }
+        onArchive={
+          contextMenu
+            ? () => archiveImage(contextMenu.imageId)
             : undefined
         }
         onDelete={
