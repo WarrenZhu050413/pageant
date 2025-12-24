@@ -842,7 +842,7 @@ export function StoryBuilderView({ story }: StoryBuilderViewProps) {
           </div>
           <div>
             <label className="block text-sm font-medium text-ink-secondary mb-1">
-              Narrative Text (optional)
+              Narrative Text
             </label>
             <textarea
               value={newChapterText}
@@ -851,6 +851,9 @@ export function StoryBuilderView({ story }: StoryBuilderViewProps) {
               rows={4}
               className="w-full px-3 py-2 text-sm rounded-lg border border-border bg-surface text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-brass/50 resize-none"
             />
+            <p className="text-xs text-ink-muted mt-1">
+              Used as context for AI image generation
+            </p>
           </div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
