@@ -13,13 +13,12 @@ import {
   ChevronDown,
   ChevronUp,
   Images,
-  Check,
   Maximize2,
   ScanSearch,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { IconButton, Dialog, Button, CollectionDialog } from '../ui';
+import { IconButton, CollectionDialog } from '../ui';
 import { DesignAnnotation } from './DesignAnnotation';
 import type { ImageData } from '../../types';
 
@@ -40,8 +39,6 @@ export function SingleView() {
   const selectedIds = useStore((s) => s.selectedIds);
   const setContextImages = useStore((s) => s.setContextImages);
   const contextImageIds = useStore((s) => s.contextImageIds);
-  const createCollection = useStore((s) => s.createCollection);
-  const addImagesToCollection = useStore((s) => s.addImagesToCollection);
   const conceptFilter = useStore((s) => s.conceptFilter);
   const findSimilar = useStore((s) => s.findSimilar);
 
@@ -300,33 +297,7 @@ export function SingleView() {
   };
 
   const handleOpenCollectionDialog = () => {
-    setSelectedCollectionIds(new Set());
-    setIsCreatingNew(collections.length === 0);
-    setCollectionName('');
-    setCollectionDescription('');
     setIsCollectionDialogOpen(true);
-  };
-
-  const handleSaveToCollection = async () => {
-    if (!currentImage) return;
-
-    if (isCreatingNew) {
-      if (collectionName.trim()) {
-        // Create collection with current image
-        await createCollection(collectionName.trim(), collectionDescription.trim() || undefined, [currentImage.id]);
-        setCollectionName('');
-        setCollectionDescription('');
-        setIsCreatingNew(false);
-        setIsCollectionDialogOpen(false);
-      }
-    } else if (selectedCollectionIds.size > 0) {
-      // Add to all selected collections
-      for (const collectionId of selectedCollectionIds) {
-        await addImagesToCollection(collectionId, [currentImage.id]);
-      }
-      setSelectedCollectionIds(new Set());
-      setIsCollectionDialogOpen(false);
-    }
   };
 
   return (
