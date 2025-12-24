@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Trash2, CheckSquare, Square, Download, Plus } from 'lucide-react';
+import { X, FolderPlus, Trash2, CheckSquare, Square, Download, Plus, User } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, batchDownload } from '../../api';
-import { Button, Dialog, IconButton, CollectionDialog } from '../ui';
+import { Button, Dialog, IconButton, CollectionDialog, CharacterDialog } from '../ui';
+import { DEFAULT_MAX_CONTEXT_IMAGES } from '../../types';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
@@ -51,6 +52,7 @@ export function SelectionTray() {
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
+  const [isCharacterDialogOpen, setIsCharacterDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -76,11 +78,20 @@ export function SelectionTray() {
 
   if (selectedIds.size === 0) return null;
 
+  // Calculate how many more images can be added to context
+  const remainingContextSlots = DEFAULT_MAX_CONTEXT_IMAGES - contextImageIds.length;
+  const newImagesCount = Array.from(selectedIds).filter(id => !contextImageIds.includes(id)).length;
+  const canAddAllToContext = newImagesCount <= remainingContextSlots;
+  const isContextFull = contextImageIds.length >= DEFAULT_MAX_CONTEXT_IMAGES;
+
   const handleAddToContext = () => {
+    if (isContextFull) return;
+
     // Add selected images to existing context (additive, not replacement)
+    // Store will enforce the limit, but we also limit here for better UX
     const newContextIds = [...contextImageIds];
     for (const id of selectedIds) {
-      if (!newContextIds.includes(id)) {
+      if (!newContextIds.includes(id) && newContextIds.length < DEFAULT_MAX_CONTEXT_IMAGES) {
         newContextIds.push(id);
       }
     }
@@ -90,6 +101,11 @@ export function SelectionTray() {
   };
 
   const handleCollectionDialogSuccess = () => {
+    clearSelection();
+    setSelectionMode('none');
+  };
+
+  const handleCharacterDialogSuccess = () => {
     clearSelection();
     setSelectionMode('none');
   };
@@ -187,14 +203,25 @@ export function SelectionTray() {
             {allSelected ? 'Deselect All' : 'Select All'}
           </Button>
           <div className="w-px h-6 bg-border self-center" />
-          <Button
-            variant="secondary"
-            size="sm"
-            leftIcon={<Plus size={14} />}
-            onClick={handleAddToContext}
-          >
-            Add to Context
-          </Button>
+          <div className="relative group">
+            <Button
+              variant="secondary"
+              size="sm"
+              leftIcon={<Plus size={14} />}
+              onClick={handleAddToContext}
+              disabled={isContextFull}
+              className={clsx(
+                isContextFull && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              Add to Context {!canAddAllToContext && !isContextFull && `(${remainingContextSlots} slots)`}
+            </Button>
+            {isContextFull && (
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-tooltip-bg text-tooltip-text text-xs rounded whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                Context full ({DEFAULT_MAX_CONTEXT_IMAGES}/{DEFAULT_MAX_CONTEXT_IMAGES})
+              </div>
+            )}
+          </div>
           <Button
             variant="brass"
             size="sm"
@@ -202,6 +229,14 @@ export function SelectionTray() {
             onClick={() => setIsCollectionDialogOpen(true)}
           >
             Save Collection
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leftIcon={<User size={14} />}
+            onClick={() => setIsCharacterDialogOpen(true)}
+          >
+            Create Character
           </Button>
           <Button
             variant="secondary"
@@ -230,6 +265,14 @@ export function SelectionTray() {
         onClose={() => setIsCollectionDialogOpen(false)}
         imageIds={Array.from(selectedIds)}
         onSuccess={handleCollectionDialogSuccess}
+      />
+
+      {/* Character dialog */}
+      <CharacterDialog
+        isOpen={isCharacterDialogOpen}
+        onClose={() => setIsCharacterDialogOpen(false)}
+        imageIds={Array.from(selectedIds)}
+        onSuccess={handleCharacterDialogSuccess}
       />
 
       {/* Delete confirmation dialog */}

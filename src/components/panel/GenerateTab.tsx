@@ -20,7 +20,7 @@ import { PromptPreviewModal } from "../modals/PromptPreviewModal";
 import { ContextAnnotationModal } from "../modals/ContextAnnotationModal";
 import { PromptWorkspaceModal } from "../prompt-workspace";
 import type { ImageSize, AspectRatio, SafetyLevel } from "../../types";
-import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS } from "../../types";
+import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, DEFAULT_MAX_CONTEXT_IMAGES } from "../../types";
 
 // Price per image for display
 const SIZE_PRICES: Record<string, string> = {
@@ -435,9 +435,19 @@ export function GenerateTab() {
       {/* Context Images */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
-            Context Images
-          </label>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
+              Context Images
+            </label>
+            <span className={clsx(
+              "text-[0.625rem] px-1.5 py-0.5 rounded font-medium",
+              contextImages.length >= DEFAULT_MAX_CONTEXT_IMAGES
+                ? "bg-warning/15 text-warning"
+                : "bg-canvas-muted text-ink-tertiary"
+            )}>
+              {contextImages.length}/{DEFAULT_MAX_CONTEXT_IMAGES}
+            </span>
+          </div>
           {contextImages.length > 0 && (
             <button
               onClick={clearContextImages}

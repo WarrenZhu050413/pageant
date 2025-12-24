@@ -1,5 +1,6 @@
 import type { StateCreator } from 'zustand'
 import type { PromptVariation } from '../../types'
+import { DEFAULT_MAX_CONTEXT_IMAGES } from '../../types'
 
 interface PendingPrompt {
   title?: string  // Optional - will be auto-generated if not provided
@@ -57,10 +58,19 @@ export const createGenerationSlice: StateCreator<GenerationSlice> = (set, get) =
   // Actions
   setIsGenerating: (generating) => set({ isGenerating: generating }),
 
-  setContextImages: (ids) => set({ contextImageIds: ids }),
+  setContextImages: (ids) => {
+    // Enforce max context images limit (gemini-3-pro-image-preview supports max 14)
+    const limitedIds = ids.slice(0, DEFAULT_MAX_CONTEXT_IMAGES)
+    set({ contextImageIds: limitedIds })
+  },
 
   addContextImage: (id) => {
     const { contextImageIds } = get()
+    // Enforce max context images limit
+    if (contextImageIds.length >= DEFAULT_MAX_CONTEXT_IMAGES) {
+      console.warn(`Cannot add more than ${DEFAULT_MAX_CONTEXT_IMAGES} context images`)
+      return
+    }
     if (!contextImageIds.includes(id)) {
       set({ contextImageIds: [...contextImageIds, id] })
     }

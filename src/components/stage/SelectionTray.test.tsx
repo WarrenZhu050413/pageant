@@ -36,6 +36,7 @@ vi.mock('lucide-react', () => ({
   Square: () => <span data-testid="icon-square">☐</span>,
   Check: () => <span data-testid="icon-check">✓</span>,
   Download: () => <span data-testid="icon-download">⬇</span>,
+  User: () => <span data-testid="icon-user">👤</span>,
 }))
 
 // Import after mocks are set up

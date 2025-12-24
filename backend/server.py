@@ -303,9 +303,17 @@ class CreateStoryRequest(BaseModel):
     description: str = ""
 
 
+class StoryDesignMomentum(BaseModel):
+    """Design momentum for visual consistency across story chapters."""
+    locked_dimensions: dict[str, str] | None = None
+    aggregated_liked_axes: dict[str, list[str]] | None = None
+    style_prompt: str | None = None
+
+
 class UpdateStoryRequest(BaseModel):
     title: str | None = None
     description: str | None = None
+    design_momentum: StoryDesignMomentum | None = None
 
 
 class ChapterRequest(BaseModel):
@@ -317,6 +325,24 @@ class ChapterRequest(BaseModel):
 
 class ReorderChaptersRequest(BaseModel):
     chapter_ids: list[str]
+
+
+# === Characters ===
+class CharacterReferenceImageRequest(BaseModel):
+    image_id: str
+    annotation: str | None = None
+
+
+class CreateCharacterRequest(BaseModel):
+    name: str
+    description: str | None = None
+    reference_images: list[CharacterReferenceImageRequest] = []
+
+
+class UpdateCharacterRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    reference_images: list[CharacterReferenceImageRequest] | None = None
 
 
 # === Settings ===
@@ -739,6 +765,19 @@ async def generate_prompt_variations(req: GeneratePromptsRequest):
     via recommended_context_ids for targeted image generation.
     """
     count = min(max(1, req.count), 10)  # Clamp between 1 and 10
+
+    # Validate context image count against model-specific limit
+    max_context = config.MODEL_CONTEXT_IMAGE_LIMITS.get(
+        config.DEFAULT_IMAGE_MODEL,
+        config.DEFAULT_MAX_CONTEXT_IMAGES
+    )
+    if len(req.context_image_ids) > max_context:
+        return GeneratePromptsResponse(
+            success=False,
+            error=f"Too many context images: {len(req.context_image_ids)} provided, maximum is {max_context} for {config.DEFAULT_IMAGE_MODEL}",
+            base_prompt=req.prompt,
+        )
+
     title_info = f", title='{req.title}'" if req.title else ""
     logger.info(f"Generate prompts request: count={count}, prompt='{req.prompt[:50]}...'{title_info}, context_images={len(req.context_image_ids)}")
 
@@ -828,6 +867,29 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
     """
     if not req.prompts:
         return PromptResponse(success=False, errors=["No prompts provided"])
+
+    # Validate context image count against model-specific limit
+    # Get limit for the current image model (default to 14 for gemini-3-pro-image-preview)
+    max_context = config.MODEL_CONTEXT_IMAGE_LIMITS.get(
+        config.DEFAULT_IMAGE_MODEL,
+        config.DEFAULT_MAX_CONTEXT_IMAGES
+    )
+
+    # Check global context images
+    if len(req.context_image_ids) > max_context:
+        return PromptResponse(
+            success=False,
+            errors=[f"Too many context images: {len(req.context_image_ids)} provided, maximum is {max_context} for {config.DEFAULT_IMAGE_MODEL}"]
+        )
+
+    # Also check per-prompt context images
+    for i, prompt_data in enumerate(req.prompts):
+        prompt_context_ids = prompt_data.get("recommended_context_ids", [])
+        if len(prompt_context_ids) > max_context:
+            return PromptResponse(
+                success=False,
+                errors=[f"Too many context images in prompt #{i+1}: {len(prompt_context_ids)} provided, maximum is {max_context}"]
+            )
 
     count = len(req.prompts)
     logger.info(f"Generate images from {count} prompts, title='{req.title}'")
@@ -2791,6 +2853,8 @@ async def update_story(story_id: str, req: UpdateStoryRequest):
                 story["title"] = req.title
             if req.description is not None:
                 story["description"] = req.description
+            if req.design_momentum is not None:
+                story["design_momentum"] = req.design_momentum.model_dump(exclude_none=True)
             story["updated_at"] = datetime.now().isoformat()
 
             save_metadata(metadata)
@@ -2924,6 +2988,95 @@ async def reorder_chapters(story_id: str, req: ReorderChaptersRequest):
             return story
 
     raise HTTPException(status_code=404, detail="Story not found")
+
+
+# ============================================================
+# FEATURE 5B: Character References
+# ============================================================
+
+
+@app.post("/api/characters")
+async def create_character(req: CreateCharacterRequest):
+    """Create a new character reference."""
+    metadata = load_metadata()
+
+    if "characters" not in metadata:
+        metadata["characters"] = []
+
+    now = datetime.now().isoformat()
+    character = {
+        "id": f"char-{uuid.uuid4().hex[:8]}",
+        "name": req.name,
+        "description": req.description or "",
+        "reference_images": [
+            {"image_id": img.image_id, "annotation": img.annotation}
+            for img in req.reference_images
+        ],
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    metadata["characters"].append(character)
+    save_metadata(metadata)
+
+    return character
+
+
+@app.get("/api/characters")
+async def list_characters():
+    """List all characters."""
+    metadata = load_metadata()
+    return {"characters": metadata.get("characters", [])}
+
+
+@app.get("/api/characters/{character_id}")
+async def get_character(character_id: str):
+    """Get a specific character."""
+    metadata = load_metadata()
+
+    for character in metadata.get("characters", []):
+        if character["id"] == character_id:
+            return character
+
+    raise HTTPException(status_code=404, detail="Character not found")
+
+
+@app.put("/api/characters/{character_id}")
+async def update_character(character_id: str, req: UpdateCharacterRequest):
+    """Update character metadata."""
+    metadata = load_metadata()
+
+    for character in metadata.get("characters", []):
+        if character["id"] == character_id:
+            if req.name is not None:
+                character["name"] = req.name
+            if req.description is not None:
+                character["description"] = req.description
+            if req.reference_images is not None:
+                character["reference_images"] = [
+                    {"image_id": img.image_id, "annotation": img.annotation}
+                    for img in req.reference_images
+                ]
+            character["updated_at"] = datetime.now().isoformat()
+            save_metadata(metadata)
+            return character
+
+    raise HTTPException(status_code=404, detail="Character not found")
+
+
+@app.delete("/api/characters/{character_id}")
+async def delete_character(character_id: str):
+    """Delete a character."""
+    metadata = load_metadata()
+    characters = metadata.get("characters", [])
+
+    for i, character in enumerate(characters):
+        if character["id"] == character_id:
+            del characters[i]
+            save_metadata(metadata)
+            return {"success": True}
+
+    raise HTTPException(status_code=404, detail="Character not found")
 
 
 # ============================================================

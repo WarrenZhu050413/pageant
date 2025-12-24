@@ -17,6 +17,17 @@ DEFAULT_FAST_TEXT_MODEL = (
 )
 
 # =============================================================================
+# Model-Specific Limits
+# =============================================================================
+# gemini-3-pro-image-preview (Nano Banana Pro) supports max 14 reference images
+# See: https://ai.google.dev/gemini-api/docs/image-generation
+MODEL_CONTEXT_IMAGE_LIMITS = {
+    "gemini-3-pro-image-preview": 14,
+    # Add other models here as needed
+}
+DEFAULT_MAX_CONTEXT_IMAGES = 14  # Fallback for unknown models
+
+# =============================================================================
 # Timeouts
 # =============================================================================
 GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "400000"))  # 400 seconds
