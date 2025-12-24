@@ -2,7 +2,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   FileText,
   FolderOpen,
-  Archive,
   Images,
 } from 'lucide-react';
 import { useStore } from '../../store';
@@ -11,28 +10,17 @@ import type { LeftTab } from '../../types';
 import { GenerationsTab } from './GenerationsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { AllImagesTab } from './AllImagesTab';
-import { ArchivedTab } from './ArchivedTab';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
   { id: 'generations', label: 'Generations', icon: <FileText size={14} />, shortcut: 'H' },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} />, shortcut: 'O' },
   { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'M' },
-  { id: 'archived', label: 'Archived', icon: <Archive size={14} />, shortcut: 'L' },
 ];
 
 export function LeftSidebar() {
   const leftTab = useStore((s) => s.leftTab);
   const setLeftTab = useStore((s) => s.setLeftTab);
-  const archivedPrompts = useStore((s) => s.archivedPrompts);
-
-  // Get archived count for badge
-  const archivedCount = archivedPrompts.length;
-
-  // Build tabs with dynamic badge for archived
-  const tabsWithBadges = tabs.map((tab) =>
-    tab.id === 'archived' ? { ...tab, badge: archivedCount } : tab
-  );
 
   return (
     <div className="flex flex-col h-full">
@@ -46,7 +34,7 @@ export function LeftSidebar() {
 
       {/* Tabs */}
       <Tabs
-        tabs={tabsWithBadges}
+        tabs={tabs}
         activeTab={leftTab}
         onChange={(id) => setLeftTab(id as LeftTab)}
       />
@@ -65,7 +53,6 @@ export function LeftSidebar() {
             {leftTab === 'generations' && <GenerationsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'all-images' && <AllImagesTab />}
-            {leftTab === 'archived' && <ArchivedTab />}
           </motion.div>
         </AnimatePresence>
       </div>

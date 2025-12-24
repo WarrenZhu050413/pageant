@@ -19,14 +19,13 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
-import { IconButton, Dialog, Button, Input, Textarea } from '../ui';
+import { IconButton, Dialog, Button, CollectionDialog } from '../ui';
 import { DesignAnnotation } from './DesignAnnotation';
 import type { ImageData } from '../../types';
 
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
-  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
@@ -43,7 +42,7 @@ export function SingleView() {
   const contextImageIds = useStore((s) => s.contextImageIds);
   const createCollection = useStore((s) => s.createCollection);
   const addImagesToCollection = useStore((s) => s.addImagesToCollection);
-  const generationFilter = useStore((s) => s.generationFilter);
+  const conceptFilter = useStore((s) => s.conceptFilter);
   const findSimilar = useStore((s) => s.findSimilar);
 
   // Compute derived values with useMemo to avoid infinite re-renders
@@ -59,25 +58,17 @@ export function SingleView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    // Build image map from both active generations AND archived prompts
+    // Build image map from all generations (including hidden ones)
     const imageMap = new Map<string, typeof generations[0]['images'][0]>();
     for (const generation of generations) {
       for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
-    // Also include archived images so collections work regardless of archive status
-    for (const prompt of archivedPrompts) {
-      for (const image of prompt.images) {
-        if (!imageMap.has(image.id)) {
-          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
-        }
-      }
-    }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
       .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
-  }, [generations, archivedPrompts, currentCollection]);
+  }, [generations, currentCollection]);
 
   // Concept images from store (already sorted newest first)
   const conceptImages = useMemo(() => {
@@ -90,7 +81,7 @@ export function SingleView() {
   }, [generations]);
 
   // Determine what we're viewing
-  const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+  const isViewingConcepts = conceptFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
   const isViewingCollection = !currentGeneration && !!currentCollection && !isViewingConcepts;
 
   // Support generation, collection, and concepts gallery viewing
@@ -143,10 +134,6 @@ export function SingleView() {
 
   // Collection dialog state
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
-  const [collectionName, setCollectionName] = useState('');
-  const [collectionDescription, setCollectionDescription] = useState('');
-  const [selectedCollectionIds, setSelectedCollectionIds] = useState<Set<string>>(new Set());
-  const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   // Fullscreen view state
   const [isFullscreen, setIsFullscreen] = useState(false);

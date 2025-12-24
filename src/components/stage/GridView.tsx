@@ -15,13 +15,12 @@ interface DisplayImage extends ImageData {
 export function GridView() {
   // Select primitive values to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
-  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
-  const generationFilter = useStore((s) => s.generationFilter);
+  const conceptFilter = useStore((s) => s.conceptFilter);
   const lastSeenLibraryAt = useStore((s) => s.lastSeenLibraryAt);
 
   // Compute derived values with useMemo
@@ -37,25 +36,17 @@ export function GridView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    // Build image map from both active generations AND archived prompts
+    // Build image map from all generations (including hidden ones)
     const imageMap = new Map<string, typeof generations[0]['images'][0]>();
     for (const generation of generations) {
       for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
-    // Also include archived images so collections work regardless of archive status
-    for (const prompt of archivedPrompts) {
-      for (const image of prompt.images) {
-        if (!imageMap.has(image.id)) {
-          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
-        }
-      }
-    }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
       .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
-  }, [generations, archivedPrompts, currentCollection]);
+  }, [generations, currentCollection]);
 
   // Concept images - all images from generations with is_concept: true, sorted newest first
   const conceptImages = useMemo((): DisplayImage[] => {
@@ -79,7 +70,6 @@ export function GridView() {
   const selectedIds = useStore((s) => s.selectedIds);
   const findSimilar = useStore((s) => s.findSimilar);
   const deleteImage = useStore((s) => s.deleteImage);
-  const archiveImage = useStore((s) => s.archiveImage);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -109,7 +99,7 @@ export function GridView() {
   };
 
   // Determine what we're viewing
-  const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+  const isViewingConcepts = conceptFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
   const isViewingCollection = !currentGeneration && !!currentCollection && !isViewingConcepts;
 
   // Helper to check if an image is "new" (created since last library visit)
@@ -288,11 +278,6 @@ export function GridView() {
         onFindSimilar={
           contextMenu
             ? () => findSimilar(contextMenu.imageId)
-            : undefined
-        }
-        onArchive={
-          contextMenu
-            ? () => archiveImage(contextMenu.imageId)
             : undefined
         }
         onDelete={

@@ -3,6 +3,7 @@ export { Input, Textarea } from './Input';
 export { Badge } from './Badge';
 export { Tabs } from './Tabs';
 export { Dialog, ConfirmDialog } from './Dialog';
+export { CollectionDialog } from './CollectionDialog';
 export { IconButton } from './IconButton';
 export { ImageContextMenu } from './ImageContextMenu';
 export type { ContextMenuPosition, ImageContextMenuProps } from './ImageContextMenu';

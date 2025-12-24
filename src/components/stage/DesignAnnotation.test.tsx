@@ -38,10 +38,8 @@ describe('DesignAnnotation', () => {
 
   const createMockState = (overrides: Record<string, unknown> = {}) => {
     const generations = (overrides.generations as unknown[]) || [];
-    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
     return {
       generations,
-      archivedPrompts,
       collections: [],
       currentGenerationId: null,
       currentCollectionId: null,
@@ -53,7 +51,7 @@ describe('DesignAnnotation', () => {
       designTokens: [],
       pendingConceptGenerations: new Set<string>(),
       deleteToken: vi.fn(),
-      getAllGenerations: () => [...generations, ...archivedPrompts],
+      getAllGenerations: () => generations,
       ...overrides,
     };
   }

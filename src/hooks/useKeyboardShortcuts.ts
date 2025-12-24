@@ -16,7 +16,7 @@ export function useKeyboardShortcuts() {
     setLeftTab,
     getCurrentImage,
     getCurrentGeneration,
-    generationFilter,
+    conceptFilter,
     currentGenerationId,
     currentCollectionId,
     contextImageIds,
@@ -25,7 +25,6 @@ export function useKeyboardShortcuts() {
     selectedIds,
     clearSelection,
     deleteImage,
-    archiveImage,
     toggleGenerationMode,
   } = useStore();
 
@@ -170,13 +169,6 @@ export function useKeyboardShortcuts() {
             setLeftTab('all-images');
           }
           break;
-        case 'l':
-        case 'L':
-          if (!isMeta) {
-            event.preventDefault();
-            setLeftTab('archived');
-          }
-          break;
 
         // Toolbar actions
         case 'b':
@@ -192,7 +184,7 @@ export function useKeyboardShortcuts() {
         case 'C':
           if (!isMeta) {
             event.preventDefault();
-            const isViewingConcepts = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+            const isViewingConcepts = conceptFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
             const promptToCopy = getCurrentGeneration();
             const imageToCopy = getCurrentImage();
             // For concepts, copy the varied_prompt from the image; otherwise copy prompt.prompt
@@ -211,7 +203,7 @@ export function useKeyboardShortcuts() {
             event.preventDefault();
             const imageToDownload = getCurrentImage();
             const promptForDownload = getCurrentGeneration();
-            const isViewingConceptsForDownload = generationFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
+            const isViewingConceptsForDownload = conceptFilter === 'concepts' && !currentGenerationId && !currentCollectionId;
             // Use prompt title, image variation_title, or fallback to "Design-Library"
             const downloadTitle = promptForDownload?.title
               || imageToDownload?.variation_title
@@ -234,18 +226,6 @@ export function useKeyboardShortcuts() {
             event.preventDefault();
             // Dispatch custom event to toggle fullscreen
             window.dispatchEvent(new CustomEvent('keyboard:toggleFullscreen'));
-          }
-          break;
-
-        // Archive current image
-        case 'x':
-        case 'X':
-          if (!isMeta) {
-            event.preventDefault();
-            const imageToArchive = getCurrentImage();
-            if (imageToArchive) {
-              archiveImage(imageToArchive.id);
-            }
           }
           break;
 
@@ -291,7 +271,7 @@ export function useKeyboardShortcuts() {
       setLeftTab,
       getCurrentImage,
       getCurrentGeneration,
-      generationFilter,
+      conceptFilter,
       currentGenerationId,
       currentCollectionId,
       contextImageIds,
@@ -300,7 +280,6 @@ export function useKeyboardShortcuts() {
       selectedIds,
       clearSelection,
       deleteImage,
-      archiveImage,
       toggleGenerationMode,
     ]
   );

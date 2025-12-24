@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, Archive, ChevronDown, ExternalLink, Folder, Pencil, Check } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, EyeOff, Eye, ChevronDown, ExternalLink, Folder, Pencil, Check, ArrowRightLeft, Filter } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
@@ -23,11 +23,15 @@ export function GenerationsTab() {
   const selectAllGenerations = useStore((s) => s.selectAllGenerations);
   const clearGenerationSelection = useStore((s) => s.clearGenerationSelection);
   const batchDeleteGenerations = useStore((s) => s.batchDeleteGenerations);
-  const archiveGeneration = useStore((s) => s.archiveGeneration);
-  const archiveSelectedGenerations = useStore((s) => s.archiveSelectedGenerations);
+  const hideGeneration = useStore((s) => s.hideGeneration);
+  const hideSelectedGenerations = useStore((s) => s.hideSelectedGenerations);
+  const unhideGeneration = useStore((s) => s.unhideGeneration);
+  const moveGenerationToSession = useStore((s) => s.moveGenerationToSession);
   const deleteDraft = useStore((s) => s.deleteDraft);
   const generationFilter = useStore((s) => s.generationFilter);
   const setGenerationFilter = useStore((s) => s.setGenerationFilter);
+  const conceptFilter = useStore((s) => s.conceptFilter);
+  const setConceptFilter = useStore((s) => s.setConceptFilter);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
   const setViewMode = useStore((s) => s.setViewMode);
   const pendingConceptGenerations = useStore((s) => s.pendingConceptGenerations);
@@ -48,9 +52,11 @@ export function GenerationsTab() {
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
+  const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
+  const [moveMenuOpenFor, setMoveMenuOpenFor] = useState<string | null>(null);
 
   // Session edit/delete state
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -65,7 +71,7 @@ export function GenerationsTab() {
   }, [generations]);
 
   // Check if Design Library is currently active
-  const isDesignLibraryActive = generationFilter === 'concepts' && !currentGenerationId && !currentDraftId;
+  const isDesignLibraryActive = conceptFilter === 'concepts' && !currentGenerationId && !currentDraftId;
 
   // Combine drafts, pending, and actual prompts
   type PromptItem = {
@@ -83,6 +89,7 @@ export function GenerationsTab() {
     imageIds?: string[]; // Image IDs for "Add to Context" action
     contextImageIds?: string[]; // Context image IDs used for generation
     session_id?: string; // Session this generation belongs to
+    hidden?: boolean; // Whether this generation is hidden
   };
 
   const allItems: PromptItem[] = [
@@ -126,6 +133,7 @@ export function GenerationsTab() {
         imageIds: g.images.map((img) => img.id),
         contextImageIds: g.context_image_ids,
         session_id: g.session_id,
+        hidden: g.hidden,
       })),
   ];
 
@@ -174,14 +182,24 @@ export function GenerationsTab() {
     return session?.name || 'Unknown session';
   };
 
-  // Get current filter label
-  const getFilterLabel = (): string => {
+  // Get current session filter label
+  const getSessionFilterLabel = (): string => {
     if (sessionFilter === 'all') {
       return 'All sessions';
     }
     // For 'current' or specific session ID
     const targetSessionId = sessionFilter === 'current' ? currentSessionId : sessionFilter;
     return targetSessionId ? getSessionName(targetSessionId) : 'All sessions';
+  };
+
+  // Get current visibility filter label
+  const getVisibilityFilterLabel = (): string => {
+    switch (generationFilter) {
+      case 'all': return 'All';
+      case 'active': return 'Active';
+      case 'hidden': return 'Hidden';
+      default: return 'Active';
+    }
   };
 
   const handleCreateSession = async () => {
@@ -223,14 +241,14 @@ export function GenerationsTab() {
               <Button
                 size="sm"
                 variant="ghost"
-                leftIcon={<Archive size={14} />}
+                leftIcon={<EyeOff size={14} />}
                 onClick={async () => {
-                  await archiveSelectedGenerations();
+                  await hideSelectedGenerations();
                   setIsSelectionMode(false);
                 }}
                 disabled={selectedGenerationIds.size === 0}
               >
-                Archive
+                Hide
               </Button>
               <Button
                 size="sm"
@@ -274,29 +292,34 @@ export function GenerationsTab() {
         )}
       </div>
 
-      {/* Session filter dropdown */}
-      <div className="relative px-2 py-1.5 border-b border-border">
-        <button
-          onClick={() => setIsSessionDropdownOpen(!isSessionDropdownOpen)}
-          className={clsx(
-            'w-full flex items-center justify-between px-2.5 py-1.5 rounded-md',
-            'text-xs text-ink-secondary',
-            'hover:bg-canvas-subtle transition-colors',
-            isSessionDropdownOpen && 'bg-canvas-subtle'
-          )}
-        >
-          <div className="flex items-center gap-1.5">
-            <Folder size={12} className="text-ink-muted" />
-            <span>{getFilterLabel()}</span>
-          </div>
-          <ChevronDown
-            size={12}
+      {/* Session and visibility filters */}
+      <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border">
+        {/* Session filter dropdown */}
+        <div className="relative flex-1">
+          <button
+            onClick={() => {
+              setIsSessionDropdownOpen(!isSessionDropdownOpen);
+              setIsFilterDropdownOpen(false);
+            }}
             className={clsx(
-              'text-ink-muted transition-transform duration-200',
-              isSessionDropdownOpen && 'rotate-180'
+              'w-full flex items-center justify-between px-2 py-1 rounded-md',
+              'text-xs text-ink-secondary',
+              'hover:bg-canvas-subtle transition-colors',
+              isSessionDropdownOpen && 'bg-canvas-subtle'
             )}
-          />
-        </button>
+          >
+            <div className="flex items-center gap-1.5">
+              <Folder size={12} className="text-ink-muted" />
+              <span className="truncate">{getSessionFilterLabel()}</span>
+            </div>
+            <ChevronDown
+              size={12}
+              className={clsx(
+                'text-ink-muted transition-transform duration-200 flex-shrink-0',
+                isSessionDropdownOpen && 'rotate-180'
+              )}
+            />
+          </button>
 
         {isSessionDropdownOpen && (
           <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-surface border border-border rounded-md shadow-lg py-1">
@@ -472,6 +495,78 @@ export function GenerationsTab() {
             )}
           </div>
         )}
+        </div>
+
+        {/* Visibility filter dropdown */}
+        <div className="relative">
+          <button
+            onClick={() => {
+              setIsFilterDropdownOpen(!isFilterDropdownOpen);
+              setIsSessionDropdownOpen(false);
+            }}
+            className={clsx(
+              'flex items-center gap-1 px-2 py-1 rounded-md',
+              'text-xs text-ink-secondary',
+              'hover:bg-canvas-subtle transition-colors',
+              isFilterDropdownOpen && 'bg-canvas-subtle',
+              generationFilter === 'hidden' && 'text-warning'
+            )}
+            title="Filter by visibility"
+          >
+            <Filter size={12} className="text-ink-muted" />
+            <span>{getVisibilityFilterLabel()}</span>
+          </button>
+
+          {isFilterDropdownOpen && (
+            <div className="absolute right-0 top-full mt-1 z-10 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[100px]">
+              <button
+                onClick={() => {
+                  setGenerationFilter('active');
+                  setIsFilterDropdownOpen(false);
+                }}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                  'hover:bg-canvas-subtle transition-colors',
+                  generationFilter === 'active' && 'text-brass font-medium'
+                )}
+              >
+                <Eye size={12} />
+                <span>Active</span>
+                {generationFilter === 'active' && <Check size={12} className="ml-auto text-brass" />}
+              </button>
+              <button
+                onClick={() => {
+                  setGenerationFilter('hidden');
+                  setIsFilterDropdownOpen(false);
+                }}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                  'hover:bg-canvas-subtle transition-colors',
+                  generationFilter === 'hidden' && 'text-warning font-medium'
+                )}
+              >
+                <EyeOff size={12} />
+                <span>Hidden</span>
+                {generationFilter === 'hidden' && <Check size={12} className="ml-auto text-warning" />}
+              </button>
+              <button
+                onClick={() => {
+                  setGenerationFilter('all');
+                  setIsFilterDropdownOpen(false);
+                }}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                  'hover:bg-canvas-subtle transition-colors',
+                  generationFilter === 'all' && 'text-brass font-medium'
+                )}
+              >
+                <span className="w-3" />
+                <span>All</span>
+                {generationFilter === 'all' && <Check size={12} className="ml-auto text-brass" />}
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Prompts list */}
@@ -482,7 +577,7 @@ export function GenerationsTab() {
             setCurrentGeneration(null);
             setCurrentDraft(null);
             setCurrentCollection(null);
-            setGenerationFilter('concepts');
+            setConceptFilter('concepts');
             setViewMode('grid');
           }}
           className={clsx(
@@ -771,15 +866,78 @@ export function GenerationsTab() {
                     >
                       <Plus size={14} />
                     </button>
+                    {/* Move to session button */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setMoveMenuOpenFor(moveMenuOpenFor === item.id ? null : item.id);
+                        }}
+                        title="Move to session"
+                        className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                      >
+                        <ArrowRightLeft size={14} />
+                      </button>
+                      {moveMenuOpenFor === item.id && (
+                        <div className="absolute right-full top-0 mr-1 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[140px] z-20">
+                          <div className="px-2 py-1 text-[0.625rem] text-ink-muted font-medium border-b border-border mb-1">
+                            Move to session
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveGenerationToSession(item.id, null);
+                              setMoveMenuOpenFor(null);
+                            }}
+                            className={clsx(
+                              'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                              'hover:bg-canvas-subtle transition-colors',
+                              !item.session_id && 'text-brass font-medium'
+                            )}
+                          >
+                            <span>No session</span>
+                            {!item.session_id && <Check size={10} className="ml-auto text-brass" />}
+                          </button>
+                          {sessions.map((session) => (
+                            <button
+                              key={session.id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                moveGenerationToSession(item.id, session.id);
+                                setMoveMenuOpenFor(null);
+                              }}
+                              className={clsx(
+                                'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                                'hover:bg-canvas-subtle transition-colors',
+                                item.session_id === session.id && 'text-brass font-medium'
+                              )}
+                            >
+                              <span className="truncate">{session.name}</span>
+                              {item.session_id === session.id && <Check size={10} className="ml-auto text-brass flex-shrink-0" />}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {/* Hide/Unhide button */}
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        archiveGeneration(item.id);
+                        if (item.hidden) {
+                          unhideGeneration(item.id);
+                        } else {
+                          hideGeneration(item.id);
+                        }
                       }}
-                      title="Archive"
-                      className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                      title={item.hidden ? "Unhide" : "Hide"}
+                      className={clsx(
+                        "p-1.5 rounded transition-colors",
+                        item.hidden
+                          ? "hover:bg-success/20 text-success hover:text-success"
+                          : "hover:bg-canvas-subtle text-ink-muted hover:text-ink"
+                      )}
                     >
-                      <Archive size={14} />
+                      {item.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
                     </button>
                   </div>
                 </div>

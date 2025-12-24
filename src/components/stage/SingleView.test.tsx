@@ -49,10 +49,8 @@ describe('SingleView', () => {
 
   const createMockState = (overrides: Record<string, unknown> = {}) => {
     const generations = (overrides.generations as unknown[]) || [];
-    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
     return {
       generations,
-      archivedPrompts,
       collections: [],
       currentGenerationId: null,
       currentCollectionId: null,
@@ -71,7 +69,7 @@ describe('SingleView', () => {
       pendingAnalysis: new Set<string>(),
       updateImageDimensions: vi.fn(),
       // For DesignAnnotation
-      getAllGenerations: () => [...generations, ...archivedPrompts],
+      getAllGenerations: () => generations,
       toggleAxisLike: vi.fn(),
       toggleDimensionLike: vi.fn(),
       updateImageNotes: vi.fn(),

@@ -49,7 +49,6 @@ export function AllImagesTab() {
   const indexedImageIds = useStore((s) => s.indexedImageIds);
   const findSimilar = useStore((s) => s.findSimilar);
   const deleteImage = useStore((s) => s.deleteImage);
-  const archiveImage = useStore((s) => s.archiveImage);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -638,11 +637,6 @@ export function AllImagesTab() {
         onFindSimilar={
           contextMenu
             ? () => findSimilar(contextMenu.imageId)
-            : undefined
-        }
-        onArchive={
-          contextMenu
-            ? () => archiveImage(contextMenu.imageId)
             : undefined
         }
         onDelete={

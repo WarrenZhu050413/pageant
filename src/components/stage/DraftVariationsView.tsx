@@ -24,6 +24,7 @@ import {
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, Badge } from '../ui';
+import { StreamingLoadingState } from './VariationSkeleton';
 import type { DraftPrompt, ImageData } from '../../types';
 
 interface DraftVariationsViewProps {
@@ -43,7 +44,6 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   // Use all generations (including archived) for context image lookup
   const getAllGenerations = useStore((s) => s.getAllGenerations);
   const prompts = getAllGenerations();
-  const streamingText = useStore((s) => s.streamingText);
 
   // Check if THIS draft is generating images
   const isGeneratingImages = generatingImageDraftIds.has(draft.id);
@@ -276,21 +276,13 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
       {/* Variations list - scrollable */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Loading state when initially generating */}
+        {/* Loading state when initially generating - beautiful skeleton UI */}
         {draft.isGenerating && draft.variations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-8 text-ink-tertiary w-full">
-            <Loader2 className="w-8 h-8 animate-spin mb-3" />
-            <p className="text-sm mb-3">Generating prompt variations...</p>
-            {/* Show streaming text as it arrives - fills most of stage */}
-            {streamingText && (
-              <div className="w-full self-stretch px-4 flex justify-center">
-                <div className="w-full max-w-4xl bg-canvas-muted rounded-lg p-3 font-mono text-xs text-ink-secondary max-h-48 overflow-y-auto">
-                  <span className="opacity-50">Receiving:</span>
-                  <pre className="w-full min-w-0 whitespace-pre-wrap break-words mt-1">{streamingText.slice(-500)}</pre>
-                </div>
-              </div>
-            )}
-          </div>
+          <StreamingLoadingState
+            expectedCount={4}
+            partialVariations={[]}
+            isStreaming={true}
+          />
         )}
 
         {/* Variations grid */}

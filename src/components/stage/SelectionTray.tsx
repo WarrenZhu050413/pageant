@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Check, Download, Archive } from 'lucide-react';
+import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Check, Download } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, batchDownload } from '../../api';
 import { Button, Input, Textarea, Dialog, IconButton } from '../ui';
@@ -50,7 +50,6 @@ export function SelectionTray() {
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const selectAll = useStore((s) => s.selectAll);
   const batchDelete = useStore((s) => s.batchDelete);
-  const archiveSelectedImages = useStore((s) => s.archiveSelectedImages);
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
@@ -171,12 +170,6 @@ export function SelectionTray() {
     setSelectionMode('none');
   };
 
-  const handleArchive = async () => {
-    await archiveSelectedImages();
-    clearSelection();
-    setSelectionMode('none');
-  };
-
   const handleDownload = async () => {
     setIsDownloading(true);
     try {
@@ -281,14 +274,6 @@ export function SelectionTray() {
             {isDownloading ? 'Downloading...' : 'Download'}
           </Button>
           <div className="w-px h-6 bg-border self-center" />
-          <IconButton
-            variant="ghost"
-            size="sm"
-            tooltip="Archive selected"
-            onClick={handleArchive}
-          >
-            <Archive size={14} />
-          </IconButton>
           <IconButton
             variant="danger"
             size="sm"

@@ -881,29 +881,113 @@ export function GenerateTab() {
           >
             {getButtonLabel()}
           </Button>
-          <div className="relative group">
-            <Button
-              variant="secondary"
-              size="lg"
-              onClick={feelingLucky}
-              title="Feeling Lucky - Generate from random session & library images"
-            >
-              <Dices size={18} />
-            </Button>
-            {/* Tooltip */}
-            <div
-              className={clsx(
-                "absolute bottom-full right-0 mb-2 px-2.5 py-1.5 min-w-[160px]",
-                "text-xs bg-[var(--color-tooltip-bg)] text-[var(--color-tooltip-text)] rounded-lg shadow-lg",
-                "opacity-0 group-hover:opacity-100 pointer-events-none",
-                "transition-opacity duration-150 z-[100]",
-              )}
-            >
-              <div className="font-medium">Feeling Lucky</div>
-              <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
-                Random images + keywords from your session & library
-              </div>
+          <div className="relative">
+            {/* Split button: Dice + Dropdown */}
+            <div className="flex">
+              <button
+                type="button"
+                onClick={(e) => {
+                  setShowLuckyMenu(false);
+                  feelingLucky(e.shiftKey ? 'all' : 'session');
+                }}
+                className={clsx(
+                  "px-3 h-10 rounded-l-lg flex items-center justify-center",
+                  "bg-surface border border-border border-r-0",
+                  "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                  "transition-colors",
+                )}
+                title="Feeling Lucky (Shift+click for all images)"
+              >
+                <Dices size={18} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowLuckyMenu(!showLuckyMenu)}
+                className={clsx(
+                  "px-1.5 h-10 rounded-r-lg flex items-center justify-center",
+                  "bg-surface border border-border",
+                  "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                  "transition-colors",
+                )}
+              >
+                <ChevronDown size={14} className={clsx(showLuckyMenu && "rotate-180", "transition-transform")} />
+              </button>
             </div>
+
+            {/* Tooltip (show when menu is closed) */}
+            {!showLuckyMenu && (
+              <div
+                className={clsx(
+                  "absolute bottom-full right-0 mb-2 px-2.5 py-1.5 min-w-[180px]",
+                  "text-xs bg-[var(--color-tooltip-bg)] text-[var(--color-tooltip-text)] rounded-lg shadow-lg",
+                  "opacity-0 hover:opacity-0 group-hover:opacity-100 pointer-events-none",
+                  "transition-opacity duration-150 z-[100]",
+                )}
+              >
+                <div className="font-medium">Feeling Lucky</div>
+                <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
+                  Random images + keywords from session & library
+                </div>
+                <div className="text-[0.6rem] text-[var(--color-tooltip-hint)] mt-1 flex items-center gap-1">
+                  <kbd className="px-1 py-0.5 rounded bg-white/10 border border-white/20 font-mono">
+                    Shift
+                  </kbd>
+                  <span>+click for all images</span>
+                </div>
+              </div>
+            )}
+
+            {/* Dropdown Menu */}
+            <AnimatePresence>
+              {showLuckyMenu && (
+                <>
+                  {/* Backdrop to close menu */}
+                  <div
+                    className="fixed inset-0 z-[99]"
+                    onClick={() => setShowLuckyMenu(false)}
+                  />
+                  <motion.div
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.15 }}
+                    className={clsx(
+                      "absolute top-full right-0 mt-1 py-1 min-w-[140px]",
+                      "bg-surface border border-border rounded-lg shadow-lg z-[100]",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLuckyMenu(false);
+                        feelingLucky('session');
+                      }}
+                      className={clsx(
+                        "w-full px-3 py-1.5 text-left text-sm",
+                        "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                        "transition-colors",
+                      )}
+                    >
+                      This Session
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLuckyMenu(false);
+                        feelingLucky('all');
+                      }}
+                      className={clsx(
+                        "w-full px-3 py-1.5 text-left text-sm",
+                        "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                        "transition-colors",
+                      )}
+                    >
+                      All Images
+                    </button>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>

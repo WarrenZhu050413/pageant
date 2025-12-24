@@ -21,7 +21,6 @@ import { PromptVariationsView } from './PromptVariationsView';
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
-  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
@@ -54,25 +53,17 @@ export function MainStage() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    // Build image map from both active generations AND archived prompts
+    // Build image map from all generations (including hidden ones)
     const imageMap = new Map<string, typeof generations[0]['images'][0]>();
     for (const generation of generations) {
       for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
-    // Also include archived images so collections work regardless of archive status
-    for (const prompt of archivedPrompts) {
-      for (const image of prompt.images) {
-        if (!imageMap.has(image.id)) {
-          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
-        }
-      }
-    }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
       .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
-  }, [generations, archivedPrompts, currentCollection]);
+  }, [generations, currentCollection]);
 
   const hasPending = pendingGenerations.size > 0;
 

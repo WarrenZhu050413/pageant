@@ -249,117 +249,58 @@ describe('reedit functionality (main store)', () => {
   })
 })
 
-describe('archive functionality (main store)', () => {
+describe('hide functionality (main store)', () => {
   beforeEach(() => {
     // Reset the store before each test
     useStore.setState({
-      archivedPrompts: [],
       generations: [],
+      generationFilter: 'active',
     })
   })
 
   describe('initial state', () => {
-    it('has empty archivedPrompts', () => {
-      expect(useStore.getState().archivedPrompts).toEqual([])
+    it('has generationFilter set to active', () => {
+      expect(useStore.getState().generationFilter).toBe('active')
     })
   })
 
-  describe('archivedPrompts state', () => {
-    it('can store archived prompts', () => {
-      const archivedPrompt = {
-        id: 'prompt-1',
-        prompt: 'Test prompt',
-        title: 'Test Title',
-        created_at: '2024-01-01T00:00:00Z',
-        archived: true,
-        images: [{ id: 'img-1', image_path: 'test.jpg' }],
-        context_image_ids: [],
-      }
-
-      useStore.setState({ archivedPrompts: [archivedPrompt] })
-
-      expect(useStore.getState().archivedPrompts).toHaveLength(1)
-      expect(useStore.getState().archivedPrompts[0].id).toBe('prompt-1')
-      expect(useStore.getState().archivedPrompts[0].archived).toBe(true)
+  describe('generationFilter state', () => {
+    it('can set filter to all', () => {
+      useStore.getState().setGenerationFilter('all')
+      expect(useStore.getState().generationFilter).toBe('all')
     })
 
-    it('can store multiple archived prompts', () => {
-      const archivedPrompts = [
-        {
-          id: 'prompt-1',
-          prompt: 'First prompt',
-          title: 'First',
-          created_at: '2024-01-01T00:00:00Z',
-          archived: true,
-          images: [{ id: 'img-1', image_path: 'test1.jpg' }],
-          context_image_ids: [],
-        },
-        {
-          id: 'prompt-2',
-          prompt: 'Second prompt',
-          title: 'Second',
-          created_at: '2024-01-02T00:00:00Z',
-          archived: true,
-          images: [{ id: 'img-2', image_path: 'test2.jpg' }],
-          context_image_ids: [],
-        },
-      ]
-
-      useStore.setState({ archivedPrompts })
-
-      expect(useStore.getState().archivedPrompts).toHaveLength(2)
+    it('can set filter to hidden', () => {
+      useStore.getState().setGenerationFilter('hidden')
+      expect(useStore.getState().generationFilter).toBe('hidden')
     })
 
-    it('archived prompts with individual archived images', () => {
-      const archivedPrompt = {
-        id: 'prompt-1',
-        prompt: 'Test prompt',
-        title: 'Test',
-        created_at: '2024-01-01T00:00:00Z',
-        archived: false, // Prompt not archived, but has archived images
-        images: [
-          { id: 'img-1', image_path: 'test1.jpg', archived: true },
-          { id: 'img-2', image_path: 'test2.jpg', archived: false },
-        ],
-        context_image_ids: [],
-      }
-
-      useStore.setState({ archivedPrompts: [archivedPrompt] })
-
-      const stored = useStore.getState().archivedPrompts[0]
-      expect(stored.archived).toBe(false)
-      expect(stored.images[0].archived).toBe(true)
-      expect(stored.images[1].archived).toBe(false)
+    it('can set filter back to active', () => {
+      useStore.getState().setGenerationFilter('hidden')
+      useStore.getState().setGenerationFilter('active')
+      expect(useStore.getState().generationFilter).toBe('active')
     })
   })
 
-  describe('archive action types exist', () => {
-    it('has archiveImage action', () => {
-      expect(typeof useStore.getState().archiveImage).toBe('function')
+  describe('hide action types exist', () => {
+    it('has hideGeneration action', () => {
+      expect(typeof useStore.getState().hideGeneration).toBe('function')
     })
 
-    it('has archiveGeneration action', () => {
-      expect(typeof useStore.getState().archiveGeneration).toBe('function')
+    it('has hideSelectedGenerations action', () => {
+      expect(typeof useStore.getState().hideSelectedGenerations).toBe('function')
     })
 
-    it('has archiveSelectedImages action', () => {
-      expect(typeof useStore.getState().archiveSelectedImages).toBe('function')
+    it('has unhideGeneration action', () => {
+      expect(typeof useStore.getState().unhideGeneration).toBe('function')
     })
 
-    it('has archiveSelectedGenerations action', () => {
-      expect(typeof useStore.getState().archiveSelectedGenerations).toBe('function')
+    it('has setGenerationFilter action', () => {
+      expect(typeof useStore.getState().setGenerationFilter).toBe('function')
     })
 
-    it('has unarchiveImage action', () => {
-      expect(typeof useStore.getState().unarchiveImage).toBe('function')
-    })
-
-    it('has unarchiveGeneration action', () => {
-      expect(typeof useStore.getState().unarchiveGeneration).toBe('function')
-    })
-
-    it('has refreshArchived action', () => {
-      expect(typeof useStore.getState().refreshArchived).toBe('function')
+    it('has moveGenerationToSession action', () => {
+      expect(typeof useStore.getState().moveGenerationToSession).toBe('function')
     })
   })
 })

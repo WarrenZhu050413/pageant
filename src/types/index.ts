@@ -118,6 +118,7 @@ export interface Generation {
   context_image_ids?: string[];
   parent_generation_id?: string;
   session_id?: string;
+  hidden?: boolean;  // Hidden from default view (filter to show)
   _pending?: boolean;
   _count?: number;
   // The original base prompt that generated variations for this generation

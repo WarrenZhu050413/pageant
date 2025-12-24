@@ -65,10 +65,8 @@ describe('GridView', () => {
 
   const createMockState = (overrides: Record<string, unknown> = {}) => {
     const generations = (overrides.generations as unknown[]) || [];
-    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
     return {
       generations,
-      archivedPrompts,
       collections: [],
       currentGenerationId: null,
       currentCollectionId: null,
@@ -83,7 +81,6 @@ describe('GridView', () => {
       lastSeenLibraryAt: null,
       findSimilar: vi.fn(),
       deleteImage: vi.fn(),
-      archiveImage: vi.fn(),
       ...overrides,
     };
   }

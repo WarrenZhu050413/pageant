@@ -282,7 +282,7 @@ export function LibraryTab() {
   const setRightTab = useStore((s) => s.setRightTab);
   const setViewMode = useStore((s) => s.setViewMode);
   const setLeftTab = useStore((s) => s.setLeftTab);
-  const setGenerationFilter = useStore((s) => s.setGenerationFilter);
+  const setConceptFilter = useStore((s) => s.setConceptFilter);
   const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
   const markLibrarySeen = useStore((s) => s.markLibrarySeen);
@@ -428,7 +428,7 @@ export function LibraryTab() {
             onClick={() => {
               setCurrentGeneration(null);  // Clear to show flat gallery
               setCurrentCollection(null);
-              setGenerationFilter('concepts');
+              setConceptFilter('concepts');
               setLeftTab('generations');
               setViewMode('grid');
             }}

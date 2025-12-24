@@ -10,7 +10,6 @@ import '@testing-library/jest-dom';
 const mockStore = {
   streamingText: '',
   generations: [] as Array<{ id: string; images: Array<{ id: string }> }>,
-  archivedPrompts: [] as Array<{ id: string; images: Array<{ id: string }> }>,
   deleteDraft: vi.fn(),
   generateFromDraft: vi.fn(),
   updateDraftVariation: vi.fn(),
@@ -24,7 +23,7 @@ const mockStore = {
   toggleDraftVariationTag: vi.fn(),
   generatingImageDraftIds: new Set<string>(),
   updateImageNotes: vi.fn(),
-  getAllGenerations: () => [...mockStore.generations, ...mockStore.archivedPrompts],
+  getAllGenerations: () => mockStore.generations,
 };
 
 vi.mock('../../store', () => ({
@@ -44,10 +43,8 @@ describe('DraftVariationsView', () => {
     mockStore.streamingText = '';
   });
 
-  describe('Issue #16: Streaming text box width', () => {
-    it('should render streaming text container with full width classes when generating', () => {
-      mockStore.streamingText = 'Generating prompt variations...';
-
+  describe('Skeleton loading state during generation', () => {
+    it('should render skeleton loading UI when generating with no variations', () => {
       const draft = {
         id: 'draft-1',
         basePrompt: 'A beautiful landscape',
@@ -59,31 +56,16 @@ describe('DraftVariationsView', () => {
 
       const { container } = render(<DraftVariationsView draft={draft} />);
 
-      // Check that the streaming text container has full-width classes
-      const streamingWrapper = container.querySelector('.self-stretch');
-      expect(streamingWrapper).toBeInTheDocument();
-      expect(streamingWrapper).toHaveClass('w-full');
-      expect(streamingWrapper).toHaveClass('self-stretch');
-      expect(streamingWrapper).toHaveClass('px-4');
+      // Check that skeleton cards are shown (4 expected)
+      const skeletonCards = container.querySelectorAll('.shimmer');
+      expect(skeletonCards.length).toBeGreaterThan(0);
 
-      // Check that the inner container has proper width classes
-      const innerContainer = streamingWrapper?.querySelector('.bg-canvas-muted');
-      expect(innerContainer).toBeInTheDocument();
-      expect(innerContainer).toHaveClass('w-full');
-      expect(innerContainer).toHaveClass('max-h-48');
-
-      // Check that the pre element has proper text wrapping
-      const preElement = container.querySelector('pre');
-      expect(preElement).toBeInTheDocument();
-      expect(preElement).toHaveClass('whitespace-pre-wrap');
-      expect(preElement).toHaveClass('break-words');
-      expect(preElement).toHaveClass('w-full');
-      expect(preElement).toHaveClass('min-w-0');
+      // Check that progress dots are shown
+      const progressDots = container.querySelectorAll('.rounded-full.w-2.h-2');
+      expect(progressDots.length).toBe(4);
     });
 
-    it('should NOT have max-w-2xl constraint that causes squishing', () => {
-      mockStore.streamingText = 'Some streaming text';
-
+    it('should display a status message when generating', () => {
       const draft = {
         id: 'draft-1',
         basePrompt: 'Test prompt',
@@ -93,35 +75,24 @@ describe('DraftVariationsView', () => {
         isGenerating: true,
       };
 
-      const { container } = render(<DraftVariationsView draft={draft} />);
-
-      // The old buggy code had max-w-2xl which constrained width
-      const streamingWrapper = container.querySelector('.self-stretch');
-      expect(streamingWrapper).not.toHaveClass('max-w-2xl');
-      expect(streamingWrapper).not.toHaveClass('max-w-lg');
-    });
-
-    it('should display streaming text content', () => {
-      const streamingContent = 'Creating variation 1 of 4...';
-      mockStore.streamingText = streamingContent;
-
-      const draft = {
-        id: 'draft-1',
-        basePrompt: 'Test',
-        title: 'Generating...',
-        variations: [],
-        createdAt: new Date().toISOString(),
-        isGenerating: true,
-      };
-
       render(<DraftVariationsView draft={draft} />);
 
-      expect(screen.getByText(/Creating variation/)).toBeInTheDocument();
+      // One of the rotating status messages should be visible
+      const statusMessages = [
+        'Analyzing your style preferences',
+        'Exploring creative directions',
+        'Crafting unique variations',
+        'Refining prompt details',
+        'Adding finishing touches',
+      ];
+
+      const foundMessage = statusMessages.some(msg =>
+        screen.queryByText(new RegExp(msg)) !== null
+      );
+      expect(foundMessage).toBe(true);
     });
 
-    it('should not show streaming container when not generating', () => {
-      mockStore.streamingText = 'Old streaming text';
-
+    it('should not show skeleton loading UI when not generating', () => {
       const draft = {
         id: 'draft-1',
         basePrompt: 'Test',
@@ -135,9 +106,29 @@ describe('DraftVariationsView', () => {
 
       const { container } = render(<DraftVariationsView draft={draft} />);
 
-      // Streaming container should not be present when not generating
-      const streamingWrapper = container.querySelector('.self-stretch');
-      expect(streamingWrapper).not.toBeInTheDocument();
+      // Progress dots should not be present when not generating
+      const progressDots = container.querySelectorAll('.rounded-full.w-2.h-2.bg-canvas-muted');
+      expect(progressDots.length).toBe(0);
+    });
+
+    it('should not show skeleton loading UI when variations are loaded', () => {
+      const draft = {
+        id: 'draft-1',
+        basePrompt: 'Test',
+        title: 'Complete',
+        variations: [
+          { id: 'v1', text: 'Variation 1', mood: '', type: '', design: {} },
+          { id: 'v2', text: 'Variation 2', mood: '', type: '', design: {} },
+        ],
+        createdAt: new Date().toISOString(),
+        isGenerating: true, // Even if generating, don't show skeletons if we have variations
+      };
+
+      render(<DraftVariationsView draft={draft} />);
+
+      // Should show actual variations, not skeleton state
+      expect(screen.getByText('Variation 1')).toBeInTheDocument();
+      expect(screen.getByText('Variation 2')).toBeInTheDocument();
     });
   });
 

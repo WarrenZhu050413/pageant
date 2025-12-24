@@ -36,7 +36,6 @@ vi.mock('lucide-react', () => ({
   Square: () => <span data-testid="icon-square">☐</span>,
   Check: () => <span data-testid="icon-check">✓</span>,
   Download: () => <span data-testid="icon-download">⬇</span>,
-  Archive: () => <span data-testid="icon-archive">📦</span>,
 }))
 
 // Import after mocks are set up
@@ -71,11 +70,9 @@ describe('SelectionTray', () => {
 
   const createMockState = (overrides: Record<string, unknown> = {}) => {
     const generations = (overrides.generations as unknown[]) || [];
-    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
     return {
       selectedIds: new Set<string>(),
       generations,
-      archivedPrompts,
       collections: [],
       currentGenerationId: null,
       currentCollectionId: null,
@@ -88,9 +85,8 @@ describe('SelectionTray', () => {
       setSelectionMode: vi.fn(),
       selectAll: vi.fn(),
       batchDelete: vi.fn().mockResolvedValue(undefined),
-      archiveSelectedImages: vi.fn().mockResolvedValue(undefined),
       contextImageIds: [],
-      getAllGenerations: () => [...generations, ...archivedPrompts],
+      getAllGenerations: () => generations,
       ...overrides,
     };
   }
