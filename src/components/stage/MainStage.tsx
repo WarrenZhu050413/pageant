@@ -18,6 +18,7 @@ import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 import { PromptVariationsView } from './PromptVariationsView';
 import { StoryBuilderView } from './StoryBuilderView';
+import { AllImagesGalleryView } from './AllImagesGalleryView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
@@ -29,6 +30,7 @@ export function MainStage() {
   const currentDraftId = useStore((s) => s.currentDraftId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
   const currentStoryId = useStore((s) => s.currentStoryId);
+  const isViewingAllImages = useStore((s) => s.isViewingAllImages);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const viewMode = useStore((s) => s.viewMode);
   const setViewMode = useStore((s) => s.setViewMode);
@@ -92,6 +94,11 @@ export function MainStage() {
   // Story builder view takes over when a story is selected
   if (currentStory) {
     return <StoryBuilderView story={currentStory} />;
+  }
+
+  // All images gallery view
+  if (isViewingAllImages) {
+    return <AllImagesGalleryView />;
   }
 
   // Pending generation view

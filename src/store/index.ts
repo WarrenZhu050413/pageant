@@ -64,6 +64,7 @@ interface AppStore {
   leftTab: LeftTab;
   rightTab: RightTab;
   conceptFilter: 'all' | 'concepts';
+  isViewingAllImages: boolean;
 
   // Selection
   selectionMode: SelectionMode;
@@ -143,6 +144,7 @@ interface AppStore {
   setLeftTab: (tab: LeftTab) => void;
   setRightTab: (tab: RightTab) => void;
   setConceptFilter: (filter: 'all' | 'concepts') => void;
+  setViewingAllImages: (viewing: boolean) => void;
 
   // Selection
   setSelectionMode: (mode: SelectionMode) => void;
@@ -392,6 +394,7 @@ export const useStore = create<AppStore>()(
       leftTab: 'generations',
       rightTab: 'generate',
       conceptFilter: 'all',
+      isViewingAllImages: false,
 
       selectionMode: 'none',
       selectedIds: new Set(),
@@ -603,6 +606,7 @@ export const useStore = create<AppStore>()(
       setLeftTab: (tab) => set({ leftTab: tab }),
       setRightTab: (tab) => set({ rightTab: tab }),
       setConceptFilter: (filter) => set({ conceptFilter: filter }),
+      setViewingAllImages: (viewing) => set({ isViewingAllImages: viewing }),
 
       // Generation Mode (Plan vs Auto)
       setGenerationMode: (mode) => set({ generationMode: mode }),

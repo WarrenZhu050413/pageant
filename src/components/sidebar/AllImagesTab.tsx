@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Images, Check, Square, CheckSquare, Search, X, Loader2, Folder, ChevronDown, Plus } from 'lucide-react';
+import { Images, Check, Square, CheckSquare, Search, X, Loader2, Folder, ChevronDown, Plus, Maximize2 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ImageContextMenu, type ContextMenuPosition } from '../ui';
@@ -34,6 +34,7 @@ export function AllImagesTab() {
   const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
+  const setViewingAllImages = useStore((s) => s.setViewingAllImages);
   const sessions = useStore((s) => s.sessions);
   const currentSessionId = useStore((s) => s.currentSessionId);
 
@@ -295,6 +296,15 @@ export function AllImagesTab() {
             onClick={handleToggleSelectMode}
           >
             {isSelectMode ? 'Done' : 'Select'}
+          </Button>
+          <Button
+            size="sm"
+            variant="secondary"
+            leftIcon={<Maximize2 size={12} />}
+            onClick={() => setViewingAllImages(true)}
+            title="View all images in gallery"
+          >
+            Gallery
           </Button>
         </div>
       </div>
