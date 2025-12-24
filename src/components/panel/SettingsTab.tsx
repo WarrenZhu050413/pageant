@@ -5,7 +5,7 @@ import { useStore } from '../../store';
 import { useTheme, type ThemePreference } from '../../hooks';
 import { Button, Badge, Input } from '../ui';
 import { openImagesFolder } from '../../api';
-import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS } from '../../types';
+import { IMAGE_SIZE_OPTIONS, ASPECT_RATIO_OPTIONS, SAFETY_LEVEL_OPTIONS, THINKING_LEVEL_OPTIONS, ALL_GENERATION_ACTIONS, GENERATION_ACTION_LABELS } from '../../types';
 
 // Price per image for display
 const SIZE_PRICES: Record<string, string> = {
@@ -23,6 +23,8 @@ const THEME_OPTIONS: { value: ThemePreference; label: string; icon: typeof Sun }
 export function SettingsTab() {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
+  const generationActionPrefs = useStore((s) => s.generationActionPrefs);
+  const setGenerationActionPrefs = useStore((s) => s.setGenerationActionPrefs);
   const { preference: themePreference, resolvedTheme, setTheme } = useTheme();
 
   // Image generation defaults
@@ -202,6 +204,48 @@ export function SettingsTab() {
           {themePreference === 'system'
             ? `Following system preference (${resolvedTheme})`
             : `${themePreference.charAt(0).toUpperCase() + themePreference.slice(1)} mode`}
+        </p>
+      </section>
+
+      {/* Generation Action Buttons */}
+      <section>
+        <h4 className="text-xs font-medium text-ink-tertiary uppercase tracking-wide mb-3">
+          Generation Action Buttons
+        </h4>
+        <p className="text-[0.625rem] text-ink-muted mb-3">
+          Choose which actions appear as buttons. Unchecked actions move to the overflow menu.
+        </p>
+        <div className="space-y-2">
+          {ALL_GENERATION_ACTIONS.map((action) => {
+            const isPrimary = generationActionPrefs.primaryActions.includes(action);
+            const toggleAction = () => {
+              const newPrimary = isPrimary
+                ? generationActionPrefs.primaryActions.filter((a) => a !== action)
+                : [...generationActionPrefs.primaryActions, action];
+              setGenerationActionPrefs({ primaryActions: newPrimary });
+            };
+            return (
+              <label
+                key={action}
+                className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-canvas-subtle transition-colors"
+              >
+                <input
+                  type="checkbox"
+                  checked={isPrimary}
+                  onChange={toggleAction}
+                  className="w-4 h-4 rounded border-border text-brass focus:ring-brass/20"
+                />
+                <span className="text-xs font-medium text-ink-secondary">
+                  {GENERATION_ACTION_LABELS[action]}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-[0.625rem] text-ink-muted mt-2">
+          {generationActionPrefs.primaryActions.length === ALL_GENERATION_ACTIONS.length
+            ? 'All actions shown as buttons (no overflow menu)'
+            : `${generationActionPrefs.primaryActions.length} button${generationActionPrefs.primaryActions.length !== 1 ? 's' : ''} + overflow menu`}
         </p>
       </section>
 

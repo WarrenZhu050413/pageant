@@ -11,6 +11,7 @@ import {
   Palette,
   Sparkles,
   Dices,
+  Check,
 } from "lucide-react";
 import { useStore } from "../../store";
 import { getImageUrl } from "../../api";
@@ -61,6 +62,7 @@ export function GenerateTab() {
     string | null
   >(null);
   const [showLuckyMenu, setShowLuckyMenu] = useState(false);
+  const [luckyScope, setLuckyScope] = useState<'session' | 'all'>('session');
 
   // Advanced options state (per-request overrides)
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -886,17 +888,17 @@ export function GenerateTab() {
             <div className="flex">
               <button
                 type="button"
-                onClick={(e) => {
+                onClick={() => {
                   setShowLuckyMenu(false);
-                  feelingLucky(e.shiftKey ? 'all' : 'session');
+                  feelingLucky(luckyScope);
                 }}
                 className={clsx(
-                  "px-3 h-10 rounded-l-lg flex items-center justify-center",
+                  "px-3 h-10 rounded-l-lg flex items-center justify-center gap-1.5",
                   "bg-surface border border-border border-r-0",
                   "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
                   "transition-colors",
                 )}
-                title="Feeling Lucky (Shift+click for all images)"
+                title={`Feeling Lucky (${luckyScope === 'session' ? 'This Session' : 'All Images'})`}
               >
                 <Dices size={18} />
               </button>
@@ -926,18 +928,15 @@ export function GenerateTab() {
               >
                 <div className="font-medium">Feeling Lucky</div>
                 <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
-                  Random images + keywords from session & library
+                  Fill prompt & context with random images + keywords
                 </div>
-                <div className="text-[0.6rem] text-[var(--color-tooltip-hint)] mt-1 flex items-center gap-1">
-                  <kbd className="px-1 py-0.5 rounded bg-white/10 border border-white/20 font-mono">
-                    Shift
-                  </kbd>
-                  <span>+click for all images</span>
+                <div className="text-[0.6rem] text-[var(--color-tooltip-hint)] mt-1">
+                  Mode: {luckyScope === 'session' ? 'This Session' : 'All Images'}
                 </div>
               </div>
             )}
 
-            {/* Dropdown Menu */}
+            {/* Dropdown Menu - Mode selector */}
             <AnimatePresence>
               {showLuckyMenu && (
                 <>
@@ -952,37 +951,41 @@ export function GenerateTab() {
                     exit={{ opacity: 0, y: -4 }}
                     transition={{ duration: 0.15 }}
                     className={clsx(
-                      "absolute top-full right-0 mt-1 py-1 min-w-[140px]",
+                      "absolute top-full right-0 mt-1 py-1 min-w-[150px]",
                       "bg-surface border border-border rounded-lg shadow-lg z-[100]",
                     )}
                   >
                     <button
                       type="button"
                       onClick={() => {
+                        setLuckyScope('session');
                         setShowLuckyMenu(false);
-                        feelingLucky('session');
                       }}
                       className={clsx(
-                        "w-full px-3 py-1.5 text-left text-sm",
-                        "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                        "w-full px-3 py-1.5 text-left text-sm flex items-center justify-between",
+                        luckyScope === 'session' ? "text-ink" : "text-ink-secondary",
+                        "hover:bg-canvas-muted hover:text-ink",
                         "transition-colors",
                       )}
                     >
-                      This Session
+                      <span>This Session</span>
+                      {luckyScope === 'session' && <Check size={14} className="text-brass" />}
                     </button>
                     <button
                       type="button"
                       onClick={() => {
+                        setLuckyScope('all');
                         setShowLuckyMenu(false);
-                        feelingLucky('all');
                       }}
                       className={clsx(
-                        "w-full px-3 py-1.5 text-left text-sm",
-                        "text-ink-secondary hover:bg-canvas-muted hover:text-ink",
+                        "w-full px-3 py-1.5 text-left text-sm flex items-center justify-between",
+                        luckyScope === 'all' ? "text-ink" : "text-ink-secondary",
+                        "hover:bg-canvas-muted hover:text-ink",
                         "transition-colors",
                       )}
                     >
-                      All Images
+                      <span>All Images</span>
+                      {luckyScope === 'all' && <Check size={14} className="text-brass" />}
                     </button>
                   </motion.div>
                 </>

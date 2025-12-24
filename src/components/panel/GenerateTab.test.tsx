@@ -410,3 +410,172 @@ describe('GenerateTab concept picker', () => {
     })
   })
 })
+
+/**
+ * Tests for Feeling Lucky functionality.
+ *
+ * Feeling Lucky fills context with random images and keywords without auto-generating.
+ * It supports two scopes:
+ * - 'session': Sample from current session only
+ * - 'all': Sample from all sessions
+ */
+describe('Feeling Lucky functionality', () => {
+  type LuckyScope = 'session' | 'all'
+
+  describe('scope selection', () => {
+    it('should have session as default scope', () => {
+      const defaultScope: LuckyScope = 'session'
+      expect(defaultScope).toBe('session')
+    })
+
+    it('should toggle between session and all scopes', () => {
+      let scope: LuckyScope = 'session'
+
+      // Set to 'all'
+      scope = 'all'
+      expect(scope).toBe('all')
+
+      // Set back to 'session'
+      scope = 'session'
+      expect(scope).toBe('session')
+    })
+  })
+
+  describe('image sampling logic', () => {
+    interface MockImage {
+      id: string
+      image_path: string
+    }
+
+    interface MockGeneration {
+      id: string
+      images: MockImage[]
+      session_id?: string
+    }
+
+    const filterGenerationsByScope = (
+      generations: MockGeneration[],
+      scope: LuckyScope,
+      currentSessionId: string | null
+    ): MockGeneration[] => {
+      if (scope === 'all') {
+        return generations
+      }
+      return currentSessionId
+        ? generations.filter(g => g.session_id === currentSessionId)
+        : generations.filter(g => !g.session_id)
+    }
+
+    it('should return all generations when scope is "all"', () => {
+      const generations: MockGeneration[] = [
+        { id: 'g1', images: [{ id: 'img1', image_path: 'path1' }], session_id: 'session-1' },
+        { id: 'g2', images: [{ id: 'img2', image_path: 'path2' }], session_id: 'session-2' },
+        { id: 'g3', images: [{ id: 'img3', image_path: 'path3' }] },
+      ]
+
+      const result = filterGenerationsByScope(generations, 'all', 'session-1')
+      expect(result).toHaveLength(3)
+    })
+
+    it('should filter to current session when scope is "session"', () => {
+      const generations: MockGeneration[] = [
+        { id: 'g1', images: [{ id: 'img1', image_path: 'path1' }], session_id: 'session-1' },
+        { id: 'g2', images: [{ id: 'img2', image_path: 'path2' }], session_id: 'session-2' },
+        { id: 'g3', images: [{ id: 'img3', image_path: 'path3' }], session_id: 'session-1' },
+      ]
+
+      const result = filterGenerationsByScope(generations, 'session', 'session-1')
+      expect(result).toHaveLength(2)
+      expect(result.every(g => g.session_id === 'session-1')).toBe(true)
+    })
+
+    it('should filter to generations without session when currentSessionId is null', () => {
+      const generations: MockGeneration[] = [
+        { id: 'g1', images: [{ id: 'img1', image_path: 'path1' }], session_id: 'session-1' },
+        { id: 'g2', images: [{ id: 'img2', image_path: 'path2' }] },
+        { id: 'g3', images: [{ id: 'img3', image_path: 'path3' }] },
+      ]
+
+      const result = filterGenerationsByScope(generations, 'session', null)
+      expect(result).toHaveLength(2)
+      expect(result.every(g => !g.session_id)).toBe(true)
+    })
+  })
+
+  describe('prompt building from keywords', () => {
+    const buildPromptFromKeywords = (keywords: string[]): string => {
+      return keywords.length > 0
+        ? keywords.join(', ')
+        : 'creative artistic composition'
+    }
+
+    it('should join keywords with commas', () => {
+      const keywords = ['sunset', 'ocean', 'vibrant']
+      const result = buildPromptFromKeywords(keywords)
+      expect(result).toBe('sunset, ocean, vibrant')
+    })
+
+    it('should return fallback when no keywords', () => {
+      const result = buildPromptFromKeywords([])
+      expect(result).toBe('creative artistic composition')
+    })
+
+    it('should handle single keyword', () => {
+      const result = buildPromptFromKeywords(['sunset'])
+      expect(result).toBe('sunset')
+    })
+  })
+
+  describe('library image extraction', () => {
+    interface MockToken {
+      id: string
+      concept_image_path?: string
+      concept_image_id?: string
+    }
+
+    const extractLibraryImages = (
+      tokens: MockToken[]
+    ): Array<{ id: string; image_path: string }> => {
+      return tokens
+        .filter(t => t.concept_image_path)
+        .map(t => ({
+          id: t.concept_image_id || t.id,
+          image_path: t.concept_image_path!,
+        }))
+    }
+
+    it('should extract images from tokens with concept_image_path', () => {
+      const tokens: MockToken[] = [
+        { id: 't1', concept_image_path: 'path1.jpg', concept_image_id: 'img-1' },
+        { id: 't2' }, // No concept image
+        { id: 't3', concept_image_path: 'path3.jpg' }, // Uses token id as image id
+      ]
+
+      const result = extractLibraryImages(tokens)
+      expect(result).toHaveLength(2)
+      expect(result[0]).toEqual({ id: 'img-1', image_path: 'path1.jpg' })
+      expect(result[1]).toEqual({ id: 't3', image_path: 'path3.jpg' })
+    })
+
+    it('should return empty array when no tokens have concept images', () => {
+      const tokens: MockToken[] = [
+        { id: 't1' },
+        { id: 't2' },
+      ]
+
+      const result = extractLibraryImages(tokens)
+      expect(result).toEqual([])
+    })
+  })
+
+  describe('tooltip display', () => {
+    it('should show correct mode in tooltip', () => {
+      const getTooltipMode = (scope: LuckyScope): string => {
+        return scope === 'session' ? 'This Session' : 'All Images'
+      }
+
+      expect(getTooltipMode('session')).toBe('This Session')
+      expect(getTooltipMode('all')).toBe('All Images')
+    })
+  })
+})

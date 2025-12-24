@@ -101,7 +101,7 @@ export function MainStage() {
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-2xl mx-auto space-y-6">
+          <div className="space-y-6">
             {/* Status indicator */}
             <div className="flex items-center gap-3 p-4 rounded-lg bg-generating/10 border border-generating/20">
               <Loader2 size={20} className="text-generating animate-spin" />
@@ -115,7 +115,7 @@ export function MainStage() {
             <div className="space-y-2">
               <h3 className="text-sm font-medium text-ink-secondary uppercase tracking-wide">Prompt</h3>
               <div className="p-4 rounded-lg bg-canvas-subtle border border-border">
-                <p className="text-sm text-ink whitespace-pre-wrap font-[family-name:var(--font-mono)]">
+                <p className="text-sm text-ink whitespace-pre-line break-words">
                   {currentPending.prompt}
                 </p>
               </div>

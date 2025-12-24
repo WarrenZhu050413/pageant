@@ -1,7 +1,7 @@
 import { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { clsx } from 'clsx';
-import { X, Pencil, Undo2, Check } from 'lucide-react';
+import { X, Pencil, Undo2, Check, Save } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button } from '../ui';
@@ -19,6 +19,7 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
   const contextAnnotationOverrides = useStore((s) => s.contextAnnotationOverrides);
   const setContextAnnotationOverride = useStore((s) => s.setContextAnnotationOverride);
   const clearContextAnnotationOverride = useStore((s) => s.clearContextAnnotationOverride);
+  const updateImageNotes = useStore((s) => s.updateImageNotes);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -86,6 +87,19 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
 
   const handleRevert = () => {
     setLocalAnnotation(originalAnnotation);
+  };
+
+  const handlePersistOverride = async () => {
+    if (imageId && localAnnotation !== originalAnnotation) {
+      // Persist the annotation to the image permanently
+      await updateImageNotes(imageId, imageData?.image.notes || '', localAnnotation);
+      // Clear any session override since it's now the base
+      clearContextAnnotationOverride(imageId);
+      setSaved(true);
+      setTimeout(() => {
+        onClose();
+      }, 300);
+    }
   };
 
   // Keyboard shortcuts
@@ -272,6 +286,15 @@ export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnno
                 {isOverridden ? 'Save Override' : 'No Changes'}
               </Button>
             </div>
+            <Button
+              variant="brass"
+              size="sm"
+              onClick={handlePersistOverride}
+              disabled={!isOverridden}
+              leftIcon={<Save size={14} />}
+            >
+              Persist
+            </Button>
           </div>
         </div>
       </motion.div>

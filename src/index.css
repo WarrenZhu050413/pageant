@@ -202,14 +202,7 @@ body {
 }
 
 .shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--color-canvas-muted) 25%,
-    var(--color-canvas) 50%,
-    var(--color-canvas-muted) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  background: var(--color-canvas-muted);
 }
 
 /* Spinner animation */

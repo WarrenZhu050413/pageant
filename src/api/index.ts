@@ -68,7 +68,7 @@ export async function generatePromptVariations(
 
 // Streaming prompt generation via Server-Sent Events
 export interface StreamEvent {
-  type: 'chunk' | 'complete' | 'error';
+  type: 'chunk' | 'complete' | 'error' | 'partial_variation';
   text?: string;  // For chunk events
   success?: boolean;
   variations?: GeneratePromptsResponse['variations'];
@@ -76,6 +76,82 @@ export interface StreamEvent {
   generated_title?: string;
   annotation_suggestions?: GeneratePromptsResponse['annotation_suggestions'];
   error?: string;
+  // For partial_variation events - a single variation parsed from streaming JSON
+  partialVariation?: GeneratePromptsResponse['variations'][0];
+  partialIndex?: number;  // Which variation index (0-based)
+}
+
+/**
+ * Try to extract complete scene objects from partial JSON.
+ * Returns array of parsed scenes and the remaining unparsed text.
+ */
+function extractCompleteScenesFromPartialJson(
+  accumulatedText: string,
+  alreadyParsedCount: number
+): { scenes: GeneratePromptsResponse['variations']; title?: string } {
+  const scenes: GeneratePromptsResponse['variations'] = [];
+  let title: string | undefined;
+
+  // Try to extract the title first
+  const titleMatch = accumulatedText.match(/"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+  if (titleMatch) {
+    title = titleMatch[1];
+  }
+
+  // Find the scenes array start
+  const scenesStart = accumulatedText.indexOf('"scenes"');
+  if (scenesStart === -1) return { scenes, title };
+
+  const arrayStart = accumulatedText.indexOf('[', scenesStart);
+  if (arrayStart === -1) return { scenes, title };
+
+  // Extract content after the array start
+  const afterArrayStart = accumulatedText.slice(arrayStart + 1);
+
+  // Use bracket counting to find complete objects
+  let depth = 0;
+  let objectStart = -1;
+  let sceneIndex = 0;
+
+  for (let i = 0; i < afterArrayStart.length; i++) {
+    const char = afterArrayStart[i];
+
+    if (char === '{') {
+      if (depth === 0) {
+        objectStart = i;
+      }
+      depth++;
+    } else if (char === '}') {
+      depth--;
+      if (depth === 0 && objectStart !== -1) {
+        // Found a complete object
+        if (sceneIndex >= alreadyParsedCount) {
+          const objectStr = afterArrayStart.slice(objectStart, i + 1);
+          try {
+            const scene = JSON.parse(objectStr);
+            // Convert backend schema to frontend schema
+            scenes.push({
+              id: scene.id || String(sceneIndex + 1),
+              text: scene.description || '',
+              title: scene.title || '',
+              mood: scene.mood || '',
+              type: scene.type || '',
+              design: scene.design || {},
+              design_dimensions: scene.design_dimensions || [],
+              recommended_context_ids: scene.recommended_context_ids || [],
+              context_reasoning: scene.context_reasoning || '',
+            });
+          } catch {
+            // Incomplete or malformed JSON, skip
+          }
+        }
+        sceneIndex++;
+        objectStart = -1;
+      }
+    }
+  }
+
+  return { scenes, title };
 }
 
 export async function* generatePromptVariationsStream(
@@ -105,6 +181,10 @@ export async function* generatePromptVariationsStream(
 
   const decoder = new TextDecoder();
   let buffer = '';
+  // Track accumulated JSON text and already-yielded variations for incremental parsing
+  let accumulatedJsonText = '';
+  let yieldedVariationCount = 0;
+  let yieldedTitle: string | undefined;
 
   try {
     while (true) {
@@ -121,6 +201,35 @@ export async function* generatePromptVariationsStream(
         if (line.startsWith('data: ')) {
           try {
             const event = JSON.parse(line.slice(6)) as StreamEvent;
+
+            // For chunk events, try to extract complete variations incrementally
+            if (event.type === 'chunk' && event.text) {
+              accumulatedJsonText += event.text;
+
+              // Try to extract newly complete scenes
+              const { scenes, title } = extractCompleteScenesFromPartialJson(
+                accumulatedJsonText,
+                yieldedVariationCount
+              );
+
+              // Yield title if we got it and haven't yielded it yet
+              if (title && !yieldedTitle) {
+                yieldedTitle = title;
+              }
+
+              // Yield each new complete variation
+              for (const scene of scenes) {
+                yield {
+                  type: 'partial_variation',
+                  partialVariation: scene,
+                  partialIndex: yieldedVariationCount,
+                  generated_title: yieldedTitle,
+                };
+                yieldedVariationCount++;
+              }
+            }
+
+            // Always yield the original event too
             yield event;
           } catch {
             // Skip malformed JSON

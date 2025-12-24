@@ -24,7 +24,6 @@ import {
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, Badge } from '../ui';
-import { StreamingLoadingState } from './VariationSkeleton';
 import type { DraftPrompt, ImageData } from '../../types';
 
 interface DraftVariationsViewProps {
@@ -276,16 +275,20 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
 
       {/* Variations list - scrollable */}
       <div className="flex-1 overflow-y-auto p-4">
-        {/* Loading state when initially generating - beautiful skeleton UI */}
+        {/* Simple loading state while generating */}
         {draft.isGenerating && draft.variations.length === 0 && (
-          <StreamingLoadingState
-            expectedCount={4}
-            partialVariations={[]}
-            isStreaming={true}
-          />
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+              className="w-8 h-8 rounded-full border-2 border-brass border-t-transparent"
+            />
+            <p className="text-sm text-ink-secondary">Generating variations...</p>
+          </div>
         )}
 
         {/* Variations grid */}
+        {(draft.variations.length > 0 || !draft.isGenerating) && (
         <div className="space-y-3">
           <AnimatePresence>
             {draft.variations.map((variation, index) => {
@@ -600,6 +603,7 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
             })}
           </AnimatePresence>
         </div>
+        )}
       </div>
 
       {/* Footer */}

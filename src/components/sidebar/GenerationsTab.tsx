@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, EyeOff, Eye, ChevronDown, ExternalLink, Folder, Pencil, Check, ArrowRightLeft, Filter } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, EyeOff, Eye, ChevronDown, ExternalLink, Folder, Pencil, Check, ArrowRightLeft, Filter, MoreHorizontal } from 'lucide-react';
+import type { GenerationAction } from '../../types';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
@@ -50,6 +51,8 @@ export function GenerationsTab() {
   const renameSession = useStore((s) => s.renameSession);
   const deleteSession = useStore((s) => s.deleteSession);
 
+  const generationActionPrefs = useStore((s) => s.generationActionPrefs);
+
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
   const [isFilterDropdownOpen, setIsFilterDropdownOpen] = useState(false);
@@ -57,6 +60,14 @@ export function GenerationsTab() {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
   const [moveMenuOpenFor, setMoveMenuOpenFor] = useState<string | null>(null);
+  const [overflowMenuOpenFor, setOverflowMenuOpenFor] = useState<string | null>(null);
+
+  // Helper to check if an action should be shown as a primary button
+  const isPrimaryAction = (action: GenerationAction) =>
+    generationActionPrefs.primaryActions.includes(action);
+
+  // Check if there are any actions in the overflow menu
+  const hasOverflowActions = !isPrimaryAction('openLink') || !isPrimaryAction('moveToSession');
 
   // Session edit/delete state
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
@@ -666,7 +677,7 @@ export function GenerationsTab() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.02 }}
               className={clsx(
-                'group relative flex items-center gap-2 rounded-lg overflow-hidden',
+                'group relative rounded-lg overflow-hidden',
                 'transition-all duration-150',
                 isPending && !isActive && 'shimmer',
                 isDraft && 'border border-dashed border-brass/40',
@@ -680,6 +691,8 @@ export function GenerationsTab() {
                 isSelected && 'bg-brass-muted/50'
               )}
             >
+              {/* Main row: checkbox + content */}
+              <div className="flex items-center gap-2">
               {/* Checkbox (only in selection mode, for prompts and drafts) */}
               {isSelectionMode && isSelectable && (
                 <button
@@ -742,16 +755,9 @@ export function GenerationsTab() {
                         )}
                       </div>
                     ) : isPending ? (
-                      // Show grid of placeholder slots for each image being generated
-                      <div className="w-full h-full grid grid-cols-2 gap-px">
-                        {Array.from({ length: Math.min(item.count, 4) }).map((_, i) => (
-                          <div
-                            key={i}
-                            className="bg-generating/10 flex items-center justify-center"
-                          >
-                            <Loader2 size={8} className="text-generating animate-spin" />
-                          </div>
-                        ))}
+                      // Single spinner for generating images
+                      <div className="w-full h-full flex items-center justify-center bg-generating/10">
+                        <Loader2 size={16} className="text-generating animate-spin" />
                       </div>
                     ) : item.thumbnail ? (
                       <img
@@ -768,68 +774,58 @@ export function GenerationsTab() {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <h3
-                      className={clsx(
-                        'text-sm font-medium truncate',
-                        isActive ? 'text-ink' : 'text-ink-secondary'
-                      )}
-                    >
-                      {item.title}
-                    </h3>
-
-                    {item.prompt && (
-                      <p className="text-xs text-ink-muted truncate mt-0.5 font-[family-name:var(--font-mono)]">
-                        {item.prompt.slice(0, 50)}{item.prompt.length > 50 ? '...' : ''}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 mt-1">
-                      {/* Count badge - positioned before date */}
-                      <span
+                    {/* Title row with metadata */}
+                    <div className="flex items-center justify-between gap-2">
+                      <h3
                         className={clsx(
-                          'flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
-                          isDraft
-                            ? 'bg-brass/15 text-brass'
-                            : isPending
-                            ? 'bg-generating/15 text-generating'
-                            : 'bg-canvas-muted text-ink-tertiary'
+                          'text-sm font-medium truncate',
+                          isActive ? 'text-ink' : 'text-ink-secondary'
                         )}
                       >
-                        {isDraft ? 'Draft' : item.count}
-                      </span>
-                      <p className="text-[0.625rem] text-ink-muted">
-                        {isDraft
-                          ? item.isGeneratingImages
-                            ? 'Generating images...'
-                            : item.isGenerating
-                            ? 'Creating variations...'
-                            : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
-                          : isPending
-                          ? 'Generating...'
-                          : new Date(item.created_at).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              hour: 'numeric',
-                              minute: '2-digit',
-                            })}
-                      </p>
-                      {/* Session badge - show when viewing all sessions */}
-                      {sessionFilter === 'all' && isPrompt && item.session_id && (
-                        <span className="text-[0.5rem] px-1.5 py-0.5 rounded bg-canvas-muted text-ink-tertiary truncate max-w-[80px]">
-                          {getSessionName(item.session_id)}
+                        {item.title}
+                      </h3>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        {/* Count badge */}
+                        <span
+                          className={clsx(
+                            'text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
+                            isDraft
+                              ? 'bg-brass/15 text-brass'
+                              : isPending
+                              ? 'bg-generating/15 text-generating'
+                              : 'bg-canvas-muted text-ink-tertiary'
+                          )}
+                        >
+                          {isDraft ? 'Draft' : item.count}
                         </span>
-                      )}
+                        {/* Date/status */}
+                        <span className="text-[0.625rem] text-ink-muted">
+                          {isDraft
+                            ? item.isGeneratingImages
+                              ? 'Generating...'
+                              : item.isGenerating
+                              ? 'Creating...'
+                              : `${item.variationCount}v`
+                            : isPending
+                            ? 'Generating...'
+                            : new Date(item.created_at).toLocaleTimeString('en-US', {
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
               </button>
+              </div>
 
-              {/* Action buttons (prompts only, on hover) - slide-out right edge */}
+              {/* Action buttons (prompts only, on hover) - row below title */}
               {isPrompt && item.imageIds && item.imageIds.length > 0 && !isSelectionMode && (
-                <div className="absolute right-0 top-0 bottom-0 flex items-center opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 transition-all duration-200">
-                  <div className="flex flex-col gap-0.5 py-1 px-1 bg-surface/95 rounded-l-md shadow-md border-l border-y border-border">
+                <div className="overflow-hidden transition-all duration-200 max-h-0 group-hover:max-h-10 opacity-0 group-hover:opacity-100 ml-[62px] -mt-1">
+                  <div className="flex items-center gap-0.5 pt-1 pb-2">
                     {/* Go to session button - only show if viewing all sessions or a different session */}
-                    {item.session_id && item.session_id !== currentSessionId && (
+                    {isPrimaryAction('openLink') && item.session_id && item.session_id !== currentSessionId && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -842,7 +838,7 @@ export function GenerationsTab() {
                       </button>
                     )}
                     {/* Reedit button - loads base prompt + context into Generate tab */}
-                    {(item.basePrompt || item.prompt) && item.contextImageIds && item.contextImageIds.length > 0 && (
+                    {isPrimaryAction('reedit') && (item.basePrompt || item.prompt) && item.contextImageIds && item.contextImageIds.length > 0 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -855,90 +851,240 @@ export function GenerationsTab() {
                         <RotateCcw size={14} />
                       </button>
                     )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        addContextImages(item.imageIds!);
-                        setRightTab('generate');
-                      }}
-                      title="Add to Context"
-                      className="p-1.5 rounded hover:bg-brass/20 text-brass hover:text-brass transition-colors"
-                    >
-                      <Plus size={14} />
-                    </button>
-                    {/* Move to session button */}
-                    <div className="relative">
+                    {/* Add to Context button */}
+                    {isPrimaryAction('addToContext') && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          setMoveMenuOpenFor(moveMenuOpenFor === item.id ? null : item.id);
+                          addContextImages(item.imageIds!);
+                          setRightTab('generate');
                         }}
-                        title="Move to session"
-                        className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                        title="Add to Context"
+                        className="p-1.5 rounded hover:bg-brass/20 text-brass hover:text-brass transition-colors"
                       >
-                        <ArrowRightLeft size={14} />
+                        <Plus size={14} />
                       </button>
-                      {moveMenuOpenFor === item.id && (
-                        <div className="absolute right-full top-0 mr-1 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[140px] z-20">
-                          <div className="px-2 py-1 text-[0.625rem] text-ink-muted font-medium border-b border-border mb-1">
-                            Move to session
-                          </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveGenerationToSession(item.id, null);
-                              setMoveMenuOpenFor(null);
-                            }}
-                            className={clsx(
-                              'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
-                              'hover:bg-canvas-subtle transition-colors',
-                              !item.session_id && 'text-brass font-medium'
-                            )}
-                          >
-                            <span>No session</span>
-                            {!item.session_id && <Check size={10} className="ml-auto text-brass" />}
-                          </button>
-                          {sessions.map((session) => (
+                    )}
+                    {/* Move to session button (primary) */}
+                    {isPrimaryAction('moveToSession') && (
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setMoveMenuOpenFor(moveMenuOpenFor === item.id ? null : item.id);
+                            setOverflowMenuOpenFor(null);
+                          }}
+                          title="Move to session"
+                          className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                        >
+                          <ArrowRightLeft size={14} />
+                        </button>
+                        {moveMenuOpenFor === item.id && (
+                          <div className="absolute right-full top-0 mr-1 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[140px] z-20">
+                            <div className="px-2 py-1 text-[0.625rem] text-ink-muted font-medium border-b border-border mb-1">
+                              Move to session
+                            </div>
                             <button
-                              key={session.id}
                               onClick={(e) => {
                                 e.stopPropagation();
-                                moveGenerationToSession(item.id, session.id);
+                                moveGenerationToSession(item.id, null);
                                 setMoveMenuOpenFor(null);
                               }}
                               className={clsx(
                                 'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
                                 'hover:bg-canvas-subtle transition-colors',
-                                item.session_id === session.id && 'text-brass font-medium'
+                                !item.session_id && 'text-brass font-medium'
                               )}
                             >
-                              <span className="truncate">{session.name}</span>
-                              {item.session_id === session.id && <Check size={10} className="ml-auto text-brass flex-shrink-0" />}
+                              <span>No session</span>
+                              {!item.session_id && <Check size={10} className="ml-auto text-brass" />}
                             </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                            {sessions.map((session) => (
+                              <button
+                                key={session.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  moveGenerationToSession(item.id, session.id);
+                                  setMoveMenuOpenFor(null);
+                                }}
+                                className={clsx(
+                                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                                  'hover:bg-canvas-subtle transition-colors',
+                                  item.session_id === session.id && 'text-brass font-medium'
+                                )}
+                              >
+                                <span className="truncate">{session.name}</span>
+                                {item.session_id === session.id && <Check size={10} className="ml-auto text-brass flex-shrink-0" />}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {/* Hide/Unhide button */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (item.hidden) {
-                          unhideGeneration(item.id);
-                        } else {
-                          hideGeneration(item.id);
-                        }
-                      }}
-                      title={item.hidden ? "Unhide" : "Hide"}
-                      className={clsx(
-                        "p-1.5 rounded transition-colors",
-                        item.hidden
-                          ? "hover:bg-success/20 text-success hover:text-success"
-                          : "hover:bg-canvas-subtle text-ink-muted hover:text-ink"
-                      )}
-                    >
-                      {item.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
-                    </button>
+                    {isPrimaryAction('hide') && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (item.hidden) {
+                            unhideGeneration(item.id);
+                          } else {
+                            hideGeneration(item.id);
+                          }
+                        }}
+                        title={item.hidden ? "Unhide" : "Hide"}
+                        className={clsx(
+                          "p-1.5 rounded transition-colors",
+                          item.hidden
+                            ? "hover:bg-success/20 text-success hover:text-success"
+                            : "hover:bg-canvas-subtle text-ink-muted hover:text-ink"
+                        )}
+                      >
+                        {item.hidden ? <Eye size={14} /> : <EyeOff size={14} />}
+                      </button>
+                    )}
+                    {/* Overflow menu for non-primary actions */}
+                    {hasOverflowActions && (
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOverflowMenuOpenFor(overflowMenuOpenFor === item.id ? null : item.id);
+                            setMoveMenuOpenFor(null);
+                          }}
+                          title="More actions"
+                          className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                        >
+                          <MoreHorizontal size={14} />
+                        </button>
+                        {overflowMenuOpenFor === item.id && (
+                          <div className="absolute right-full top-0 mr-1 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[160px] z-20">
+                            {/* Go to session (overflow) */}
+                            {!isPrimaryAction('openLink') && item.session_id && item.session_id !== currentSessionId && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  switchSession(item.session_id!);
+                                  setOverflowMenuOpenFor(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-canvas-subtle transition-colors"
+                              >
+                                <ExternalLink size={12} />
+                                <span>Go to {getSessionName(item.session_id)}</span>
+                              </button>
+                            )}
+                            {/* Reedit (overflow) */}
+                            {!isPrimaryAction('reedit') && (item.basePrompt || item.prompt) && item.contextImageIds && item.contextImageIds.length > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setReeditData(item.basePrompt || item.prompt!, item.contextImageIds!);
+                                  setRightTab('generate');
+                                  setOverflowMenuOpenFor(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-canvas-subtle transition-colors"
+                              >
+                                <RotateCcw size={12} />
+                                <span>Reedit</span>
+                              </button>
+                            )}
+                            {/* Add to Context (overflow) */}
+                            {!isPrimaryAction('addToContext') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  addContextImages(item.imageIds!);
+                                  setRightTab('generate');
+                                  setOverflowMenuOpenFor(null);
+                                }}
+                                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-canvas-subtle transition-colors text-brass"
+                              >
+                                <Plus size={12} />
+                                <span>Add to Context</span>
+                              </button>
+                            )}
+                            {/* Move to session (overflow) - opens submenu */}
+                            {!isPrimaryAction('moveToSession') && (
+                              <div className="relative">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setMoveMenuOpenFor(moveMenuOpenFor === `overflow-${item.id}` ? null : `overflow-${item.id}`);
+                                  }}
+                                  className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left hover:bg-canvas-subtle transition-colors"
+                                >
+                                  <ArrowRightLeft size={12} />
+                                  <span>Move to session</span>
+                                  <ChevronDown size={10} className="ml-auto -rotate-90" />
+                                </button>
+                                {moveMenuOpenFor === `overflow-${item.id}` && (
+                                  <div className="absolute right-full top-0 mr-1 bg-surface border border-border rounded-md shadow-lg py-1 min-w-[140px] z-30">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        moveGenerationToSession(item.id, null);
+                                        setMoveMenuOpenFor(null);
+                                        setOverflowMenuOpenFor(null);
+                                      }}
+                                      className={clsx(
+                                        'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                                        'hover:bg-canvas-subtle transition-colors',
+                                        !item.session_id && 'text-brass font-medium'
+                                      )}
+                                    >
+                                      <span>No session</span>
+                                      {!item.session_id && <Check size={10} className="ml-auto text-brass" />}
+                                    </button>
+                                    {sessions.map((session) => (
+                                      <button
+                                        key={session.id}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          moveGenerationToSession(item.id, session.id);
+                                          setMoveMenuOpenFor(null);
+                                          setOverflowMenuOpenFor(null);
+                                        }}
+                                        className={clsx(
+                                          'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                                          'hover:bg-canvas-subtle transition-colors',
+                                          item.session_id === session.id && 'text-brass font-medium'
+                                        )}
+                                      >
+                                        <span className="truncate">{session.name}</span>
+                                        {item.session_id === session.id && <Check size={10} className="ml-auto text-brass flex-shrink-0" />}
+                                      </button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            {/* Hide/Unhide (overflow) */}
+                            {!isPrimaryAction('hide') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (item.hidden) {
+                                    unhideGeneration(item.id);
+                                  } else {
+                                    hideGeneration(item.id);
+                                  }
+                                  setOverflowMenuOpenFor(null);
+                                }}
+                                className={clsx(
+                                  "w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left transition-colors",
+                                  item.hidden
+                                    ? "hover:bg-success/20 text-success"
+                                    : "hover:bg-canvas-subtle"
+                                )}
+                              >
+                                {item.hidden ? <Eye size={12} /> : <EyeOff size={12} />}
+                                <span>{item.hidden ? "Unhide" : "Hide"}</span>
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

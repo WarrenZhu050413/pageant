@@ -242,6 +242,23 @@ export interface Session {
   created_at: string;
 }
 
+// Generation action button preferences
+export type GenerationAction = 'openLink' | 'reedit' | 'addToContext' | 'moveToSession' | 'hide';
+
+export const ALL_GENERATION_ACTIONS: GenerationAction[] = ['openLink', 'reedit', 'addToContext', 'moveToSession', 'hide'];
+
+export const GENERATION_ACTION_LABELS: Record<GenerationAction, string> = {
+  openLink: 'Open Link',
+  reedit: 'Reedit',
+  addToContext: 'Add to Context',
+  moveToSession: 'Move to Session',
+  hide: 'Hide/Unhide',
+};
+
+export interface GenerationActionPrefs {
+  primaryActions: GenerationAction[];  // Shown as buttons; others go to overflow menu
+}
+
 // API Response types
 export interface GenerateResponse {
   success: boolean;

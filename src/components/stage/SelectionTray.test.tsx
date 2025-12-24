@@ -81,7 +81,7 @@ describe('SelectionTray', () => {
       setContextImages: vi.fn(),
       setRightTab: vi.fn(),
       createCollection: vi.fn().mockResolvedValue(undefined),
-      addToCollection: vi.fn().mockResolvedValue(undefined),
+      addImagesToCollection: vi.fn().mockResolvedValue(undefined),
       setSelectionMode: vi.fn(),
       selectAll: vi.fn(),
       batchDelete: vi.fn().mockResolvedValue(undefined),
@@ -818,9 +818,9 @@ describe('SelectionTray', () => {
       expect(screen.getByText('(⌘+click for multiple)')).toBeInTheDocument()
     })
 
-    it('should call addToCollection for each selected collection', async () => {
+    it('should call addImagesToCollection for each selected collection', async () => {
       const user = userEvent.setup()
-      const addToCollection = vi.fn().mockResolvedValue(undefined)
+      const addImagesToCollection = vi.fn().mockResolvedValue(undefined)
       const clearSelection = vi.fn()
       const setSelectionMode = vi.fn()
       const mockImage = createMockImage('img-1')
@@ -835,7 +835,7 @@ describe('SelectionTray', () => {
         generations: [mockPrompt],
         currentGenerationId: 'prompt-1',
         collections,
-        addToCollection,
+        addImagesToCollection,
         clearSelection,
         setSelectionMode,
       })
@@ -861,10 +861,10 @@ describe('SelectionTray', () => {
       // Click the add button
       await user.click(screen.getByText('Add to 2 Collections'))
 
-      // Should have called addToCollection twice
-      expect(addToCollection).toHaveBeenCalledTimes(2)
-      expect(addToCollection).toHaveBeenCalledWith('col-1')
-      expect(addToCollection).toHaveBeenCalledWith('col-2')
+      // Should have called addImagesToCollection twice (once per collection, with the image IDs)
+      expect(addImagesToCollection).toHaveBeenCalledTimes(2)
+      expect(addImagesToCollection).toHaveBeenCalledWith('col-1', ['img-1'])
+      expect(addImagesToCollection).toHaveBeenCalledWith('col-2', ['img-1'])
     })
 
     it('should show info text with collection count when multiple selected', async () => {

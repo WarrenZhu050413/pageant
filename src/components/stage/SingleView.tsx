@@ -228,10 +228,6 @@ export function SingleView() {
   useEffect(() => {
     const handleSaveCollectionShortcut = () => {
       if (currentImage) {
-        setSelectedCollectionIds(new Set());
-        setIsCreatingNew(collections.length === 0);
-        setCollectionName('');
-        setCollectionDescription('');
         setIsCollectionDialogOpen(true);
       }
     };
@@ -267,15 +263,7 @@ export function SingleView() {
       window.removeEventListener('keyboard:deleteCancelled', handleDeleteCancelled);
       window.removeEventListener('keyboard:deleteConfirmed', handleDeleteConfirmed);
     };
-  }, [currentImage, collections.length]);
-
-  // Sort collections newest first
-  const sortedCollections = useMemo(() =>
-    [...collections].sort((a, b) =>
-      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    ),
-    [collections]
-  );
+  }, [currentImage]);
 
   if (!currentImage || displayImages.length === 0) {
     return (
@@ -620,147 +608,11 @@ export function SingleView() {
       <DesignAnnotation />
 
       {/* Collection dialog */}
-      <Dialog
+      <CollectionDialog
         isOpen={isCollectionDialogOpen}
         onClose={() => setIsCollectionDialogOpen(false)}
-        title="Save to Collection"
-      >
-        <div className="space-y-4">
-          {/* Existing collections */}
-          {!isCreatingNew && sortedCollections.length > 0 && (
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-ink-secondary">
-                Add to existing collection
-                <span className="ml-2 text-ink-muted font-normal">
-                  (⌘+click for multiple)
-                </span>
-              </label>
-              <div className="max-h-[50vh] overflow-y-auto space-y-1">
-                {sortedCollections.map((collection) => {
-                  const isSelected = selectedCollectionIds.has(collection.id);
-                  return (
-                  <button
-                    key={collection.id}
-                    onClick={(e) => {
-                      if (e.metaKey || e.ctrlKey) {
-                        // Command/Ctrl click: toggle selection (multi-select)
-                        setSelectedCollectionIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(collection.id)) {
-                            next.delete(collection.id);
-                          } else {
-                            next.add(collection.id);
-                          }
-                          return next;
-                        });
-                      } else {
-                        // Regular click: single select (replace selection)
-                        setSelectedCollectionIds(new Set([collection.id]));
-                      }
-                    }}
-                    className={clsx(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-lg text-left',
-                      'transition-colors',
-                      isSelected
-                        ? 'bg-brass-muted text-ink'
-                        : 'hover:bg-canvas-muted text-ink-secondary'
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{collection.name}</p>
-                      <p className="text-xs text-ink-muted">
-                        {collection.image_ids?.length || 0} images
-                      </p>
-                    </div>
-                    {isSelected && (
-                      <Check size={16} className="text-brass-dark" />
-                    )}
-                  </button>
-                  );
-                })}
-              </div>
-
-              {/* Divider */}
-              <div className="flex items-center gap-3 py-2">
-                <div className="flex-1 h-px bg-border" />
-                <span className="text-xs text-ink-muted">or</span>
-                <div className="flex-1 h-px bg-border" />
-              </div>
-
-              {/* Create new button */}
-              <button
-                onClick={() => setIsCreatingNew(true)}
-                className={clsx(
-                  'w-full flex items-center gap-2 px-3 py-2 rounded-lg',
-                  'text-sm text-ink-secondary hover:bg-canvas-muted',
-                  'transition-colors'
-                )}
-              >
-                <Plus size={14} />
-                Create new collection
-              </button>
-            </div>
-          )}
-
-          {/* Create new collection form */}
-          {isCreatingNew && (
-            <div className="space-y-3">
-              {collections.length > 0 && (
-                <button
-                  onClick={() => setIsCreatingNew(false)}
-                  className="text-xs text-ink-muted hover:text-ink-secondary"
-                >
-                  ← Back to existing collections
-                </button>
-              )}
-              <Input
-                label="Collection Name"
-                value={collectionName}
-                onChange={(e) => setCollectionName(e.target.value)}
-                placeholder="My Collection"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey && collectionName.trim()) {
-                    handleSaveToCollection();
-                  }
-                }}
-              />
-              <Textarea
-                label="Description (optional)"
-                value={collectionDescription}
-                onChange={(e) => setCollectionDescription(e.target.value)}
-                placeholder="What's this collection about?"
-                rows={2}
-                className="min-h-[60px]"
-              />
-            </div>
-          )}
-
-          <div className="text-xs text-ink-muted">
-            1 image will be added
-          </div>
-
-          <div className="flex justify-end gap-3">
-            <Button
-              variant="ghost"
-              onClick={() => setIsCollectionDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="brass"
-              onClick={handleSaveToCollection}
-              disabled={isCreatingNew ? !collectionName.trim() : selectedCollectionIds.size === 0}
-            >
-              {isCreatingNew
-                ? 'Create & Add'
-                : selectedCollectionIds.size > 1
-                ? `Add to ${selectedCollectionIds.size} Collections`
-                : 'Add to Collection'}
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+        imageIds={currentImage ? [currentImage.id] : []}
+      />
 
     </div>
 

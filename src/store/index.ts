@@ -30,10 +30,12 @@ import type {
   ImageGenerationParams,
   DraftPrompt,
   CreateTokenRequest,
+  GenerationActionPrefs,
 } from '../types';
 import * as api from '../api';
 import { toast } from './toastStore';
 import { buildPrompt, buildConceptPrompt } from '../prompts';
+import { randomInt, sampleArray, sampleKeywordsFromPrompts } from '../utils/keywords';
 
 interface PendingGeneration {
   title?: string;  // Optional - will be auto-generated if not provided
@@ -85,6 +87,10 @@ interface AppStore {
   notes: string;
   // Session filter for GenerationsTab: 'current' (default), 'all', or specific session ID
   sessionFilter: 'current' | 'all' | string;
+
+  // Generation action button preferences (persisted)
+  generationActionPrefs: GenerationActionPrefs;
+  setGenerationActionPrefs: (prefs: GenerationActionPrefs) => void;
 
   // Two-Phase Generation (Prompt Variations)
   promptVariations: PromptVariation[];
@@ -178,9 +184,9 @@ interface AppStore {
   clearVariations: () => void;
   setShowPromptPreview: (show: boolean) => void;
 
-  // Feeling Lucky - random generation from session + library
+  // Feeling Lucky - fill context with random images + keywords (doesn't auto-generate)
   // scope: 'session' (default) = current session only, 'all' = all sessions
-  feelingLucky: (scope?: 'session' | 'all') => Promise<void>;
+  feelingLucky: (scope?: 'session' | 'all') => void;
 
   // Draft Prompt Actions
   setCurrentDraft: (id: string | null) => void;
@@ -346,6 +352,11 @@ export const useStore = create<AppStore>()(
       currentSessionId: null,
       notes: '',
       sessionFilter: 'current',
+
+      // Generation action button preferences
+      generationActionPrefs: {
+        primaryActions: ['addToContext', 'reedit', 'hide'],
+      },
 
       // Two-Phase Generation (Prompt Variations)
       promptVariations: [],
@@ -831,6 +842,27 @@ export const useStore = create<AppStore>()(
               // Update streaming text for UI feedback (rolling window to limit memory)
               const newText = get().streamingText + (event.text || '');
               set({ streamingText: newText.slice(-1000) }); // Keep last 1000 chars
+            } else if (event.type === 'partial_variation' && event.partialVariation) {
+              // Add variation to draft immediately as it's parsed from streaming JSON
+              const currentDraft = get().draftPrompts.find(d => d.id === draftId);
+              if (currentDraft) {
+                const newVariation = {
+                  ...event.partialVariation,
+                  id: crypto.randomUUID(),
+                };
+                // Update draft with new variation (and title if available)
+                set({
+                  draftPrompts: get().draftPrompts.map(d =>
+                    d.id === draftId
+                      ? {
+                          ...d,
+                          variations: [...d.variations, newVariation],
+                          title: event.generated_title || d.title,
+                        }
+                      : d
+                  ),
+                });
+              }
             } else if (event.type === 'complete') {
               response = {
                 success: event.success || false,
@@ -1114,10 +1146,9 @@ export const useStore = create<AppStore>()(
         set({ showPromptPreview: show });
       },
 
-      // Feeling Lucky - random generation from session + library
-      feelingLucky: async (scope = 'session') => {
-        const { generations, designTokens, currentSessionId, generateVariations, setContextImages } = get();
-        const { randomInt, sampleArray, sampleKeywordsFromPrompts } = await import('../utils/keywords');
+      // Feeling Lucky - fill context with random images + keywords (doesn't auto-generate)
+      feelingLucky: (scope = 'session') => {
+        const { generations, designTokens, currentSessionId, setContextImages } = get();
 
         // Get images based on scope
         const sourceGenerations = scope === 'all'
@@ -1129,7 +1160,7 @@ export const useStore = create<AppStore>()(
         const sessionImages = sourceGenerations.flatMap(g => g.images);
 
         // Get images from design library (tokens with concept images)
-        const libraryImages = designTokens
+        const libraryImages: Array<{ id: string; image_path: string }> = designTokens
           .filter(t => t.concept_image_path)
           .map(t => ({
             id: t.concept_image_id || t.id,
@@ -1161,16 +1192,9 @@ export const useStore = create<AppStore>()(
           ? keywords.join(', ')
           : 'creative artistic composition';
 
-        // Set context images and trigger generation
+        // Set context images and fill prompt (using reedit mechanism)
         setContextImages(contextIds);
-
-        // Use the normal generation flow with Plan mode
-        await generateVariations({
-          prompt,
-          count: 4,
-          exploreRatio: 70, // More exploratory for "feeling lucky"
-          template: 'variation',
-        });
+        set({ reeditPrompt: prompt, reeditContextIds: null });
       },
 
       // Draft Prompt Actions
@@ -2344,6 +2368,10 @@ export const useStore = create<AppStore>()(
         set({ sessionFilter: filter });
       },
 
+      setGenerationActionPrefs: (prefs) => {
+        set({ generationActionPrefs: prefs });
+      },
+
       getFilteredGenerations: () => {
         const { generations, currentSessionId, sessionFilter, generationFilter } = get();
 
@@ -2643,6 +2671,8 @@ export const useStore = create<AppStore>()(
         lastSeenLibraryAt: state.lastSeenLibraryAt,
         // Persist generation mode preference
         generationMode: state.generationMode,
+        // Persist generation action button preferences
+        generationActionPrefs: state.generationActionPrefs,
       }),
     }
   )
