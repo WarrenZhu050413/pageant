@@ -113,12 +113,16 @@ export function GenerateTab() {
     if (settings?.safety_level) setSafetyLevel(settings.safety_level);
   }, [settings?.safety_level]);
 
-  // Handle reedit data from generation list (loads prompt + context into Generate tab)
+  // Handle reedit data from generation list or feelingLucky
+  // Prompt-only reedit is supported (feelingLucky sets context directly, then sets reeditPrompt)
   useEffect(() => {
-    if (reeditPrompt !== null && reeditContextIds !== null) {
+    if (reeditPrompt !== null) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setPrompt(reeditPrompt);
-      setContextImages(reeditContextIds);
+      // Only update context images if provided (null = keep existing context)
+      if (reeditContextIds !== null) {
+        setContextImages(reeditContextIds);
+      }
       clearReeditData();
     }
   }, [reeditPrompt, reeditContextIds, setContextImages, clearReeditData]);

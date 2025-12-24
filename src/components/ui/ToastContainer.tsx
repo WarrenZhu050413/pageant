@@ -24,10 +24,10 @@ function ToastItem({ toast }: { toast: Toast }) {
       layout
       role={toast.type === 'error' ? 'alert' : 'status'}
       aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
-      initial={{ opacity: 0, y: -50, scale: 0.9 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -20, scale: 0.9 }}
-      transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+      initial={{ opacity: 0, x: 100 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: 100 }}
+      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
       className={clsx(
         'flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg',
         'bg-surface backdrop-blur-sm',

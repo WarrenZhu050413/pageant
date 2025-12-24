@@ -116,6 +116,14 @@ gemini = GeminiService(api_key=config.get_gemini_api_key())
 # Initialize Prompt Engineering service
 pe_service = PromptEngineeringService(api_key=config.get_gemini_api_key())
 
+# Initialize Character Assistant service
+from character_assistant import CharacterAssistantService
+character_service = CharacterAssistantService(api_key=config.get_gemini_api_key())
+
+# Initialize Story Assistant service
+from story_assistant import StoryAssistantService
+story_assistant = StoryAssistantService(api_key=config.get_gemini_api_key())
+
 
 # Image generation parameter options (matching frontend)
 IMAGE_SIZE_OPTIONS = ["1K", "2K", "4K"]
@@ -313,6 +321,7 @@ class StoryDesignMomentum(BaseModel):
 class UpdateStoryRequest(BaseModel):
     title: str | None = None
     description: str | None = None
+    character_ids: list[str] | None = None
     design_momentum: StoryDesignMomentum | None = None
 
 
@@ -2853,6 +2862,8 @@ async def update_story(story_id: str, req: UpdateStoryRequest):
                 story["title"] = req.title
             if req.description is not None:
                 story["description"] = req.description
+            if req.character_ids is not None:
+                story["character_ids"] = req.character_ids
             if req.design_momentum is not None:
                 story["design_momentum"] = req.design_momentum.model_dump(exclude_none=True)
             story["updated_at"] = datetime.now().isoformat()
@@ -3876,6 +3887,296 @@ async def pe_optimize_prompt(request: PEOptimizeRequest):
     except Exception as e:
         logger.error(f"[PE] Prompt optimization failed: {e}")
         return PEOptimizeResponse(success=False, error=str(e))
+
+
+# =============================================================================
+# Character Creation Assistant Endpoints
+# =============================================================================
+
+
+class CharacterQuestionsRequest(BaseModel):
+    """Request for generating character questions."""
+
+    image_ids: list[str]  # Reference image IDs
+    name: str | None = None  # Optional character name
+    description: str | None = None  # Optional initial description
+
+
+class CharacterOptionResponse(BaseModel):
+    """Single option in a character question."""
+
+    label: str
+    description: str
+
+
+class CharacterQuestionResponse(BaseModel):
+    """Single character question with options."""
+
+    question: str
+    header: str
+    options: list[CharacterOptionResponse]
+    multiSelect: bool
+
+
+class CharacterQuestionsResponse(BaseModel):
+    """Response with generated character questions."""
+
+    success: bool
+    questions: list[CharacterQuestionResponse] = []
+    suggested_name: str | None = None
+    error: str | None = None
+
+
+class CharacterDescribeRequest(BaseModel):
+    """Request for generating character description."""
+
+    image_ids: list[str]  # Reference image IDs
+    name: str
+    questions: list[dict]  # Questions that were asked
+    answers: dict  # User's answers keyed by question text
+    initial_description: str | None = None
+
+
+class CharacterDescribeResponse(BaseModel):
+    """Response with generated character description."""
+
+    success: bool
+    description: str = ""
+    summary: dict[str, str] = {}
+    error: str | None = None
+
+
+@app.post("/api/character/questions", response_model=CharacterQuestionsResponse)
+async def character_generate_questions(request: CharacterQuestionsRequest):
+    """Generate clarifying questions for character creation.
+
+    Analyzes reference images and generates targeted questions to help
+    users define consistent character descriptions.
+    """
+    logger.info(f"[Character] Generating questions for {len(request.image_ids)} images")
+
+    try:
+        # Load reference images
+        reference_images = []
+        async with _metadata_manager.atomic() as data:
+            for img_id in request.image_ids:
+                img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
+                if img_data:
+                    img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
+                    if img_path.exists():
+                        img_bytes = img_path.read_bytes()
+                        mime_type = _detect_image_mime_type(img_bytes)
+                        reference_images.append((img_bytes, mime_type))
+
+        if not reference_images:
+            return CharacterQuestionsResponse(
+                success=False,
+                error="No valid reference images found"
+            )
+
+        # Generate questions
+        result = await character_service.generate_questions(
+            reference_images=reference_images,
+            name=request.name,
+            initial_description=request.description,
+        )
+
+        # Convert to response format
+        questions = []
+        for q in result.questions:
+            questions.append(
+                CharacterQuestionResponse(
+                    question=q.question,
+                    header=q.header,
+                    options=[
+                        CharacterOptionResponse(label=o.label, description=o.description)
+                        for o in q.options
+                    ],
+                    multiSelect=q.multiSelect,
+                )
+            )
+
+        return CharacterQuestionsResponse(
+            success=True,
+            questions=questions,
+            suggested_name=result.suggested_name,
+        )
+
+    except Exception as e:
+        logger.error(f"[Character] Question generation failed: {e}")
+        return CharacterQuestionsResponse(success=False, error=str(e))
+
+
+@app.post("/api/character/describe", response_model=CharacterDescribeResponse)
+async def character_generate_description(request: CharacterDescribeRequest):
+    """Generate a character description based on images and Q&A.
+
+    Takes reference images and user's answers to questions,
+    returns a detailed character description for image generation.
+    """
+    logger.info(f"[Character] Generating description for '{request.name}' with {len(request.questions)} Q&A pairs")
+
+    try:
+        # Load reference images
+        reference_images = []
+        async with _metadata_manager.atomic() as data:
+            for img_id in request.image_ids:
+                img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
+                if img_data:
+                    img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
+                    if img_path.exists():
+                        img_bytes = img_path.read_bytes()
+                        mime_type = _detect_image_mime_type(img_bytes)
+                        reference_images.append((img_bytes, mime_type))
+
+        if not reference_images:
+            return CharacterDescribeResponse(
+                success=False,
+                error="No valid reference images found"
+            )
+
+        # Generate description
+        result = await character_service.generate_description(
+            reference_images=reference_images,
+            name=request.name,
+            questions=request.questions,
+            answers=request.answers,
+            initial_description=request.initial_description,
+        )
+
+        return CharacterDescribeResponse(
+            success=True,
+            description=result.description,
+            summary=result.summary,
+        )
+
+    except Exception as e:
+        logger.error(f"[Character] Description generation failed: {e}")
+        return CharacterDescribeResponse(success=False, error=str(e))
+
+
+# =============================================================================
+# Story Writing Assistant Endpoints
+# =============================================================================
+
+
+class StoryChapterRequest(BaseModel):
+    """Existing chapter info for suggestions."""
+
+    title: str
+    text: str = ""
+
+
+class SuggestChaptersRequest(BaseModel):
+    """Request for chapter suggestions."""
+
+    story_title: str
+    story_description: str | None = None
+    existing_chapters: list[StoryChapterRequest] = []
+    character_names: list[str] = []
+    num_suggestions: int = 3
+
+
+class ChapterSuggestionResponse(BaseModel):
+    """A single chapter suggestion."""
+
+    title: str
+    narrative: str
+    rationale: str
+
+
+class SuggestChaptersResponse(BaseModel):
+    """Response with chapter suggestions."""
+
+    success: bool
+    suggestions: list[ChapterSuggestionResponse] = []
+    error: str | None = None
+
+
+class RewriteNarrativeRequest(BaseModel):
+    """Request for narrative rewriting."""
+
+    narrative: str
+    chapter_title: str | None = None
+    story_context: str | None = None
+    instruction: str | None = None
+
+
+class RewriteNarrativeResponse(BaseModel):
+    """Response with rewritten narrative."""
+
+    success: bool
+    narrative: str | None = None
+    changes_summary: str | None = None
+    error: str | None = None
+
+
+@app.post("/api/story/suggest-chapters", response_model=SuggestChaptersResponse)
+async def story_suggest_chapters(request: SuggestChaptersRequest):
+    """Suggest next chapter(s) for a story.
+
+    Analyzes story context and existing chapters to suggest
+    natural narrative continuations.
+    """
+    logger.info(f"[Story] Suggesting chapters for '{request.story_title}'")
+
+    try:
+        existing_chapters = [
+            {"title": ch.title, "text": ch.text}
+            for ch in request.existing_chapters
+        ]
+
+        result = await story_assistant.suggest_chapters(
+            story_title=request.story_title,
+            story_description=request.story_description,
+            existing_chapters=existing_chapters if existing_chapters else None,
+            character_names=request.character_names if request.character_names else None,
+            num_suggestions=min(max(request.num_suggestions, 1), 4),
+        )
+
+        return SuggestChaptersResponse(
+            success=True,
+            suggestions=[
+                ChapterSuggestionResponse(
+                    title=s.title,
+                    narrative=s.narrative,
+                    rationale=s.rationale,
+                )
+                for s in result.suggestions
+            ],
+        )
+
+    except Exception as e:
+        logger.error(f"[Story] Chapter suggestion failed: {e}")
+        return SuggestChaptersResponse(success=False, error=str(e))
+
+
+@app.post("/api/story/rewrite-narrative", response_model=RewriteNarrativeResponse)
+async def story_rewrite_narrative(request: RewriteNarrativeRequest):
+    """Improve/expand a chapter narrative for visual storytelling.
+
+    Takes an existing narrative and rewrites it with better
+    visual details and atmosphere.
+    """
+    logger.info(f"[Story] Rewriting narrative" + (f" for '{request.chapter_title}'" if request.chapter_title else ""))
+
+    try:
+        result = await story_assistant.rewrite_narrative(
+            original_narrative=request.narrative,
+            chapter_title=request.chapter_title,
+            story_context=request.story_context,
+            instruction=request.instruction,
+        )
+
+        return RewriteNarrativeResponse(
+            success=True,
+            narrative=result.narrative,
+            changes_summary=result.changes_summary,
+        )
+
+    except Exception as e:
+        logger.error(f"[Story] Narrative rewrite failed: {e}")
+        return RewriteNarrativeResponse(success=False, error=str(e))
 
 
 # Serve static files

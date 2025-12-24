@@ -13,6 +13,26 @@ export { REFERENCE_TEMPLATE } from './templates/reference';
 export { CONCEPT_TEMPLATE, buildConceptPrompt } from './templates/concept';
 export type { ConceptPromptOptions } from './templates/concept';
 
+// Story context building for sequential generation
+export {
+  buildStoryChapterContext,
+  buildStoryNarrativeSection,
+  MAX_CONTEXT_IMAGES,
+} from './storyContext';
+export type {
+  StoryContextImage,
+  StoryContextResult,
+  BuildStoryContextOptions,
+} from './storyContext';
+
+// Design momentum for visual consistency across story chapters
+export {
+  aggregateStoryDesignInfo,
+  buildDesignMomentumPrompt,
+  createDefaultMomentum,
+} from './designMomentum';
+export type { AggregatedDesignInfo, AggregateDesignMomentumOptions } from './designMomentum';
+
 // Import for internal use
 import { VARIATION_TEMPLATE } from './templates/variation';
 import { REFERENCE_TEMPLATE } from './templates/reference';
@@ -54,13 +74,17 @@ Use this title as context for your variations. You may refine it or use it as-is
 CONTEXT IMAGE POOL:
 You have access to ${contextImageCount} reference images (shown below with their IDs and captions).
 
-For EACH variation you generate:
-1. Select which images from the pool would be most helpful as generation context
-2. Consider: Does the image's mood, style, composition, or color palette align with THIS variation?
-3. Assign 0-3 images per variation via the recommended_context_ids field
-4. Explain your reasoning in context_reasoning
+CRITICAL: For EACH variation, SELECT 0-3 images that BEST match that specific variation.
+DO NOT include all ${contextImageCount} images - be selective!
 
-Different variations may use different images - match context to each variation's specific needs.
+For EACH variation you generate:
+1. Review the pool and SELECT only 0-3 images that align with THIS specific variation
+2. Consider: Does the image's mood, style, composition, or color palette match THIS variation's intent?
+3. Put ONLY the selected image IDs in recommended_context_ids (leave empty if none are good matches)
+4. Explain your selection reasoning in context_reasoning
+
+Different variations SHOULD use different images. Not every variation needs context images.
+If an image doesn't enhance a particular variation, don't include it.
 
 If any image's caption is inadequate for generation context, suggest improvements in caption_suggestions.
 `;

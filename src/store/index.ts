@@ -31,8 +31,15 @@ import type {
   DraftPrompt,
   CreateTokenRequest,
   GenerationActionPrefs,
+  CharacterReference,
+  CharacterReferenceImage,
+  Story,
+  ChapterLayout,
+  StoryDesignMomentum,
 } from '../types';
 import * as api from '../api';
+import * as charactersApi from '../api/characters';
+import * as storiesApi from '../api/stories';
 import { toast } from './toastStore';
 import { buildPrompt, buildConceptPrompt } from '../prompts';
 import { randomInt, sampleArray, sampleKeywordsFromPrompts } from '../utils/keywords';
@@ -246,6 +253,61 @@ interface AppStore {
   removeFromCollection: (collectionId: string, imageId: string) => Promise<void>;
   removeFromCurrentCollection: (imageId: string) => Promise<void>;
 
+  // Characters
+  characters: CharacterReference[];
+  currentCharacterId: string | null;
+  fetchCharacters: () => Promise<void>;
+  createCharacter: (
+    name: string,
+    description?: string,
+    referenceImages?: CharacterReferenceImage[]
+  ) => Promise<CharacterReference | undefined>;
+  updateCharacter: (
+    id: string,
+    data: {
+      name?: string;
+      description?: string;
+      reference_images?: CharacterReferenceImage[];
+    }
+  ) => Promise<void>;
+  deleteCharacter: (id: string) => Promise<void>;
+  setCurrentCharacter: (id: string | null) => void;
+  getCurrentCharacter: () => CharacterReference | null;
+
+  // Stories
+  stories: Story[];
+  currentStoryId: string | null;
+  currentChapterId: string | null;
+  fetchStories: () => Promise<void>;
+  createStory: (title: string, description?: string) => Promise<Story | undefined>;
+  updateStory: (id: string, data: { title?: string; description?: string; character_ids?: string[]; design_momentum?: StoryDesignMomentum }) => Promise<void>;
+  deleteStory: (id: string) => Promise<void>;
+  addChapter: (
+    storyId: string,
+    data: { title?: string; text?: string; image_ids?: string[]; layout?: ChapterLayout }
+  ) => Promise<void>;
+  updateChapter: (
+    storyId: string,
+    chapterId: string,
+    data: { title?: string; text?: string; image_ids?: string[]; layout?: ChapterLayout }
+  ) => Promise<void>;
+  deleteChapter: (storyId: string, chapterId: string) => Promise<void>;
+  reorderChapters: (storyId: string, chapterIds: string[]) => Promise<void>;
+  setCurrentStory: (id: string | null) => void;
+  setCurrentChapter: (id: string | null) => void;
+  getCurrentStory: () => Story | null;
+  viewStory: (id: string) => void;
+
+  // Auto-chain story generation
+  isGeneratingStory: boolean;
+  generatingStoryProgress: { current: number; total: number } | null;
+  generateStoryChapters: (params: {
+    storyId: string;
+    basePrompt?: string;  // Optional base prompt to combine with chapter text
+    imagesPerChapter?: number;
+  }) => Promise<void>;
+  cancelStoryGeneration: () => void;
+
   // Settings
   updateSettings: (settings: {
     image_size?: string;
@@ -375,6 +437,17 @@ export const useStore = create<AppStore>()(
       // Collection Viewing
       currentCollectionId: null,
 
+      // Characters
+      characters: [],
+      currentCharacterId: null,
+
+      // Stories
+      stories: [],
+      currentStoryId: null,
+      currentChapterId: null,
+      isGeneratingStory: false,
+      generatingStoryProgress: null,
+
       // Library "unread" tracking
       lastSeenLibraryAt: null,
 
@@ -401,12 +474,14 @@ export const useStore = create<AppStore>()(
       // Initialize app
       initialize: async () => {
         try {
-          const [generations, designTokens, collections, settings, sessions] = await Promise.all([
+          const [generations, designTokens, collections, settings, sessions, characters, stories] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
             api.fetchSettings(),
             api.fetchSessions(),
+            charactersApi.fetchCharacters(),
+            storiesApi.fetchStories(),
           ]);
 
           // Convert SessionData to Session type
@@ -431,6 +506,8 @@ export const useStore = create<AppStore>()(
             collections,
             settings,
             sessions: sessionsTyped,
+            characters,
+            stories,
             currentGenerationId: newestGeneration?.id || null,
           });
         } catch (error) {
@@ -440,12 +517,14 @@ export const useStore = create<AppStore>()(
 
       refreshData: async () => {
         try {
-          const [generations, designTokens, collections] = await Promise.all([
+          const [generations, designTokens, collections, characters, stories] = await Promise.all([
             api.fetchPrompts(),
             api.fetchTokens(),
             api.fetchCollections(),
+            charactersApi.fetchCharacters(),
+            storiesApi.fetchStories(),
           ]);
-          set({ generations, designTokens, collections });
+          set({ generations, designTokens, collections, characters, stories });
         } catch (error) {
           set({ error: (error as Error).message });
         }
@@ -925,21 +1004,25 @@ export const useStore = create<AppStore>()(
               response.annotation_suggestions = enrichedSuggestions;
             }
 
-            // Update the draft with variations, title, and annotation suggestions
-            // Set isGenerating: false on this specific draft
+            // Update the draft with title and annotation suggestions
+            // Keep variations from streaming if they exist, otherwise use complete response
+            const existingDraft = get().draftPrompts.find(d => d.id === draftId);
+            const useStreamedVariations = existingDraft && existingDraft.variations.length > 0;
+
             set({
               draftPrompts: get().draftPrompts.map((d) =>
                 d.id === draftId
                   ? {
                       ...d,
-                      variations: response.variations!,
+                      // Keep streamed variations if we have them, otherwise use complete response
+                      variations: useStreamedVariations ? d.variations : (response.variations || []),
                       title: finalTitle,
                       annotationSuggestions: response.annotation_suggestions,
                       isGenerating: false,
                     }
                   : d
               ),
-              promptVariations: response.variations, // Keep legacy state for modal fallback
+              promptVariations: useStreamedVariations ? existingDraft!.variations : response.variations, // Keep legacy state
               variationsTitle: finalTitle, // Update legacy title state
               isGeneratingVariations: false,
               streamingText: '', // Clear streaming text on success
@@ -2063,6 +2146,341 @@ export const useStore = create<AppStore>()(
         const { currentCollectionId } = get();
         if (!currentCollectionId) return;
         await get().removeFromCollection(currentCollectionId, imageId);
+      },
+
+      // Characters
+      fetchCharacters: async () => {
+        try {
+          const characters = await charactersApi.fetchCharacters();
+          set({ characters });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      createCharacter: async (name, description, referenceImages) => {
+        try {
+          const character = await charactersApi.createCharacter({
+            name,
+            description,
+            reference_images: referenceImages,
+          });
+          const characters = await charactersApi.fetchCharacters();
+          set({ characters, selectedIds: new Set(), selectionMode: 'none' });
+          return character;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return undefined;
+        }
+      },
+
+      updateCharacter: async (id, data) => {
+        try {
+          await charactersApi.updateCharacter(id, data);
+          const characters = await charactersApi.fetchCharacters();
+          set({ characters });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      deleteCharacter: async (id) => {
+        try {
+          await charactersApi.deleteCharacter(id);
+          const characters = await charactersApi.fetchCharacters();
+          // Clear current character if it was deleted
+          const { currentCharacterId } = get();
+          set({
+            characters,
+            currentCharacterId: currentCharacterId === id ? null : currentCharacterId,
+          });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      setCurrentCharacter: (id) => set({ currentCharacterId: id }),
+
+      getCurrentCharacter: () => {
+        const { characters, currentCharacterId } = get();
+        return characters.find((c) => c.id === currentCharacterId) || null;
+      },
+
+      // Stories
+      fetchStories: async () => {
+        try {
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      createStory: async (title, description) => {
+        try {
+          const story = await storiesApi.createStory({ title, description });
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+          return story;
+        } catch (error) {
+          set({ error: (error as Error).message });
+          return undefined;
+        }
+      },
+
+      updateStory: async (id, data) => {
+        try {
+          await storiesApi.updateStory(id, data);
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      deleteStory: async (id) => {
+        try {
+          await storiesApi.deleteStory(id);
+          const stories = await storiesApi.fetchStories();
+          // Clear current story if it was deleted
+          const { currentStoryId } = get();
+          set({
+            stories,
+            currentStoryId: currentStoryId === id ? null : currentStoryId,
+            currentChapterId: currentStoryId === id ? null : get().currentChapterId,
+          });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      addChapter: async (storyId, data) => {
+        try {
+          await storiesApi.addChapter(storyId, data);
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      updateChapter: async (storyId, chapterId, data) => {
+        try {
+          await storiesApi.updateChapter(storyId, chapterId, data);
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      deleteChapter: async (storyId, chapterId) => {
+        try {
+          await storiesApi.deleteChapter(storyId, chapterId);
+          const stories = await storiesApi.fetchStories();
+          // Clear current chapter if it was deleted
+          const { currentChapterId } = get();
+          set({
+            stories,
+            currentChapterId: currentChapterId === chapterId ? null : currentChapterId,
+          });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      reorderChapters: async (storyId, chapterIds) => {
+        try {
+          await storiesApi.reorderChapters(storyId, chapterIds);
+          const stories = await storiesApi.fetchStories();
+          set({ stories });
+        } catch (error) {
+          set({ error: (error as Error).message });
+        }
+      },
+
+      setCurrentStory: (id) => set({ currentStoryId: id, currentChapterId: null }),
+
+      setCurrentChapter: (id) => set({ currentChapterId: id }),
+
+      getCurrentStory: () => {
+        const { stories, currentStoryId } = get();
+        return stories.find((s) => s.id === currentStoryId) || null;
+      },
+
+      viewStory: (id) => {
+        // Set to view story mode - clear generation/draft/collection selection
+        set({
+          currentStoryId: id,
+          currentChapterId: null,
+          currentGenerationId: null,
+          currentDraftId: null,
+          currentCollectionId: null,
+          currentImageIndex: 0,
+          leftTab: 'stories',
+        });
+      },
+
+      // Auto-chain story generation
+      generateStoryChapters: async ({ storyId, basePrompt, imagesPerChapter = 1 }) => {
+        const { stories, characters, generations, settings } = get();
+        const story = stories.find((s) => s.id === storyId);
+        if (!story || story.chapters.length === 0) {
+          toast.error('Story has no chapters to generate');
+          return;
+        }
+
+        // Import story context builder and design momentum
+        const { buildStoryChapterContext, buildStoryNarrativeSection } = await import('../prompts/storyContext');
+        const { aggregateStoryDesignInfo, buildDesignMomentumPrompt } = await import('../prompts/designMomentum');
+
+        // Helper to get image data
+        const getImageData = (imageId: string) => {
+          for (const g of generations) {
+            const img = g.images.find((i) => i.id === imageId);
+            if (img) return img;
+          }
+          return null;
+        };
+
+        set({
+          isGeneratingStory: true,
+          generatingStoryProgress: { current: 0, total: story.chapters.length },
+        });
+
+        // Track generated images per chapter for context building
+        const generatedImagesByChapter: Map<string, string[]> = new Map();
+
+        try {
+          for (let i = 0; i < story.chapters.length; i++) {
+            // Check if cancelled
+            if (!get().isGeneratingStory) break;
+
+            const chapter = story.chapters[i];
+            set({ generatingStoryProgress: { current: i + 1, total: story.chapters.length } });
+
+            // Build narrative section for this chapter
+            const narrativeSection = buildStoryNarrativeSection(story, i, characters);
+
+            // Build design momentum from existing chapter images
+            const updatedStoryForMomentum = {
+              ...story,
+              chapters: story.chapters.map((ch) => ({
+                ...ch,
+                image_ids: generatedImagesByChapter.get(ch.id) || ch.image_ids,
+              })),
+            };
+            const designInfo = aggregateStoryDesignInfo({
+              story: updatedStoryForMomentum,
+              getImageData,
+            });
+            const designMomentumSection = buildDesignMomentumPrompt(designInfo, story.design_momentum);
+
+            // Build prompt: combine base prompt, design momentum, and chapter narrative
+            let chapterPrompt = narrativeSection;
+            if (designMomentumSection) {
+              chapterPrompt = `${designMomentumSection}\n\n${chapterPrompt}`;
+            }
+            if (basePrompt) {
+              chapterPrompt = `${basePrompt}\n\n${chapterPrompt}`;
+            }
+            chapterPrompt = `${chapterPrompt}\n\nGenerate an image for: ${chapter.text || chapter.title || 'this chapter'}`;
+
+            // Build context from characters + previous chapters
+            // We need to update the story with generated images from previous chapters
+            const updatedStory = {
+              ...story,
+              chapters: story.chapters.map((ch) => ({
+                ...ch,
+                image_ids: generatedImagesByChapter.get(ch.id) || ch.image_ids,
+              })),
+            };
+
+            const storyContextResult = buildStoryChapterContext({
+              story: updatedStory,
+              chapterIndex: i,
+              characters,
+              getImageData,
+            });
+
+            // Log warning if context was truncated
+            if (storyContextResult.truncated) {
+              console.warn(
+                `Story context truncated for chapter ${i + 1}: ` +
+                `${storyContextResult.originalCount} → ${storyContextResult.images.length} images. ` +
+                `Characters: ${storyContextResult.breakdown.characters.included}/${storyContextResult.breakdown.characters.total}, ` +
+                `Previous: ${storyContextResult.breakdown.previous.included}/${storyContextResult.breakdown.previous.total}, ` +
+                `Next: ${storyContextResult.breakdown.next.included}/${storyContextResult.breakdown.next.total}`
+              );
+            }
+
+            // Set context images with annotation overrides
+            const contextIds = storyContextResult.images.map((c) => c.imageId);
+
+            // Apply annotation overrides temporarily
+            for (const { imageId, annotation } of storyContextResult.images) {
+              const img = getImageData(imageId);
+              if (img) {
+                await api.updateImageNotes(imageId, img.notes || '', annotation);
+              }
+            }
+
+            try {
+              // Generate images using existing API
+              const result = await api.generateFromPrompts({
+                title: `${story.title} - ${chapter.title || `Chapter ${i + 1}`}`,
+                prompts: Array.from({ length: imagesPerChapter }, () => ({
+                  text: chapterPrompt,
+                  recommended_context_ids: contextIds.length > 0 ? contextIds : undefined,
+                })),
+                context_image_ids: contextIds,
+                image_size: settings?.image_size,
+                aspect_ratio: settings?.aspect_ratio,
+                safety_level: settings?.safety_level,
+                session_id: undefined,
+              });
+
+              // Collect generated image IDs
+              const newImageIds = result.images.map((img: { id: string }) => img.id);
+              generatedImagesByChapter.set(chapter.id, newImageIds);
+
+              // Assign generated images to chapter via API
+              await storiesApi.updateChapter(storyId, chapter.id, {
+                image_ids: [...chapter.image_ids, ...newImageIds],
+              });
+
+              // Refresh stories to get updated data
+              const updatedStories = await storiesApi.fetchStories();
+              set({ stories: updatedStories });
+
+              // Refresh generations to include the new one
+              await get().refreshGenerations();
+            } finally {
+              // Restore original annotations
+              for (const { imageId } of storyContextResult.images) {
+                const img = getImageData(imageId);
+                if (img) {
+                  await api.updateImageNotes(imageId, img.notes || '', img.annotation || '');
+                }
+              }
+            }
+          }
+
+          toast.success(`Generated images for ${story.chapters.length} chapters`);
+        } catch (error) {
+          console.error('Story generation failed:', error);
+          toast.error('Failed to generate story images');
+        } finally {
+          set({
+            isGeneratingStory: false,
+            generatingStoryProgress: null,
+          });
+        }
+      },
+
+      cancelStoryGeneration: () => {
+        set({ isGeneratingStory: false });
+        toast.info('Story generation cancelled');
       },
 
       // Settings

@@ -290,6 +290,17 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
         {/* Variations grid */}
         {(draft.variations.length > 0 || !draft.isGenerating) && (
         <div className="space-y-3">
+          {/* Show count while streaming */}
+          {draft.isGenerating && draft.variations.length > 0 && (
+            <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-ink-secondary">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'linear' }}
+                className="w-4 h-4 rounded-full border-2 border-brass border-t-transparent"
+              />
+              <span>{draft.variations.length} variation{draft.variations.length !== 1 ? 's' : ''} received...</span>
+            </div>
+          )}
           <AnimatePresence>
             {draft.variations.map((variation, index) => {
               const isRegenerating = regeneratingIds.has(variation.id);

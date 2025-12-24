@@ -3,9 +3,19 @@
  *
  * Used when extracting a design dimension from an existing image and
  * generating a pure abstract representation of that dimension.
+ *
+ * Adapted from Gemini's official image generation prompt guide:
+ * https://ai.google.dev/gemini-api/docs/image-generation
+ *
+ * Applies specificity principles (color, texture, lighting, style)
+ * to design token extraction and abstract concept generation.
  */
 
-export const CONCEPT_TEMPLATE = `Generate a pure abstract concept image that extracts and amplifies the following design dimension from the attached source image:
+export const CONCEPT_TEMPLATE = `Generate a pure abstract concept image that extracts and amplifies the following design dimension from the attached source image.
+
+═══════════════════════════════════════════════════════════════════════════════
+DIMENSION TO EXTRACT
+═══════════════════════════════════════════════════════════════════════════════
 
 Dimension: {dimension_name}
 Axis: {axis}
@@ -14,14 +24,65 @@ Description: {description}
 Visual direction:
 {generation_prompt}
 
-Study the attached source image carefully. Your task is to create an ABSTRACT concept image that:
-1. Distills the "{dimension_name}" quality from the source into a pure visual essence
-2. Amplifies and isolates this specific design dimension
-3. Is abstract, textural, or pattern-based - NOT a recreation of the source
-4. Could serve as a mood board or design reference for this quality
-5. Strongly communicates the aesthetic feeling without depicting recognizable objects
+═══════════════════════════════════════════════════════════════════════════════
+YOUR TASK
+═══════════════════════════════════════════════════════════════════════════════
 
-The concept image should capture WHAT makes the source image embody "{dimension_name}" - its colors, textures, rhythms, and visual energy - in abstract form.
+Study the attached source image carefully. Create an ABSTRACT concept image that:
+
+1. DISTILLS the "{dimension_name}" quality into pure visual essence
+   - Identify what makes this dimension present in the source
+   - Abstract it away from the specific subject matter
+   - Capture the underlying visual principle, not the content
+
+2. AMPLIFIES this specific design dimension
+   - Make this quality the dominant feature of your concept image
+   - Intensify or clarify what may be subtle in the source
+   - Create a reference that embodies this quality in concentrated form
+
+3. REMAINS ABSTRACT
+   - No recognizable objects, people, or scenes
+   - Use texture, color, form, rhythm, and spatial relationships
+   - Think: mood board swatch, design token visualization, pure visual quality
+
+═══════════════════════════════════════════════════════════════════════════════
+CONCEPT IMAGE STRUCTURE
+═══════════════════════════════════════════════════════════════════════════════
+
+Your abstract concept should address:
+
+COLORS & TONES
+- Extract the exact color relationships from the source
+- Note: hue values, temperature, saturation levels, contrast ratios
+- Preserve or amplify the color mood
+
+TEXTURE & SURFACE
+- Capture the tactile quality (smooth/rough, glossy/matte, organic/mechanical)
+- Include grain, noise, or texture patterns if present
+- Specify the "feel" of the visual
+
+SPATIAL ORGANIZATION
+- How is depth created? (layered, flat, atmospheric perspective)
+- What is the compositional rhythm? (centered, diagonal, scattered)
+- How does negative space function?
+
+LIGHTING & LUMINOSITY
+- Direction and quality of light
+- How do highlights and shadows behave?
+- Is there self-illumination, backlighting, diffused glow?
+
+RENDERING STYLE
+- What medium does this evoke? (photographic, painted, digital, graphic)
+- What era or movement does it reference?
+- What production technique is implied?
+
+═══════════════════════════════════════════════════════════════════════════════
+OUTPUT
+═══════════════════════════════════════════════════════════════════════════════
+
+Generate a single cohesive prompt (3-5 sentences) that could recreate the "{dimension_name}" quality as pure abstract visual art. The prompt should be specific enough that someone unfamiliar with the source image could generate a concept that captures this same visual quality.
+
+Do NOT describe the source image. Describe the abstract concept that extracts its essential design quality.
 `;
 
 /**

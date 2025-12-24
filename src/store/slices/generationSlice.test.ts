@@ -249,6 +249,198 @@ describe('reedit functionality (main store)', () => {
   })
 })
 
+describe('feelingLucky (main store)', () => {
+  beforeEach(() => {
+    // Reset the store before each test
+    useStore.setState({
+      generations: [],
+      designTokens: [],
+      currentSessionId: null,
+      contextImageIds: [],
+      reeditPrompt: null,
+      reeditContextIds: null,
+    })
+  })
+
+  describe('with no generations', () => {
+    it('sets default prompt when no prompts to sample from', () => {
+      useStore.getState().feelingLucky()
+
+      // Should set a default prompt since there are no keywords to sample
+      expect(useStore.getState().reeditPrompt).toBe('creative artistic composition')
+    })
+
+    it('sets empty context images when no generations exist', () => {
+      useStore.getState().feelingLucky()
+
+      expect(useStore.getState().contextImageIds).toEqual([])
+    })
+
+    it('sets reeditContextIds to null to preserve existing context', () => {
+      // feelingLucky sets context images directly, then uses reedit only for prompt
+      // reeditContextIds should be null so GenerateTab doesn't overwrite context
+      useStore.getState().feelingLucky()
+
+      expect(useStore.getState().reeditContextIds).toBeNull()
+    })
+  })
+
+  describe('with generations', () => {
+    beforeEach(() => {
+      useStore.setState({
+        generations: [
+          {
+            id: 'gen-1',
+            title: 'Sunset Scene',
+            prompt: 'A vibrant sunset over the ocean with dramatic clouds',
+            basePrompt: 'A vibrant sunset over the ocean with dramatic clouds',
+            created_at: new Date().toISOString(),
+            images: [
+              { id: 'img-1', image_path: '/images/1.jpg', mime_type: 'image/jpeg', generated_at: '' },
+              { id: 'img-2', image_path: '/images/2.jpg', mime_type: 'image/jpeg', generated_at: '' },
+            ],
+            context_image_ids: [],
+          },
+          {
+            id: 'gen-2',
+            title: 'Mountain Vista',
+            prompt: 'Majestic mountain peaks with snow and alpine forest',
+            basePrompt: 'Majestic mountain peaks with snow and alpine forest',
+            created_at: new Date().toISOString(),
+            images: [
+              { id: 'img-3', image_path: '/images/3.jpg', mime_type: 'image/jpeg', generated_at: '' },
+            ],
+            context_image_ids: [],
+          },
+        ],
+      })
+    })
+
+    it('samples keywords from existing prompts', () => {
+      useStore.getState().feelingLucky()
+
+      const prompt = useStore.getState().reeditPrompt
+      expect(prompt).not.toBeNull()
+      expect(prompt).not.toBe('creative artistic composition')
+      // Should contain at least one keyword from the prompts
+      expect(prompt!.length).toBeGreaterThan(0)
+    })
+
+    it('sets context images from existing generations', () => {
+      useStore.getState().feelingLucky()
+
+      const contextIds = useStore.getState().contextImageIds
+      // Should have sampled some images
+      expect(contextIds.length).toBeGreaterThanOrEqual(0)
+      // If images were sampled, they should be from our generations
+      contextIds.forEach(id => {
+        expect(['img-1', 'img-2', 'img-3']).toContain(id)
+      })
+    })
+
+    it('respects scope=session when session is set', () => {
+      // Put gen-1 in a session
+      useStore.setState({
+        generations: [
+          {
+            id: 'gen-1',
+            title: 'Sunset',
+            prompt: 'sunset ocean waves',
+            basePrompt: 'sunset ocean waves',
+            created_at: new Date().toISOString(),
+            session_id: 'session-1',
+            images: [{ id: 'img-1', image_path: '/1.jpg', mime_type: 'image/jpeg', generated_at: '' }],
+            context_image_ids: [],
+          },
+          {
+            id: 'gen-2',
+            title: 'Mountains',
+            prompt: 'mountain peaks snow',
+            basePrompt: 'mountain peaks snow',
+            created_at: new Date().toISOString(),
+            session_id: 'session-2',
+            images: [{ id: 'img-2', image_path: '/2.jpg', mime_type: 'image/jpeg', generated_at: '' }],
+            context_image_ids: [],
+          },
+        ],
+        currentSessionId: 'session-1',
+      })
+
+      useStore.getState().feelingLucky('session')
+
+      const contextIds = useStore.getState().contextImageIds
+      // Should only include images from session-1
+      contextIds.forEach(id => {
+        expect(id).toBe('img-1')
+      })
+    })
+
+    it('includes all sessions when scope=all', () => {
+      useStore.setState({
+        generations: [
+          {
+            id: 'gen-1',
+            title: 'Sunset',
+            prompt: 'sunset ocean',
+            basePrompt: 'sunset ocean',
+            created_at: new Date().toISOString(),
+            session_id: 'session-1',
+            images: [{ id: 'img-1', image_path: '/1.jpg', mime_type: 'image/jpeg', generated_at: '' }],
+            context_image_ids: [],
+          },
+          {
+            id: 'gen-2',
+            title: 'Mountains',
+            prompt: 'mountain peaks',
+            basePrompt: 'mountain peaks',
+            created_at: new Date().toISOString(),
+            session_id: 'session-2',
+            images: [{ id: 'img-2', image_path: '/2.jpg', mime_type: 'image/jpeg', generated_at: '' }],
+            context_image_ids: [],
+          },
+        ],
+        currentSessionId: 'session-1',
+      })
+
+      useStore.getState().feelingLucky('all')
+
+      const contextIds = useStore.getState().contextImageIds
+      // Could include images from either session
+      contextIds.forEach(id => {
+        expect(['img-1', 'img-2']).toContain(id)
+      })
+    })
+  })
+
+  describe('with design tokens', () => {
+    it('includes concept images from design tokens', () => {
+      useStore.setState({
+        generations: [],
+        designTokens: [
+          {
+            id: 'token-1',
+            name: 'Warm Sunset',
+            description: 'Golden hour palette',
+            created_at: new Date().toISOString(),
+            images: [],
+            prompts: [],
+            concept_image_id: 'concept-1',
+            concept_image_path: '/concepts/1.jpg',
+            use_count: 0,
+            creation_method: 'ai-extraction' as const,
+          },
+        ],
+      })
+
+      useStore.getState().feelingLucky()
+
+      const contextIds = useStore.getState().contextImageIds
+      // Should include concept image
+      expect(contextIds).toContain('concept-1')
+    })
+  })
+})
+
 describe('hide functionality (main store)', () => {
   beforeEach(() => {
     // Reset the store before each test

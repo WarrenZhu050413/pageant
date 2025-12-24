@@ -17,15 +17,18 @@ import { GridView } from './GridView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 import { PromptVariationsView } from './PromptVariationsView';
+import { StoryBuilderView } from './StoryBuilderView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
+  const stories = useStore((s) => s.stories);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentDraftId = useStore((s) => s.currentDraftId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
+  const currentStoryId = useStore((s) => s.currentStoryId);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const viewMode = useStore((s) => s.viewMode);
   const setViewMode = useStore((s) => s.setViewMode);
@@ -49,6 +52,11 @@ export function MainStage() {
   const currentCollection = useMemo(
     () => collections.find((c) => c.id === currentCollectionId) || null,
     [collections, currentCollectionId]
+  );
+
+  const currentStory = useMemo(
+    () => stories.find((s) => s.id === currentStoryId) || null,
+    [stories, currentStoryId]
   );
 
   const currentCollectionImages = useMemo(() => {
@@ -79,6 +87,11 @@ export function MainStage() {
   // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
+  }
+
+  // Story builder view takes over when a story is selected
+  if (currentStory) {
+    return <StoryBuilderView story={currentStory} />;
   }
 
   // Pending generation view

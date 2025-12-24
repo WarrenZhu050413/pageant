@@ -3,6 +3,8 @@ import {
   FileText,
   FolderOpen,
   Images,
+  User,
+  BookOpen,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { Tabs } from '../ui/Tabs';
@@ -10,12 +12,16 @@ import type { LeftTab } from '../../types';
 import { GenerationsTab } from './GenerationsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { AllImagesTab } from './AllImagesTab';
+import { CharactersTab } from './CharactersTab';
+import { StoriesTab } from './StoriesTab';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
   { id: 'generations', label: 'Generations', icon: <FileText size={14} />, shortcut: 'H' },
   { id: 'collections', label: 'Collections', icon: <FolderOpen size={14} />, shortcut: 'O' },
   { id: 'all-images', label: 'Images', icon: <Images size={14} />, shortcut: 'M' },
+  { id: 'characters', label: 'Characters', icon: <User size={14} /> },
+  { id: 'stories', label: 'Stories', icon: <BookOpen size={14} /> },
 ];
 
 export function LeftSidebar() {
@@ -53,6 +59,8 @@ export function LeftSidebar() {
             {leftTab === 'generations' && <GenerationsTab />}
             {leftTab === 'collections' && <CollectionsTab />}
             {leftTab === 'all-images' && <AllImagesTab />}
+            {leftTab === 'characters' && <CharactersTab />}
+            {leftTab === 'stories' && <StoriesTab />}
           </motion.div>
         </AnimatePresence>
       </div>

@@ -770,6 +770,142 @@ export async function peOptimizePrompt(
 }
 
 // =============================================================================
+// Character Creation Assistant
+// =============================================================================
+
+export interface CharacterOption {
+  label: string;
+  description: string;
+}
+
+export interface CharacterQuestion {
+  question: string;
+  header: string;
+  options: CharacterOption[];
+  multiSelect: boolean;
+}
+
+export interface CharacterQuestionsRequest {
+  image_ids: string[];
+  name?: string;
+  description?: string;
+}
+
+export interface CharacterQuestionsResponse {
+  success: boolean;
+  questions: CharacterQuestion[];
+  suggested_name?: string;
+  error?: string;
+}
+
+export interface CharacterDescribeRequest {
+  image_ids: string[];
+  name: string;
+  questions: CharacterQuestion[];
+  answers: Record<string, string | string[]>;
+  initial_description?: string;
+}
+
+export interface CharacterDescribeResponse {
+  success: boolean;
+  description: string;
+  summary: Record<string, string>;
+  error?: string;
+}
+
+/**
+ * Generate clarifying questions for character creation.
+ * Analyzes reference images to suggest targeted questions.
+ */
+export async function characterGenerateQuestions(
+  data: CharacterQuestionsRequest
+): Promise<CharacterQuestionsResponse> {
+  return request<CharacterQuestionsResponse>('/character/questions', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Generate a character description based on images and Q&A.
+ */
+export async function characterGenerateDescription(
+  data: CharacterDescribeRequest
+): Promise<CharacterDescribeResponse> {
+  return request<CharacterDescribeResponse>('/character/describe', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// =============================================================================
+// Story Writing Assistant API
+// =============================================================================
+
+export interface StoryChapter {
+  title: string;
+  text: string;
+}
+
+export interface SuggestChaptersRequest {
+  story_title: string;
+  story_description?: string;
+  existing_chapters: StoryChapter[];
+  character_names: string[];
+  num_suggestions?: number;
+}
+
+export interface ChapterSuggestion {
+  title: string;
+  narrative: string;
+  rationale: string;
+}
+
+export interface SuggestChaptersResponse {
+  success: boolean;
+  suggestions: ChapterSuggestion[];
+  error?: string;
+}
+
+export interface RewriteNarrativeRequest {
+  narrative: string;
+  chapter_title?: string;
+  story_context?: string;
+  instruction?: string;
+}
+
+export interface RewriteNarrativeResponse {
+  success: boolean;
+  narrative?: string;
+  changes_summary?: string;
+  error?: string;
+}
+
+/**
+ * Get AI suggestions for next chapters based on story context.
+ */
+export async function storySuggestChapters(
+  data: SuggestChaptersRequest
+): Promise<SuggestChaptersResponse> {
+  return request<SuggestChaptersResponse>('/story/suggest-chapters', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * Rewrite/improve a chapter narrative for visual storytelling.
+ */
+export async function storyRewriteNarrative(
+  data: RewriteNarrativeRequest
+): Promise<RewriteNarrativeResponse> {
+  return request<RewriteNarrativeResponse>('/story/rewrite-narrative', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+// =============================================================================
 // Image Analysis & Enhancement (for uploaded images)
 // =============================================================================
 
