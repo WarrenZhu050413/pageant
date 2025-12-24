@@ -18,7 +18,9 @@ interface ImagePickerModalProps {
 }
 
 export function ImagePickerModal({ isOpen, onClose, onConfirm }: ImagePickerModalProps) {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) - picker is global
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const rawCollections = useStore((s) => s.collections);
 
   // Sort collections with Favorites at top

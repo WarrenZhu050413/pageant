@@ -63,25 +63,30 @@ describe('GridView', () => {
     ...overrides,
   })
 
-  const createMockState = (overrides = {}) => ({
-    generations: [],
-    collections: [],
-    currentGenerationId: null,
-    currentCollectionId: null,
-    currentImageIndex: 0,
-    setCurrentImageIndex: vi.fn(),
-    setViewMode: vi.fn(),
-    removeFromCurrentCollection: vi.fn(),
-    selectionMode: 'none',
-    toggleSelection: vi.fn(),
-    selectedIds: new Set<string>(),
-    generationFilter: 'all',
-    lastSeenLibraryAt: null,
-    findSimilar: vi.fn(),
-    deleteImage: vi.fn(),
-    archiveImage: vi.fn(),
-    ...overrides,
-  })
+  const createMockState = (overrides: Record<string, unknown> = {}) => {
+    const generations = (overrides.generations as unknown[]) || [];
+    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
+    return {
+      generations,
+      archivedPrompts,
+      collections: [],
+      currentGenerationId: null,
+      currentCollectionId: null,
+      currentImageIndex: 0,
+      setCurrentImageIndex: vi.fn(),
+      setViewMode: vi.fn(),
+      removeFromCurrentCollection: vi.fn(),
+      selectionMode: 'none',
+      toggleSelection: vi.fn(),
+      selectedIds: new Set<string>(),
+      generationFilter: 'all',
+      lastSeenLibraryAt: null,
+      findSimilar: vi.fn(),
+      deleteImage: vi.fn(),
+      archiveImage: vi.fn(),
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()

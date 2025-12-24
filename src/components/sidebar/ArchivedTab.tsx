@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
-import { Archive, ArchiveRestore, Trash2, CheckSquare, Square, X, ChevronDown, ChevronRight } from 'lucide-react';
+import { Archive, ArchiveRestore, Trash2, CheckSquare, Square, X, ChevronDown, ChevronRight, Folder } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
@@ -149,6 +149,15 @@ export function ArchivedTab() {
   const unarchiveGeneration = useStore((s) => s.unarchiveGeneration);
   const deleteGeneration = useStore((s) => s.deleteGeneration);
   const refreshArchived = useStore((s) => s.refreshArchived);
+  const currentSessionId = useStore((s) => s.currentSessionId);
+  const sessions = useStore((s) => s.sessions);
+
+  // Get current session name
+  const currentSessionName = useMemo(() => {
+    if (!currentSessionId) return null;
+    const session = sessions.find((s) => s.id === currentSessionId);
+    return session?.name || 'Unknown session';
+  }, [currentSessionId, sessions]);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -222,9 +231,17 @@ export function ArchivedTab() {
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-medium text-ink">Archived</h3>
-          <p className="text-xs text-ink-muted">
-            {totalCount} generation{totalCount !== 1 ? 's' : ''} · {totalImages} image{totalImages !== 1 ? 's' : ''}
-          </p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-xs text-ink-muted">
+              {totalCount} generation{totalCount !== 1 ? 's' : ''} · {totalImages} image{totalImages !== 1 ? 's' : ''}
+            </p>
+            {currentSessionName && (
+              <span className="inline-flex items-center gap-1 text-[0.65rem] px-1.5 py-0.5 rounded bg-canvas-subtle text-ink-muted">
+                <Folder size={9} />
+                {currentSessionName}
+              </span>
+            )}
+          </div>
         </div>
         {totalCount > 0 && (
           <Button

@@ -203,51 +203,30 @@ export async function batchDownload(imageIds: string[]): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-// Archive operations
-export interface ArchivedPrompt {
-  id: string;
-  prompt: string;
-  title: string;
-  created_at: string;
-  archived: boolean;
-  images: Array<{
-    id: string;
-    image_path: string;
-    archived?: boolean;
-  }>;
-  context_image_ids: string[];
-}
-
-export async function archiveImages(imageIds: string[]): Promise<{ success: boolean; archived: string[] }> {
-  return request('/archive/images', {
-    method: 'POST',
-    body: JSON.stringify({ image_ids: imageIds }),
-  });
-}
-
-export async function archivePrompts(promptIds: string[]): Promise<{ success: boolean; archived: string[] }> {
-  return request('/archive/prompts', {
+// Hide/Unhide generations
+export async function hideGenerations(promptIds: string[]): Promise<{ success: boolean; hidden: string[] }> {
+  return request('/prompts/hide', {
     method: 'POST',
     body: JSON.stringify({ prompt_ids: promptIds }),
   });
 }
 
-export async function unarchiveImages(imageIds: string[]): Promise<{ success: boolean; unarchived: string[] }> {
-  return request('/unarchive/images', {
-    method: 'POST',
-    body: JSON.stringify({ image_ids: imageIds }),
-  });
-}
-
-export async function unarchivePrompts(promptIds: string[]): Promise<{ success: boolean; unarchived: string[] }> {
-  return request('/unarchive/prompts', {
+export async function unhideGenerations(promptIds: string[]): Promise<{ success: boolean; unhidden: string[] }> {
+  return request('/prompts/unhide', {
     method: 'POST',
     body: JSON.stringify({ prompt_ids: promptIds }),
   });
 }
 
-export async function fetchArchived(): Promise<{ archived_prompts: ArchivedPrompt[] }> {
-  return request('/archived');
+// Move generation between sessions
+export async function moveGenerationToSession(
+  promptId: string,
+  sessionId: string | null
+): Promise<{ success: boolean; prompt_id: string; session_id: string | null }> {
+  return request(`/prompts/${promptId}/session`, {
+    method: 'PATCH',
+    body: JSON.stringify({ session_id: sessionId }),
+  });
 }
 
 // Design Tokens

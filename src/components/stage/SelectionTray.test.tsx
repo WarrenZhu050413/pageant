@@ -36,6 +36,7 @@ vi.mock('lucide-react', () => ({
   Square: () => <span data-testid="icon-square">☐</span>,
   Check: () => <span data-testid="icon-check">✓</span>,
   Download: () => <span data-testid="icon-download">⬇</span>,
+  Archive: () => <span data-testid="icon-archive">📦</span>,
 }))
 
 // Import after mocks are set up
@@ -68,24 +69,31 @@ describe('SelectionTray', () => {
     ...overrides,
   })
 
-  const createMockState = (overrides = {}) => ({
-    selectedIds: new Set<string>(),
-    generations: [],
-    collections: [],
-    currentGenerationId: null,
-    currentCollectionId: null,
-    clearSelection: vi.fn(),
-    toggleSelection: vi.fn(),
-    setContextImages: vi.fn(),
-    setRightTab: vi.fn(),
-    createCollection: vi.fn().mockResolvedValue(undefined),
-    addToCollection: vi.fn().mockResolvedValue(undefined),
-    setSelectionMode: vi.fn(),
-    selectAll: vi.fn(),
-    batchDelete: vi.fn().mockResolvedValue(undefined),
-    contextImageIds: [],
-    ...overrides,
-  })
+  const createMockState = (overrides: Record<string, unknown> = {}) => {
+    const generations = (overrides.generations as unknown[]) || [];
+    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
+    return {
+      selectedIds: new Set<string>(),
+      generations,
+      archivedPrompts,
+      collections: [],
+      currentGenerationId: null,
+      currentCollectionId: null,
+      clearSelection: vi.fn(),
+      toggleSelection: vi.fn(),
+      setContextImages: vi.fn(),
+      setRightTab: vi.fn(),
+      createCollection: vi.fn().mockResolvedValue(undefined),
+      addToCollection: vi.fn().mockResolvedValue(undefined),
+      setSelectionMode: vi.fn(),
+      selectAll: vi.fn(),
+      batchDelete: vi.fn().mockResolvedValue(undefined),
+      archiveSelectedImages: vi.fn().mockResolvedValue(undefined),
+      contextImageIds: [],
+      getAllGenerations: () => [...generations, ...archivedPrompts],
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -613,6 +621,290 @@ describe('SelectionTray', () => {
 
       // Should still show selection count
       expect(screen.getByText('1 selected')).toBeInTheDocument()
+    })
+  })
+
+  describe('multi-select collections with Command+click', () => {
+    it('should select a single collection on regular click', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Click on Collection A
+      await user.click(screen.getByText('Collection A'))
+
+      // Should show checkmark on Collection A
+      const collectionAButton = screen.getByText('Collection A').closest('button')!
+      expect(collectionAButton.querySelector('[data-testid="icon-check"]')).toBeInTheDocument()
+
+      // Click on Collection B (should replace selection)
+      await user.click(screen.getByText('Collection B'))
+
+      // Collection B should now be selected, Collection A should not
+      const collectionBButton = screen.getByText('Collection B').closest('button')!
+      expect(collectionBButton.querySelector('[data-testid="icon-check"]')).toBeInTheDocument()
+      expect(collectionAButton.querySelector('[data-testid="icon-check"]')).not.toBeInTheDocument()
+    })
+
+    it('should allow multi-select with Command+click (metaKey)', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+        createMockCollection('col-3', [], { name: 'Collection C' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // First click selects Collection A
+      await user.click(screen.getByText('Collection A'))
+
+      // Command+click to add Collection B
+      await user.keyboard('{Meta>}')
+      await user.click(screen.getByText('Collection B'))
+      await user.keyboard('{/Meta}')
+
+      // Both should be selected
+      const collectionAButton = screen.getByText('Collection A').closest('button')!
+      const collectionBButton = screen.getByText('Collection B').closest('button')!
+      expect(collectionAButton.querySelector('[data-testid="icon-check"]')).toBeInTheDocument()
+      expect(collectionBButton.querySelector('[data-testid="icon-check"]')).toBeInTheDocument()
+    })
+
+    it('should toggle selection with Command+click', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Select Collection A
+      await user.click(screen.getByText('Collection A'))
+
+      // Command+click to add Collection B
+      await user.keyboard('{Meta>}')
+      await user.click(screen.getByText('Collection B'))
+
+      // Command+click Collection A again to deselect it
+      await user.click(screen.getByText('Collection A'))
+      await user.keyboard('{/Meta}')
+
+      // Only Collection B should be selected now
+      const collectionAButton = screen.getByText('Collection A').closest('button')!
+      const collectionBButton = screen.getByText('Collection B').closest('button')!
+      expect(collectionAButton.querySelector('[data-testid="icon-check"]')).not.toBeInTheDocument()
+      expect(collectionBButton.querySelector('[data-testid="icon-check"]')).toBeInTheDocument()
+    })
+
+    it('should show count in button when multiple collections selected', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+        createMockCollection('col-3', [], { name: 'Collection C' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Select Collection A
+      await user.click(screen.getByText('Collection A'))
+
+      // Command+click to add Collection B and C
+      await user.keyboard('{Meta>}')
+      await user.click(screen.getByText('Collection B'))
+      await user.click(screen.getByText('Collection C'))
+      await user.keyboard('{/Meta}')
+
+      // Button should show "Add to 3 Collections"
+      expect(screen.getByText('Add to 3 Collections')).toBeInTheDocument()
+    })
+
+    it('should show hint text about Command+click', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Should show hint about Command+click
+      expect(screen.getByText('(⌘+click for multiple)')).toBeInTheDocument()
+    })
+
+    it('should call addToCollection for each selected collection', async () => {
+      const user = userEvent.setup()
+      const addToCollection = vi.fn().mockResolvedValue(undefined)
+      const clearSelection = vi.fn()
+      const setSelectionMode = vi.fn()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+        addToCollection,
+        clearSelection,
+        setSelectionMode,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Select Collection A
+      await user.click(screen.getByText('Collection A'))
+
+      // Command+click to add Collection B
+      await user.keyboard('{Meta>}')
+      await user.click(screen.getByText('Collection B'))
+      await user.keyboard('{/Meta}')
+
+      // Click the add button
+      await user.click(screen.getByText('Add to 2 Collections'))
+
+      // Should have called addToCollection twice
+      expect(addToCollection).toHaveBeenCalledTimes(2)
+      expect(addToCollection).toHaveBeenCalledWith('col-1')
+      expect(addToCollection).toHaveBeenCalledWith('col-2')
+    })
+
+    it('should show info text with collection count when multiple selected', async () => {
+      const user = userEvent.setup()
+      const mockImage = createMockImage('img-1')
+      const mockPrompt = createMockPrompt('prompt-1', [mockImage])
+      const collections = [
+        createMockCollection('col-1', [], { name: 'Collection A' }),
+        createMockCollection('col-2', [], { name: 'Collection B' }),
+      ]
+
+      const mockState = createMockState({
+        selectedIds: new Set(['img-1']),
+        generations: [mockPrompt],
+        currentGenerationId: 'prompt-1',
+        collections,
+      })
+
+      mockUseStore.mockImplementation((selector) => {
+        if (typeof selector === 'function') {
+          return selector(mockState)
+        }
+        return mockState
+      })
+
+      render(<SelectionTray />)
+      await user.click(screen.getByText('Save Collection'))
+
+      // Select both collections with Command+click
+      await user.click(screen.getByText('Collection A'))
+      await user.keyboard('{Meta>}')
+      await user.click(screen.getByText('Collection B'))
+      await user.keyboard('{/Meta}')
+
+      // Should show info about adding to 2 collections
+      expect(screen.getByText(/to 2 collections/)).toBeInTheDocument()
     })
   })
 })

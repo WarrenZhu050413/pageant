@@ -19,7 +19,12 @@ DEFAULT_FAST_TEXT_MODEL = (
 # =============================================================================
 # Timeouts
 # =============================================================================
-GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "300000"))  # 200 seconds
+GEMINI_TIMEOUT_MS = int(os.environ.get("GEMINI_TIMEOUT_MS", "400000"))  # 400 seconds
+
+# =============================================================================
+# Concurrency
+# =============================================================================
+MAX_CONCURRENT_OPERATIONS = 6  # Max parallel API calls for batch operations
 
 # =============================================================================
 # Feature Flags

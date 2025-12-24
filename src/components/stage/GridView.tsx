@@ -15,6 +15,7 @@ interface DisplayImage extends ImageData {
 export function GridView() {
   // Select primitive values to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
+  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
@@ -36,16 +37,25 @@ export function GridView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
+    // Build image map from both active generations AND archived prompts
     const imageMap = new Map<string, typeof generations[0]['images'][0]>();
     for (const generation of generations) {
       for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
+    // Also include archived images so collections work regardless of archive status
+    for (const prompt of archivedPrompts) {
+      for (const image of prompt.images) {
+        if (!imageMap.has(image.id)) {
+          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
+        }
+      }
+    }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
       .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
-  }, [generations, currentCollection]);
+  }, [generations, archivedPrompts, currentCollection]);
 
   // Concept images - all images from generations with is_concept: true, sorted newest first
   const conceptImages = useMemo((): DisplayImage[] => {
@@ -251,8 +261,8 @@ export function GridView() {
 
               {/* Variation title badge */}
               {image.variation_title && (
-                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-brass-muted backdrop-blur-sm max-w-[60%]">
-                  <span className="text-[0.625rem] font-medium text-brass-dark truncate block">
+                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm max-w-[60%]">
+                  <span className="text-[0.625rem] font-medium text-white truncate block">
                     {image.variation_title}
                   </span>
                 </div>

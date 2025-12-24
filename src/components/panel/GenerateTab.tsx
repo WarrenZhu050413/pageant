@@ -4,20 +4,18 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Wand2,
   X,
-  FolderOpen,
-  Image as ImageIcon,
   ChevronDown,
   Zap,
   Settings2,
   Pencil,
   Palette,
   Sparkles,
+  Dices,
 } from "lucide-react";
 import { useStore } from "../../store";
 import { getImageUrl } from "../../api";
 import { Button, Input, Textarea } from "../ui";
 import { PromptPreviewModal } from "../modals/PromptPreviewModal";
-import { ImagePickerModal } from "../modals/ImagePickerModal";
 import { ContextAnnotationModal } from "../modals/ContextAnnotationModal";
 import { PromptWorkspaceModal } from "../prompt-workspace";
 import type { ImageSize, AspectRatio, SafetyLevel } from "../../types";
@@ -58,11 +56,11 @@ export function GenerateTab() {
     const saved = localStorage.getItem(EXPLORE_RATIO_KEY);
     return saved ? parseInt(saved, 10) : 50;
   });
-  const [showImagePicker, setShowImagePicker] = useState(false);
   const [showPromptWorkspace, setShowPromptWorkspace] = useState(false);
   const [editingContextImageId, setEditingContextImageId] = useState<
     string | null
   >(null);
+  const [showLuckyMenu, setShowLuckyMenu] = useState(false);
 
   // Advanced options state (per-request overrides)
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -77,16 +75,20 @@ export function GenerateTab() {
   );
   const removeContextImage = useStore((s) => s.removeContextImage);
   const clearContextImages = useStore((s) => s.clearContextImages);
-  const setContextImages = useStore((s) => s.setContextImages);
   const generateVariations = useStore((s) => s.generateVariations);
   const generate = useStore((s) => s.generate);
-  const prompts = useStore((s) => s.generations);
-  const selectedIds = useStore((s) => s.selectedIds);
-  const collections = useStore((s) => s.collections);
-  const getCurrentImage = useStore((s) => s.getCurrentImage);
+  // Use all generations (including archived) for context image lookup
+  // This allows adding images from any session or archived images to context
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const settings = useStore((s) => s.settings);
   const generationMode = useStore((s) => s.generationMode);
   const setGenerationMode = useStore((s) => s.setGenerationMode);
+  const setContextImages = useStore((s) => s.setContextImages);
+  const reeditPrompt = useStore((s) => s.reeditPrompt);
+  const reeditContextIds = useStore((s) => s.reeditContextIds);
+  const clearReeditData = useStore((s) => s.clearReeditData);
+  const feelingLucky = useStore((s) => s.feelingLucky);
 
   // Initialize Advanced Options from saved settings (intentional sync from external state)
   useEffect(() => {
@@ -109,10 +111,26 @@ export function GenerateTab() {
     if (settings?.safety_level) setSafetyLevel(settings.safety_level);
   }, [settings?.safety_level]);
 
+  // Handle reedit data from generation list (loads prompt + context into Generate tab)
+  useEffect(() => {
+    if (reeditPrompt !== null && reeditContextIds !== null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPrompt(reeditPrompt);
+      setContextImages(reeditContextIds);
+      clearReeditData();
+    }
+  }, [reeditPrompt, reeditContextIds, setContextImages, clearReeditData]);
+
   // Helper to update count and persist to localStorage
   const updateCount = (newCount: number) => {
     setCount(newCount);
     localStorage.setItem(IMAGE_COUNT_KEY, newCount.toString());
+  };
+
+  // Helper to update explore ratio and persist to localStorage
+  const updateExploreRatio = (newRatio: number) => {
+    setExploreRatio(newRatio);
+    localStorage.setItem(EXPLORE_RATIO_KEY, newRatio.toString());
   };
 
   // Global +/- keyboard shortcuts for image count
@@ -205,6 +223,7 @@ export function GenerateTab() {
         prompt: buildFinalPrompt(),
         title: title.trim() || undefined,
         count,
+        exploreRatio,
         ...buildImageParams(),
         template: outputType === "reference" ? "reference" : "variation",
       });
@@ -224,6 +243,7 @@ export function GenerateTab() {
         prompt: buildFinalPrompt(),
         title: title.trim() || undefined,
         count,
+        exploreRatio,
         ...buildImageParams(),
         template: outputType === "reference" ? "reference" : "variation",
         autoGenerate: true, // Auto-trigger image generation after prompts
@@ -254,30 +274,6 @@ export function GenerateTab() {
   // Allow concurrent prompt generations - only check if prompt is empty
   const isDisabled = !prompt.trim();
 
-  const handleAddFromSelection = () => {
-    // Append selected images to existing context (avoid duplicates)
-    const newIds = Array.from(selectedIds).filter(
-      (id) => !contextImageIds.includes(id),
-    );
-    setContextImages([...contextImageIds, ...newIds]);
-  };
-
-  const handleAddCurrentImage = () => {
-    const current = getCurrentImage();
-    if (current && !contextImageIds.includes(current.id)) {
-      setContextImages([...contextImageIds, current.id]);
-    }
-  };
-
-  const handleOpenImagePicker = () => {
-    setShowImagePicker(true);
-  };
-
-  const handleImagePickerConfirm = (imageIds: string[]) => {
-    // Append selected images to existing context
-    setContextImages([...contextImageIds, ...imageIds]);
-    setShowImagePicker(false);
-  };
 
   return (
     <div className="p-4 space-y-5">
@@ -376,6 +372,64 @@ export function GenerateTab() {
         </div>
       </div>
 
+      {/* Explore Ratio Slider */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium text-ink-secondary uppercase tracking-wide">
+            Variation Style
+          </label>
+          <span className="text-xs text-ink-muted tabular-nums">
+            {exploreRatio === 0
+              ? "All faithful"
+              : exploreRatio === 100
+                ? "All explore"
+                : `${Math.ceil((count * exploreRatio) / 100)} explore / ${count - Math.ceil((count * exploreRatio) / 100)} faithful`}
+          </span>
+        </div>
+        <div className="relative group">
+          {/* Tooltip */}
+          <div
+            className={clsx(
+              "absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 max-w-[200px]",
+              "text-xs bg-[var(--color-tooltip-bg)] text-[var(--color-tooltip-text)] rounded-lg shadow-lg",
+              "opacity-0 group-hover:opacity-100 pointer-events-none",
+              "transition-opacity duration-150 z-[100] text-center",
+            )}
+          >
+            <div className="font-medium">Faithful vs Explore</div>
+            <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
+              Faithful: stays close to your prompt
+              <br />
+              Explore: takes creative liberties
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[0.625rem] text-ink-muted w-12">Faithful</span>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              step="10"
+              value={exploreRatio}
+              onChange={(e) => updateExploreRatio(parseInt(e.target.value, 10))}
+              className={clsx(
+                "flex-1 h-1.5 rounded-full appearance-none cursor-pointer",
+                "bg-gradient-to-r from-ink/20 to-brass/40",
+                "[&::-webkit-slider-thumb]:appearance-none",
+                "[&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3",
+                "[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-brass",
+                "[&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer",
+                "[&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:hover:scale-125",
+                "[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3",
+                "[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-brass",
+                "[&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:cursor-pointer",
+              )}
+            />
+            <span className="text-[0.625rem] text-ink-muted w-12 text-right">Explore</span>
+          </div>
+        </div>
+      </div>
+
       {/* Context Images */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
@@ -394,102 +448,66 @@ export function GenerateTab() {
 
         {/* Context image grid */}
         {contextImages.length > 0 && (
-          <>
-            <div className="flex flex-wrap gap-2">
-              <AnimatePresence>
-                {contextImages.map((img) => {
-                  const hasOverride = img!.id in contextAnnotationOverrides;
-                  return (
-                    <motion.div
-                      key={img!.id}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0, opacity: 0 }}
-                      onClick={() => setEditingContextImageId(img!.id)}
-                      className="relative cursor-pointer group"
-                      title="Click to edit annotation for this context image"
-                    >
-                      <img
-                        src={getImageUrl(img!.image_path)}
-                        alt=""
-                        className={clsx(
-                          "w-14 h-14 rounded-lg object-cover transition-all",
-                          "group-hover:ring-2 group-hover:ring-brass/50",
-                          "group-hover:brightness-90",
-                        )}
-                      />
-                      {/* Hover overlay with edit icon */}
-                      <div
-                        className={clsx(
-                          "absolute inset-0 rounded-lg flex items-center justify-center",
-                          "bg-ink/40 opacity-0 group-hover:opacity-100 transition-opacity",
-                          "pointer-events-none",
-                        )}
-                      >
-                        <Pencil size={16} className="text-surface" />
-                      </div>
-                      {/* Override indicator (always visible when active) */}
-                      {hasOverride && (
-                        <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-brass flex items-center justify-center z-10">
-                          <Pencil size={8} className="text-surface" />
-                        </div>
+          <div className="flex flex-wrap gap-2">
+            <AnimatePresence>
+              {contextImages.map((img) => {
+                const hasOverride = img!.id in contextAnnotationOverrides;
+                return (
+                  <motion.div
+                    key={img!.id}
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    onClick={() => setEditingContextImageId(img!.id)}
+                    className="relative cursor-pointer group"
+                    title="Click to edit annotation for this context image"
+                  >
+                    <img
+                      src={getImageUrl(img!.image_path)}
+                      alt=""
+                      className={clsx(
+                        "w-14 h-14 rounded-lg object-cover transition-all",
+                        "group-hover:ring-2 group-hover:ring-brass/50",
+                        "group-hover:brightness-90",
                       )}
-                      {/* Remove button */}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          removeContextImage(img!.id);
-                        }}
-                        className={clsx(
-                          "absolute -top-1 -right-1 w-5 h-5 rounded-full z-10",
-                          "bg-ink text-surface",
-                          "flex items-center justify-center",
-                          "hover:bg-error transition-colors",
-                        )}
-                      >
-                        <X size={10} />
-                      </button>
-                    </motion.div>
-                  );
-                })}
-              </AnimatePresence>
-            </div>
-            {/* Help text */}
-            <p className="text-[0.6rem] text-ink-muted">
-              Click an image to add context-specific annotation
-            </p>
-          </>
+                    />
+                    {/* Hover overlay with edit icon */}
+                    <div
+                      className={clsx(
+                        "absolute inset-0 rounded-lg flex items-center justify-center",
+                        "bg-ink/40 opacity-0 group-hover:opacity-100 transition-opacity",
+                        "pointer-events-none",
+                      )}
+                    >
+                      <Pencil size={16} className="text-surface" />
+                    </div>
+                    {/* Override indicator (always visible when active) */}
+                    {hasOverride && (
+                      <div className="absolute -top-1 -left-1 w-4 h-4 rounded-full bg-brass flex items-center justify-center z-10">
+                        <Pencil size={8} className="text-surface" />
+                      </div>
+                    )}
+                    {/* Remove button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeContextImage(img!.id);
+                      }}
+                      className={clsx(
+                        "absolute -top-1 -right-1 w-5 h-5 rounded-full z-10",
+                        "bg-ink text-surface",
+                        "flex items-center justify-center",
+                        "hover:bg-error transition-colors",
+                      )}
+                    >
+                      <X size={10} />
+                    </button>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
         )}
-
-        {/* Add context buttons */}
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<ImageIcon size={14} />}
-            onClick={handleAddFromSelection}
-            disabled={selectedIds.size === 0}
-          >
-            From Selection
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<FolderOpen size={14} />}
-            onClick={handleOpenImagePicker}
-            disabled={collections.length === 0}
-          >
-            From Collection
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            leftIcon={<ImageIcon size={14} />}
-            onClick={handleAddCurrentImage}
-          >
-            Current Image
-          </Button>
-        </div>
       </div>
 
       {/* Prompt */}
@@ -843,36 +861,55 @@ export function GenerateTab() {
           </div>
         </label>
 
-        {/* Single Generate Button */}
-        <Button
-          variant="brass"
-          size="lg"
-          leftIcon={
-            generationMode === "plan" ? (
-              <Wand2 size={18} />
-            ) : outputType === "reference" ? (
-              <Palette size={18} />
-            ) : (
-              <Zap size={18} />
-            )
-          }
-          onClick={handleGenerate}
-          disabled={isDisabled}
-          className="w-full"
-        >
-          {getButtonLabel()}
-        </Button>
+        {/* Generate Buttons */}
+        <div className="flex gap-2">
+          <Button
+            variant="brass"
+            size="lg"
+            leftIcon={
+              generationMode === "plan" ? (
+                <Wand2 size={18} />
+              ) : outputType === "reference" ? (
+                <Palette size={18} />
+              ) : (
+                <Zap size={18} />
+              )
+            }
+            onClick={handleGenerate}
+            disabled={isDisabled}
+            className="flex-1"
+          >
+            {getButtonLabel()}
+          </Button>
+          <div className="relative group">
+            <Button
+              variant="secondary"
+              size="lg"
+              onClick={feelingLucky}
+              title="Feeling Lucky - Generate from random session & library images"
+            >
+              <Dices size={18} />
+            </Button>
+            {/* Tooltip */}
+            <div
+              className={clsx(
+                "absolute bottom-full right-0 mb-2 px-2.5 py-1.5 min-w-[160px]",
+                "text-xs bg-[var(--color-tooltip-bg)] text-[var(--color-tooltip-text)] rounded-lg shadow-lg",
+                "opacity-0 group-hover:opacity-100 pointer-events-none",
+                "transition-opacity duration-150 z-[100]",
+              )}
+            >
+              <div className="font-medium">Feeling Lucky</div>
+              <div className="text-[0.65rem] text-[var(--color-tooltip-hint)] mt-0.5">
+                Random images + keywords from your session & library
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Prompt Preview Modal */}
       <PromptPreviewModal />
-
-      {/* Image Picker Modal */}
-      <ImagePickerModal
-        isOpen={showImagePicker}
-        onClose={() => setShowImagePicker(false)}
-        onConfirm={handleImagePickerConfirm}
-      />
 
       {/* Context Annotation Modal */}
       <ContextAnnotationModal

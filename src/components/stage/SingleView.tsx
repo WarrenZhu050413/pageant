@@ -26,6 +26,7 @@ import type { ImageData } from '../../types';
 export function SingleView() {
   // Select primitive values and stable arrays to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
+  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
@@ -58,16 +59,25 @@ export function SingleView() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
+    // Build image map from both active generations AND archived prompts
     const imageMap = new Map<string, typeof generations[0]['images'][0]>();
     for (const generation of generations) {
       for (const image of generation.images) {
         imageMap.set(image.id, image);
       }
     }
+    // Also include archived images so collections work regardless of archive status
+    for (const prompt of archivedPrompts) {
+      for (const image of prompt.images) {
+        if (!imageMap.has(image.id)) {
+          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
+        }
+      }
+    }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
       .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
-  }, [generations, currentCollection]);
+  }, [generations, archivedPrompts, currentCollection]);
 
   // Concept images from store (already sorted newest first)
   const conceptImages = useMemo(() => {
@@ -135,7 +145,7 @@ export function SingleView() {
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [collectionDescription, setCollectionDescription] = useState('');
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [selectedCollectionIds, setSelectedCollectionIds] = useState<Set<string>>(new Set());
   const [isCreatingNew, setIsCreatingNew] = useState(false);
 
   // Fullscreen view state
@@ -234,7 +244,7 @@ export function SingleView() {
   useEffect(() => {
     const handleSaveCollectionShortcut = () => {
       if (currentImage) {
-        setSelectedCollectionId(null);
+        setSelectedCollectionIds(new Set());
         setIsCreatingNew(collections.length === 0);
         setCollectionName('');
         setCollectionDescription('');
@@ -303,7 +313,7 @@ export function SingleView() {
   };
 
   const handleOpenCollectionDialog = () => {
-    setSelectedCollectionId(null);
+    setSelectedCollectionIds(new Set());
     setIsCreatingNew(collections.length === 0);
     setCollectionName('');
     setCollectionDescription('');
@@ -322,9 +332,12 @@ export function SingleView() {
         setIsCreatingNew(false);
         setIsCollectionDialogOpen(false);
       }
-    } else if (selectedCollectionId) {
-      await addImagesToCollection(selectedCollectionId, [currentImage.id]);
-      setSelectedCollectionId(null);
+    } else if (selectedCollectionIds.size > 0) {
+      // Add to all selected collections
+      for (const collectionId of selectedCollectionIds) {
+        await addImagesToCollection(collectionId, [currentImage.id]);
+      }
+      setSelectedCollectionIds(new Set());
       setIsCollectionDialogOpen(false);
     }
   };
@@ -660,16 +673,37 @@ export function SingleView() {
             <div className="space-y-2">
               <label className="text-xs font-medium text-ink-secondary">
                 Add to existing collection
+                <span className="ml-2 text-ink-muted font-normal">
+                  (⌘+click for multiple)
+                </span>
               </label>
               <div className="max-h-[50vh] overflow-y-auto space-y-1">
-                {sortedCollections.map((collection) => (
+                {sortedCollections.map((collection) => {
+                  const isSelected = selectedCollectionIds.has(collection.id);
+                  return (
                   <button
                     key={collection.id}
-                    onClick={() => setSelectedCollectionId(collection.id)}
+                    onClick={(e) => {
+                      if (e.metaKey || e.ctrlKey) {
+                        // Command/Ctrl click: toggle selection (multi-select)
+                        setSelectedCollectionIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(collection.id)) {
+                            next.delete(collection.id);
+                          } else {
+                            next.add(collection.id);
+                          }
+                          return next;
+                        });
+                      } else {
+                        // Regular click: single select (replace selection)
+                        setSelectedCollectionIds(new Set([collection.id]));
+                      }
+                    }}
                     className={clsx(
                       'w-full flex items-center justify-between px-3 py-2 rounded-lg text-left',
                       'transition-colors',
-                      selectedCollectionId === collection.id
+                      isSelected
                         ? 'bg-brass-muted text-ink'
                         : 'hover:bg-canvas-muted text-ink-secondary'
                     )}
@@ -680,11 +714,12 @@ export function SingleView() {
                         {collection.image_ids?.length || 0} images
                       </p>
                     </div>
-                    {selectedCollectionId === collection.id && (
+                    {isSelected && (
                       <Check size={16} className="text-brass-dark" />
                     )}
                   </button>
-                ))}
+                  );
+                })}
               </div>
 
               {/* Divider */}
@@ -757,9 +792,13 @@ export function SingleView() {
             <Button
               variant="brass"
               onClick={handleSaveToCollection}
-              disabled={isCreatingNew ? !collectionName.trim() : !selectedCollectionId}
+              disabled={isCreatingNew ? !collectionName.trim() : selectedCollectionIds.size === 0}
             >
-              {isCreatingNew ? 'Create & Add' : 'Add to Collection'}
+              {isCreatingNew
+                ? 'Create & Add'
+                : selectedCollectionIds.size > 1
+                ? `Add to ${selectedCollectionIds.size} Collections`
+                : 'Add to Collection'}
             </Button>
           </div>
         </div>

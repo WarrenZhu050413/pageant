@@ -37,7 +37,17 @@ help:
 # =============================================================================
 dev: stop-dev
 	@echo "Starting Pageant (dev mode)..."
-	@make -j2 frontend backend
+	@uv run uvicorn backend.server:app --host 0.0.0.0 --port $(DEV_BACKEND_PORT) & \
+	echo "Waiting for backend to be ready..." && \
+	for i in 1 2 3 4 5 6 7 8 9 10; do \
+		if curl -s http://localhost:$(DEV_BACKEND_PORT)/api/settings > /dev/null 2>&1; then \
+			echo "Backend ready!"; \
+			break; \
+		fi; \
+		sleep 0.5; \
+	done && \
+	echo "Starting frontend..." && \
+	bun run dev
 
 frontend:
 	bun run dev

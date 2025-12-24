@@ -4,14 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Pageant is an image generation studio built on Google's Gemini API. It provides an interface for generating, organizing, tagging, and managing AI-generated images with features like collections, favorites, batch operations, and keyboard shortcuts.
+Pageant is an image generation studio built on Google's Gemini API. It provides context engineering for image models (auto-selected references, annotations that travel with images, design tokens) and batch experimentation (prompt variations → parallel generation).
 
 ## Development Commands
 
 ```bash
-make dev          # Start frontend (5173) + backend (8765) together
-make restart      # Kill and restart both servers
-make stop         # Stop both servers
+make dev          # Start frontend (5180) + backend (8765) together
+make stop         # Stop all servers
 make frontend     # Frontend only
 make backend      # Backend only
 make install      # Install Bun + uv dependencies
@@ -19,9 +18,11 @@ make install      # Install Bun + uv dependencies
 
 **Testing:**
 ```bash
-bun run test          # Vitest watch mode
-bun run test:run      # Single test run
-bun run test:coverage # Coverage report
+bun run test                           # Vitest watch mode
+bun run test:run                       # Single test run
+bun run test src/store/slices/foo.ts   # Run specific test file
+bun run test:coverage                  # Coverage report
+uv run pytest backend/tests/           # Backend tests
 ```
 
 **Linting/Building:**
@@ -30,45 +31,39 @@ bun run lint      # ESLint
 bun run build     # TypeScript check + Vite bundle
 ```
 
-**Backend testing:**
-```bash
-uv run pytest backend/tests/
-```
-
 ## Architecture
 
+### Terminology Convention
+**Frontend uses "Generation", backend uses "Prompt"** - these refer to the same entity. The API layer (`src/api/`) bridges this: it calls `/api/prompts` endpoints but the store treats results as `Generation[]`. See comments at top of `src/store/index.ts` and `src/api/index.ts`.
+
 ### Frontend (React + Zustand)
-- **Store** (`src/store/`): Zustand store with slices for generation, selection, session, navigation, and library state
-- **API Layer** (`src/api/`): 27 endpoint handlers with generic fetcher utilities
-- **Three-pane layout**: Left sidebar (prompts, collections, favorites, templates, library, sessions) → Main stage (single/grid/compare views) → Right panel (generate, info, settings)
+- **Store** (`src/store/`): Zustand with modular slices (generation, selection, session, navigation, library)
+- **API Layer** (`src/api/`): Fetcher utilities with snake_case→camelCase transformation
+- **Prompts** (`src/prompts/`): Frontend builds full prompts from templates before sending to backend
+- **Three-pane layout**: Left sidebar → Main stage (single/grid views) → Right panel (generate, info, settings)
 
 ### Backend (FastAPI)
-- **server.py**: FastAPI app with all routes, serves static files and proxies `/api` and `/images`
-- **gemini_service.py**: Google Generative AI SDK wrapper for image/text generation
-- **metadata_manager.py**: JSON-based persistence to `metadata.json`
+- **server.py**: All routes, serves static files and proxies `/api` and `/images`
+- **gemini_service.py**: Google Generative AI SDK wrapper
+- **metadata_manager.py**: JSON-based persistence to `generated_images/metadata.json`
 
 ### Data Flow
-- Frontend proxies API calls through Vite dev server to backend at :8765
-- Images stored in `generated_images/` directory
-- All metadata persisted to single `metadata.json` file
+- Vite dev server proxies `/api` and `/images` to backend at :8765
+- Images stored in `generated_images/` directory with metadata in `metadata.json`
 
 ## Key Patterns
 
 ### Two-Phase Generation
-1. `POST /api/generate-prompts` - Generate prompt variations from a single prompt
-2. User edits/refines variations
-3. `POST /api/generate-images` - Batch generate images from refined variations
+1. User enters prompt + selects context images → frontend builds full prompt from template (`src/prompts/`)
+2. `POST /api/generate-prompts` → returns prompt variations with recommended context images per variation
+3. User edits/refines variations in UI
+4. `POST /api/generate-images` → batch generate images from refined variations (supports streaming via SSE)
 
 ### Design Axis System
-Images can be tagged on multiple design axes (colors, composition, mood, layout, aesthetic). The system tracks user preferences via the `liked_axes` field on images.
+Images tagged on extensible axes (colors, composition, layout, aesthetic). See `src/types/index.ts` for `SUGGESTED_TAGS` - the system accepts any tag string, not just predefined ones. User preferences tracked via `liked_axes` field.
 
-### Store Slices
-State is organized into modular slices in `src/store/slices/`:
-- `generationSlice` - generation status, pending prompts
-- `selectionSlice` - selection mode, selected IDs
-- `sessionSlice` - current session tracking
-- `navigationSlice` - current prompt/image, view modes
-- `librarySlice` - library items management
+### Design Tokens
+Extract reusable visual concepts from images. Tokens have `design_dimensions` (structured AI analysis) and `generation_prompt` for applying the concept to new generations. See `DesignToken` type.
 
 ## GitHub Issues Workflow
 

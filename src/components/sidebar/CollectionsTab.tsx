@@ -24,7 +24,9 @@ export function CollectionsTab() {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
   }, [rawCollections]);
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) - collections are global
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const allPrompts = getAllGenerations();
   const deleteCollection = useStore((s) => s.deleteCollection);
   const addContextImages = useStore((s) => s.addContextImages);
   const setRightTab = useStore((s) => s.setRightTab);
@@ -39,9 +41,9 @@ export function CollectionsTab() {
     setEditingCollection(collection);
   };
 
-  // Helper to get image data by ID
+  // Helper to get image data by ID (searches all sources including archived)
   const getImageById = (imageId: string) => {
-    for (const p of prompts) {
+    for (const p of allPrompts) {
       const img = p.images.find((i) => i.id === imageId);
       if (img) return img;
     }

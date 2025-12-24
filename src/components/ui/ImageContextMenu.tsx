@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
-import { ScanSearch, Download, Trash2, FolderPlus } from 'lucide-react';
+import { ScanSearch, Download, Trash2, FolderPlus, Archive } from 'lucide-react';
 
 export interface ContextMenuPosition {
   x: number;
@@ -12,6 +12,7 @@ export interface ImageContextMenuProps {
   onClose: () => void;
   onFindSimilar?: () => void;
   onDownload?: () => void;
+  onArchive?: () => void;
   onDelete?: () => void;
   onAddToCollection?: () => void;
 }
@@ -21,6 +22,7 @@ export function ImageContextMenu({
   onClose,
   onFindSimilar,
   onDownload,
+  onArchive,
   onDelete,
   onAddToCollection,
 }: ImageContextMenuProps) {
@@ -57,6 +59,7 @@ export function ImageContextMenu({
     { icon: ScanSearch, label: 'Find similar', onClick: onFindSimilar },
     { icon: FolderPlus, label: 'Add to collection', onClick: onAddToCollection },
     { icon: Download, label: 'Download', onClick: onDownload },
+    { icon: Archive, label: 'Archive', onClick: onArchive },
     { icon: Trash2, label: 'Delete', onClick: onDelete, danger: true },
   ].filter((item) => item.onClick);
 

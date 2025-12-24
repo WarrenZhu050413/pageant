@@ -2503,118 +2503,69 @@ async def batch_regenerate(prompt_id: str, count: int = 4):
 
 
 # ============================================================
-# FEATURE: Archive (Hide from Generations without Deleting)
+# FEATURE: Hide Generations (simplified from Archive)
 # ============================================================
 
-class ArchiveImagesRequest(BaseModel):
-    image_ids: list[str]
-
-
-class ArchivePromptsRequest(BaseModel):
+class HideGenerationsRequest(BaseModel):
     prompt_ids: list[str]
 
 
-@app.post("/api/archive/images")
-async def archive_images(req: ArchiveImagesRequest):
-    """Archive images (hide from generations but keep for collections)."""
+class MoveGenerationRequest(BaseModel):
+    session_id: str | None  # None means unassign from session
+
+
+@app.post("/api/prompts/hide")
+async def hide_generations(req: HideGenerationsRequest):
+    """Hide generations from the default view."""
     metadata = load_metadata()
-    archived = []
-
-    for image_id in req.image_ids:
-        for prompt in metadata.get("prompts", []):
-            for img in prompt.get("images", []):
-                if img["id"] == image_id:
-                    img["archived"] = True
-                    archived.append(image_id)
-                    break
-
-    save_metadata(metadata)
-    logger.info(f"Archived {len(archived)} images")
-    return {"success": True, "archived": archived}
-
-
-@app.post("/api/archive/prompts")
-async def archive_prompts(req: ArchivePromptsRequest):
-    """Archive entire prompts (hide from generations but keep for collections)."""
-    metadata = load_metadata()
-    archived = []
+    hidden = []
 
     for prompt_id in req.prompt_ids:
         for prompt in metadata.get("prompts", []):
             if prompt["id"] == prompt_id:
-                prompt["archived"] = True
-                archived.append(prompt_id)
+                prompt["hidden"] = True
+                hidden.append(prompt_id)
                 break
 
     save_metadata(metadata)
-    logger.info(f"Archived {len(archived)} prompts")
-    return {"success": True, "archived": archived}
+    logger.info(f"Hidden {len(hidden)} generations")
+    return {"success": True, "hidden": hidden}
 
 
-@app.post("/api/unarchive/images")
-async def unarchive_images(req: ArchiveImagesRequest):
-    """Unarchive images (restore to generations)."""
+@app.post("/api/prompts/unhide")
+async def unhide_generations(req: HideGenerationsRequest):
+    """Unhide generations (restore to default view)."""
     metadata = load_metadata()
-    unarchived = []
-
-    for image_id in req.image_ids:
-        for prompt in metadata.get("prompts", []):
-            for img in prompt.get("images", []):
-                if img["id"] == image_id:
-                    img.pop("archived", None)
-                    unarchived.append(image_id)
-                    break
-
-    save_metadata(metadata)
-    logger.info(f"Unarchived {len(unarchived)} images")
-    return {"success": True, "unarchived": unarchived}
-
-
-@app.post("/api/unarchive/prompts")
-async def unarchive_prompts(req: ArchivePromptsRequest):
-    """Unarchive prompts (restore to generations)."""
-    metadata = load_metadata()
-    unarchived = []
+    unhidden = []
 
     for prompt_id in req.prompt_ids:
         for prompt in metadata.get("prompts", []):
             if prompt["id"] == prompt_id:
-                prompt.pop("archived", None)
-                unarchived.append(prompt_id)
+                prompt.pop("hidden", None)
+                unhidden.append(prompt_id)
                 break
 
     save_metadata(metadata)
-    logger.info(f"Unarchived {len(unarchived)} prompts")
-    return {"success": True, "unarchived": unarchived}
+    logger.info(f"Unhidden {len(unhidden)} generations")
+    return {"success": True, "unhidden": unhidden}
 
 
-@app.get("/api/archived")
-async def get_archived():
-    """Get all archived prompts and their images."""
+@app.patch("/api/prompts/{prompt_id}/session")
+async def move_generation_to_session(prompt_id: str, req: MoveGenerationRequest):
+    """Move a generation to a different session."""
     metadata = load_metadata()
-    archived_prompts = []
 
     for prompt in metadata.get("prompts", []):
-        # Check if prompt is archived OR has any archived images
-        prompt_archived = prompt.get("archived", False)
-        archived_images = [img for img in prompt.get("images", []) if img.get("archived", False)]
+        if prompt["id"] == prompt_id:
+            if req.session_id is None:
+                prompt.pop("session_id", None)
+            else:
+                prompt["session_id"] = req.session_id
+            save_metadata(metadata)
+            logger.info(f"Moved generation {prompt_id} to session {req.session_id}")
+            return {"success": True, "prompt_id": prompt_id, "session_id": req.session_id}
 
-        if prompt_archived or archived_images:
-            # For archived prompts, include all images
-            # For non-archived prompts with archived images, only include archived images
-            images_to_include = prompt.get("images", []) if prompt_archived else archived_images
-
-            archived_prompts.append({
-                "id": prompt["id"],
-                "prompt": prompt.get("prompt", ""),
-                "title": prompt.get("title", "Untitled"),
-                "created_at": prompt.get("created_at"),
-                "archived": prompt_archived,
-                "images": images_to_include,
-                "context_image_ids": prompt.get("context_image_ids", []),
-            })
-
-    return {"archived_prompts": archived_prompts}
+    raise HTTPException(status_code=404, detail="Generation not found")
 
 
 # ============================================================

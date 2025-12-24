@@ -356,7 +356,8 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid';
-export type LeftTab = 'generations' | 'collections' | 'all-images' | 'archived';
+export type LeftTab = 'generations' | 'collections' | 'all-images';
+export type GenerationFilter = 'all' | 'active' | 'hidden';
 export type RightTab = 'generate' | 'settings' | 'import';
 export type SelectionMode = 'none' | 'select';
 

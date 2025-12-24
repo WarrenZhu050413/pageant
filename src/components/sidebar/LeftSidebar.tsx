@@ -12,7 +12,6 @@ import { GenerationsTab } from './GenerationsTab';
 import { CollectionsTab } from './CollectionsTab';
 import { AllImagesTab } from './AllImagesTab';
 import { ArchivedTab } from './ArchivedTab';
-import { SessionsPanel } from './SessionsPanel';
 import { InfoSection } from './InfoSection';
 
 const tabs = [
@@ -44,9 +43,6 @@ export function LeftSidebar() {
         </h1>
         <p className="text-xs text-ink-tertiary mt-0.5">Image Generation Studio</p>
       </div>
-
-      {/* Sessions dropdown */}
-      <SessionsPanel />
 
       {/* Tabs */}
       <Tabs

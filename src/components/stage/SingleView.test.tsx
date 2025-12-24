@@ -47,27 +47,39 @@ describe('SingleView', () => {
     ...overrides,
   })
 
-  const createMockState = (overrides = {}) => ({
-    generations: [],
-    collections: [],
-    currentGenerationId: null,
-    currentCollectionId: null,
-    currentImageIndex: 0,
-    setCurrentImageIndex: vi.fn(),
-    nextImage: vi.fn(),
-    prevImage: vi.fn(),
-    deleteImage: vi.fn(),
-    removeFromCurrentCollection: vi.fn(),
-    selectionMode: 'none',
-    toggleSelection: vi.fn(),
-    selectedIds: new Set(),
-    setContextImages: vi.fn(),
-    contextImageIds: [],
-    // Design dimension analysis
-    pendingAnalysis: new Set<string>(),
-    updateImageDimensions: vi.fn(),
-    ...overrides,
-  })
+  const createMockState = (overrides: Record<string, unknown> = {}) => {
+    const generations = (overrides.generations as unknown[]) || [];
+    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
+    return {
+      generations,
+      archivedPrompts,
+      collections: [],
+      currentGenerationId: null,
+      currentCollectionId: null,
+      currentImageIndex: 0,
+      setCurrentImageIndex: vi.fn(),
+      nextImage: vi.fn(),
+      prevImage: vi.fn(),
+      deleteImage: vi.fn(),
+      removeFromCurrentCollection: vi.fn(),
+      selectionMode: 'none',
+      toggleSelection: vi.fn(),
+      selectedIds: new Set(),
+      setContextImages: vi.fn(),
+      contextImageIds: [],
+      // Design dimension analysis
+      pendingAnalysis: new Set<string>(),
+      updateImageDimensions: vi.fn(),
+      // For DesignAnnotation
+      getAllGenerations: () => [...generations, ...archivedPrompts],
+      toggleAxisLike: vi.fn(),
+      toggleDimensionLike: vi.fn(),
+      updateImageNotes: vi.fn(),
+      createToken: vi.fn(),
+      designTokens: [],
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()

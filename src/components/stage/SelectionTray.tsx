@@ -1,22 +1,24 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Check, Download } from 'lucide-react';
+import { X, FolderPlus, Plus, Trash2, CheckSquare, Square, Check, Download, Archive } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, batchDownload } from '../../api';
 import { Button, Input, Textarea, Dialog, IconButton } from '../ui';
 
 export function SelectionTray() {
   const selectedIds = useStore((s) => s.selectedIds);
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const allPrompts = getAllGenerations();
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
 
   // Compute derived values with useMemo to avoid infinite re-renders
   const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentGenerationId) || null,
-    [prompts, currentGenerationId]
+    () => allPrompts.find((p) => p.id === currentGenerationId) || null,
+    [allPrompts, currentGenerationId]
   );
 
   const currentCollection = useMemo(
@@ -26,16 +28,19 @@ export function SelectionTray() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
-    for (const prompt of prompts) {
+    // Build image map from all prompts (including archived)
+    const imageMap = new Map<string, typeof allPrompts[0]['images'][0]>();
+    for (const prompt of allPrompts) {
       for (const image of prompt.images) {
-        imageMap.set(image.id, image);
+        if (!imageMap.has(image.id)) {
+          imageMap.set(image.id, image);
+        }
       }
     }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
-      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
-  }, [prompts, currentCollection]);
+      .filter((img): img is typeof allPrompts[0]['images'][0] => img !== undefined);
+  }, [allPrompts, currentCollection]);
   const clearSelection = useStore((s) => s.clearSelection);
   const toggleSelection = useStore((s) => s.toggleSelection);
   const setContextImages = useStore((s) => s.setContextImages);
@@ -45,15 +50,25 @@ export function SelectionTray() {
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const selectAll = useStore((s) => s.selectAll);
   const batchDelete = useStore((s) => s.batchDelete);
+  const archiveSelectedImages = useStore((s) => s.archiveSelectedImages);
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [collectionName, setCollectionName] = useState('');
   const [collectionDescription, setCollectionDescription] = useState('');
-  const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
+  const [selectedCollectionIds, setSelectedCollectionIds] = useState<Set<string>>(new Set());
   const [isCreatingNew, setIsCreatingNew] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [focusedCollectionIndex, setFocusedCollectionIndex] = useState(0);
+
+  // Sorted collections for consistent keyboard navigation
+  const sortedCollections = useMemo(
+    () => [...collections].sort((a, b) =>
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ),
+    [collections]
+  );
 
   // Get display images (from prompt or collection)
   const displayImages = useMemo(
@@ -66,14 +81,14 @@ export function SelectionTray() {
   const selectedImages = useMemo(() => {
     return Array.from(selectedIds)
       .map((id) => {
-        for (const prompt of prompts) {
+        for (const prompt of allPrompts) {
           const img = prompt.images.find((i) => i.id === id);
           if (img) return { ...img, promptTitle: prompt.title };
         }
         return null;
       })
       .filter(Boolean);
-  }, [selectedIds, prompts]);
+  }, [selectedIds, allPrompts]);
 
   if (selectedIds.size === 0) return null;
 
@@ -102,9 +117,12 @@ export function SelectionTray() {
         clearSelection();
         setSelectionMode('none');
       }
-    } else if (selectedCollectionId) {
-      await addToCollection(selectedCollectionId);
-      setSelectedCollectionId(null);
+    } else if (selectedCollectionIds.size > 0) {
+      // Add to all selected collections
+      for (const collectionId of selectedCollectionIds) {
+        await addToCollection(collectionId);
+      }
+      setSelectedCollectionIds(new Set());
       clearSelection();
       setSelectionMode('none');
       setIsCollectionDialogOpen(false);
@@ -112,11 +130,30 @@ export function SelectionTray() {
   };
 
   const handleOpenCollectionDialog = () => {
-    setSelectedCollectionId(null);
+    setSelectedCollectionIds(new Set());
     setIsCreatingNew(collections.length === 0);
     setCollectionName('');
     setCollectionDescription('');
+    setFocusedCollectionIndex(0);
     setIsCollectionDialogOpen(true);
+  };
+
+  const handleCollectionClick = (collectionId: string, e: React.MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) {
+      // Command/Ctrl click: toggle selection (multi-select)
+      setSelectedCollectionIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(collectionId)) {
+          next.delete(collectionId);
+        } else {
+          next.add(collectionId);
+        }
+        return next;
+      });
+    } else {
+      // Regular click: single select (replace selection)
+      setSelectedCollectionIds(new Set([collectionId]));
+    }
   };
 
   const handleSelectAllToggle = () => {
@@ -130,6 +167,12 @@ export function SelectionTray() {
   const handleDelete = async () => {
     await batchDelete();
     setIsDeleteDialogOpen(false);
+    clearSelection();
+    setSelectionMode('none');
+  };
+
+  const handleArchive = async () => {
+    await archiveSelectedImages();
     clearSelection();
     setSelectionMode('none');
   };
@@ -239,6 +282,14 @@ export function SelectionTray() {
           </Button>
           <div className="w-px h-6 bg-border self-center" />
           <IconButton
+            variant="ghost"
+            size="sm"
+            tooltip="Archive selected"
+            onClick={handleArchive}
+          >
+            <Archive size={14} />
+          </IconButton>
+          <IconButton
             variant="danger"
             size="sm"
             tooltip="Delete selected"
@@ -255,39 +306,90 @@ export function SelectionTray() {
         onClose={() => setIsCollectionDialogOpen(false)}
         title="Save to Collection"
       >
-        <div className="space-y-4">
+        <div
+          className="space-y-4"
+          onKeyDown={(e) => {
+            if (isCreatingNew) return; // Let input handle its own keys
+
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              setFocusedCollectionIndex((prev) =>
+                Math.min(prev + 1, sortedCollections.length - 1)
+              );
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              setFocusedCollectionIndex((prev) => Math.max(prev - 1, 0));
+            } else if (e.key === ' ' || (e.key === 'Enter' && sortedCollections.length > 0)) {
+              e.preventDefault();
+              const focusedCollection = sortedCollections[focusedCollectionIndex];
+              if (focusedCollection) {
+                if (e.metaKey || e.ctrlKey || e.key === ' ') {
+                  // Cmd/Ctrl+Enter or Space: toggle (multi-select)
+                  setSelectedCollectionIds((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(focusedCollection.id)) {
+                      next.delete(focusedCollection.id);
+                    } else {
+                      next.add(focusedCollection.id);
+                    }
+                    return next;
+                  });
+                } else {
+                  // Plain Enter: select and save
+                  if (selectedCollectionIds.size > 0) {
+                    handleSaveCollection();
+                  } else {
+                    setSelectedCollectionIds(new Set([focusedCollection.id]));
+                    // Small delay then save
+                    setTimeout(() => handleSaveCollection(), 50);
+                  }
+                }
+              }
+            }
+          }}
+          tabIndex={0}
+        >
           {/* Existing collections */}
           {!isCreatingNew && collections.length > 0 && (
             <div className="space-y-2">
               <label className="text-xs font-medium text-ink-secondary">
                 Add to existing collection
+                <span className="ml-2 text-ink-muted font-normal">
+                  (⌘+click for multiple)
+                </span>
               </label>
               <div className="max-h-[50vh] overflow-y-auto space-y-1">
-                {[...collections].sort((a, b) =>
-                  new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-                ).map((collection) => (
-                  <button
-                    key={collection.id}
-                    onClick={() => setSelectedCollectionId(collection.id)}
-                    className={clsx(
-                      'w-full flex items-center justify-between px-3 py-2 rounded-lg text-left',
-                      'transition-colors',
-                      selectedCollectionId === collection.id
-                        ? 'bg-brass-muted text-ink'
-                        : 'hover:bg-canvas-muted text-ink-secondary'
-                    )}
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{collection.name}</p>
-                      <p className="text-xs text-ink-muted">
-                        {collection.image_ids?.length || 0} images
-                      </p>
-                    </div>
-                    {selectedCollectionId === collection.id && (
-                      <Check size={16} className="text-brass-dark" />
-                    )}
-                  </button>
-                ))}
+                {sortedCollections.map((collection, index) => {
+                  const isSelected = selectedCollectionIds.has(collection.id);
+                  const isFocused = index === focusedCollectionIndex;
+                  return (
+                    <button
+                      key={collection.id}
+                      onClick={(e) => handleCollectionClick(collection.id, e)}
+                      onMouseEnter={() => setFocusedCollectionIndex(index)}
+                      className={clsx(
+                        'w-full flex items-center justify-between px-3 py-2 rounded-lg text-left',
+                        'transition-colors',
+                        isSelected
+                          ? 'bg-brass-muted text-ink'
+                          : isFocused
+                          ? 'bg-canvas-muted text-ink-secondary'
+                          : 'hover:bg-canvas-muted text-ink-secondary',
+                        isFocused && !isSelected && 'ring-1 ring-brass/50'
+                      )}
+                    >
+                      <div>
+                        <p className="text-sm font-medium">{collection.name}</p>
+                        <p className="text-xs text-ink-muted">
+                          {collection.image_ids?.length || 0} images
+                        </p>
+                      </div>
+                      {isSelected && (
+                        <Check size={16} className="text-brass-dark" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Divider */}
@@ -347,8 +449,12 @@ export function SelectionTray() {
           )}
 
           <div className="text-xs text-ink-muted">
-            {selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} will be
-            added
+            {selectedIds.size} image{selectedIds.size !== 1 ? 's' : ''} will be added
+            {selectedCollectionIds.size > 0 && !isCreatingNew && (
+              <span>
+                {' '}to {selectedCollectionIds.size} collection{selectedCollectionIds.size !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
 
           <div className="flex justify-end gap-3">
@@ -361,9 +467,13 @@ export function SelectionTray() {
             <Button
               variant="brass"
               onClick={handleSaveCollection}
-              disabled={isCreatingNew ? !collectionName.trim() : !selectedCollectionId}
+              disabled={isCreatingNew ? !collectionName.trim() : selectedCollectionIds.size === 0}
             >
-              {isCreatingNew ? 'Create & Add' : 'Add to Collection'}
+              {isCreatingNew
+                ? 'Create & Add'
+                : selectedCollectionIds.size > 1
+                ? `Add to ${selectedCollectionIds.size} Collections`
+                : 'Add to Collection'}
             </Button>
           </div>
         </div>

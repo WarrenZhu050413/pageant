@@ -10,6 +10,7 @@ import '@testing-library/jest-dom';
 const mockStore = {
   streamingText: '',
   generations: [] as Array<{ id: string; images: Array<{ id: string }> }>,
+  archivedPrompts: [] as Array<{ id: string; images: Array<{ id: string }> }>,
   deleteDraft: vi.fn(),
   generateFromDraft: vi.fn(),
   updateDraftVariation: vi.fn(),
@@ -23,6 +24,7 @@ const mockStore = {
   toggleDraftVariationTag: vi.fn(),
   generatingImageDraftIds: new Set<string>(),
   updateImageNotes: vi.fn(),
+  getAllGenerations: () => [...mockStore.generations, ...mockStore.archivedPrompts],
 };
 
 vi.mock('../../store', () => ({

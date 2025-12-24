@@ -24,9 +24,9 @@ function ToastItem({ toast }: { toast: Toast }) {
       layout
       role={toast.type === 'error' ? 'alert' : 'status'}
       aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
-      initial={{ opacity: 0, y: 50, scale: 0.9 }}
+      initial={{ opacity: 0, y: -50, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: 20, scale: 0.9 }}
+      exit={{ opacity: 0, y: -20, scale: 0.9 }}
       transition={{ type: 'spring', stiffness: 500, damping: 30 }}
       className={clsx(
         'flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg',
@@ -65,7 +65,7 @@ export function ToastContainer() {
   const toasts = useToastStore((s) => s.toasts);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
+    <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-sm">
       <AnimatePresence mode="popLayout">
         {toasts.map((toast) => (
           <ToastItem key={toast.id} toast={toast} />

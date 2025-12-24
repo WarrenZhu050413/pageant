@@ -36,21 +36,27 @@ describe('DesignAnnotation', () => {
     ...overrides,
   })
 
-  const createMockState = (overrides = {}) => ({
-    generations: [],
-    collections: [],
-    currentGenerationId: null,
-    currentCollectionId: null,
-    currentImageIndex: 0,
-    toggleAxisLike: vi.fn(),
-    toggleDimensionLike: vi.fn(),
-    updateImageNotes: vi.fn().mockResolvedValue(undefined),
-    createToken: vi.fn().mockResolvedValue(undefined),
-    designTokens: [],
-    pendingConceptGenerations: new Set<string>(),
-    deleteToken: vi.fn(),
-    ...overrides,
-  })
+  const createMockState = (overrides: Record<string, unknown> = {}) => {
+    const generations = (overrides.generations as unknown[]) || [];
+    const archivedPrompts = (overrides.archivedPrompts as unknown[]) || [];
+    return {
+      generations,
+      archivedPrompts,
+      collections: [],
+      currentGenerationId: null,
+      currentCollectionId: null,
+      currentImageIndex: 0,
+      toggleAxisLike: vi.fn(),
+      toggleDimensionLike: vi.fn(),
+      updateImageNotes: vi.fn().mockResolvedValue(undefined),
+      createToken: vi.fn().mockResolvedValue(undefined),
+      designTokens: [],
+      pendingConceptGenerations: new Set<string>(),
+      deleteToken: vi.fn(),
+      getAllGenerations: () => [...generations, ...archivedPrompts],
+      ...overrides,
+    };
+  }
 
   beforeEach(() => {
     vi.clearAllMocks()

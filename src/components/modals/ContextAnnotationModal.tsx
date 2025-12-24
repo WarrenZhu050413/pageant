@@ -13,7 +13,9 @@ interface ContextAnnotationModalProps {
 }
 
 export function ContextAnnotationModal({ isOpen, imageId, onClose }: ContextAnnotationModalProps) {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const contextAnnotationOverrides = useStore((s) => s.contextAnnotationOverrides);
   const setContextAnnotationOverride = useStore((s) => s.setContextAnnotationOverride);
   const clearContextAnnotationOverride = useStore((s) => s.clearContextAnnotationOverride);

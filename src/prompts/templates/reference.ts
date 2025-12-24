@@ -15,6 +15,7 @@ Generate {count} diverse CONCEPT IMAGE descriptions based on this visual directi
 "{base_prompt}"
 
 {context_section}
+{explore_section}
 
 CONCEPT IMAGE REQUIREMENTS:
 These are NOT scene illustrations. They are ABSTRACT REFERENCE IMAGES that capture pure visual qualities.

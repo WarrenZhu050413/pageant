@@ -5,7 +5,9 @@ import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react';
 import { useStore } from '../../store';
 
 export function InfoSection() {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);

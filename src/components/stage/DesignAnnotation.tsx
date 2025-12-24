@@ -41,7 +41,9 @@ function isDimensionLiked(axis: string, likedDimensionAxes: string[] | undefined
 }
 
 export function DesignAnnotation() {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const collections = useStore((s) => s.collections);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);

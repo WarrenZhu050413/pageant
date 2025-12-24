@@ -8,7 +8,7 @@ export interface Toast {
     label: string;
     onClick: () => void;
   };
-  duration?: number; // ms, default 5000
+  duration?: number; // ms, default 3000
 }
 
 interface ToastStore {
@@ -27,8 +27,8 @@ export const useToastStore = create<ToastStore>((set, get) => ({
 
     set({ toasts: [...get().toasts, newToast] });
 
-    // Auto-remove after duration
-    const duration = toast.duration ?? 5000;
+    // Auto-remove after duration (default 3 seconds)
+    const duration = toast.duration ?? 3000;
     if (duration > 0) {
       setTimeout(() => {
         get().removeToast(id);

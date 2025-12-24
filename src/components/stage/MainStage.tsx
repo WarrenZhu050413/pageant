@@ -20,7 +20,8 @@ import { PromptVariationsView } from './PromptVariationsView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
-  const prompts = useStore((s) => s.generations);
+  const generations = useStore((s) => s.generations);
+  const archivedPrompts = useStore((s) => s.archivedPrompts);
   const collections = useStore((s) => s.collections);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
@@ -32,12 +33,13 @@ export function MainStage() {
   const selectionMode = useStore((s) => s.selectionMode);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
   const pendingGenerations = useStore((s) => s.pendingGenerations);
+  const currentPendingId = useStore((s) => s.currentPendingId);
   const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
 
   // Compute derived values with useMemo to avoid infinite re-renders
-  const currentPrompt = useMemo(
-    () => prompts.find((p) => p.id === currentGenerationId) || null,
-    [prompts, currentGenerationId]
+  const currentGeneration = useMemo(
+    () => generations.find((g) => g.id === currentGenerationId) || null,
+    [generations, currentGenerationId]
   );
 
   const currentDraft = useMemo(
@@ -52,18 +54,33 @@ export function MainStage() {
 
   const currentCollectionImages = useMemo(() => {
     if (!currentCollection) return [];
-    const imageMap = new Map<string, typeof prompts[0]['images'][0]>();
-    for (const prompt of prompts) {
-      for (const image of prompt.images) {
+    // Build image map from both active generations AND archived prompts
+    const imageMap = new Map<string, typeof generations[0]['images'][0]>();
+    for (const generation of generations) {
+      for (const image of generation.images) {
         imageMap.set(image.id, image);
+      }
+    }
+    // Also include archived images so collections work regardless of archive status
+    for (const prompt of archivedPrompts) {
+      for (const image of prompt.images) {
+        if (!imageMap.has(image.id)) {
+          imageMap.set(image.id, image as typeof generations[0]['images'][0]);
+        }
       }
     }
     return currentCollection.image_ids
       .map((id) => imageMap.get(id))
-      .filter((img): img is typeof prompts[0]['images'][0] => img !== undefined);
-  }, [prompts, currentCollection]);
+      .filter((img): img is typeof generations[0]['images'][0] => img !== undefined);
+  }, [generations, archivedPrompts, currentCollection]);
 
   const hasPending = pendingGenerations.size > 0;
+
+  // Get current pending generation data
+  const currentPending = useMemo(
+    () => currentPendingId ? pendingGenerations.get(currentPendingId) || null : null,
+    [pendingGenerations, currentPendingId]
+  );
 
   // State for viewing variations of generated prompt
   const [showingVariations, setShowingVariations] = useState(false);
@@ -73,11 +90,71 @@ export function MainStage() {
     return <DraftVariationsView draft={currentDraft} />;
   }
 
+  // Pending generation view
+  if (currentPending) {
+    return (
+      <div className="flex flex-col h-full bg-canvas">
+        {/* Header */}
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="min-w-0 flex-1">
+              <h2 className="font-[family-name:var(--font-display)] text-base font-semibold text-ink truncate">
+                {currentPending.title || 'Generating...'}
+              </h2>
+              <p className="text-xs text-ink-muted">
+                {currentPending.count} images generating
+              </p>
+            </div>
+          </div>
+        </header>
+
+        {/* Content */}
+        <div className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-2xl mx-auto space-y-6">
+            {/* Status indicator */}
+            <div className="flex items-center gap-3 p-4 rounded-lg bg-generating/10 border border-generating/20">
+              <Loader2 size={20} className="text-generating animate-spin" />
+              <div>
+                <p className="text-sm font-medium text-ink">Generating {currentPending.count} images...</p>
+                <p className="text-xs text-ink-muted">All images will use the same prompt</p>
+              </div>
+            </div>
+
+            {/* Prompt display */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-ink-secondary uppercase tracking-wide">Prompt</h3>
+              <div className="p-4 rounded-lg bg-canvas-subtle border border-border">
+                <p className="text-sm text-ink whitespace-pre-wrap font-[family-name:var(--font-mono)]">
+                  {currentPending.prompt}
+                </p>
+              </div>
+            </div>
+
+            {/* Image slots preview */}
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-ink-secondary uppercase tracking-wide">Images</h3>
+              <div className="grid grid-cols-4 gap-3">
+                {Array.from({ length: currentPending.count }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="aspect-square rounded-lg bg-canvas-muted border border-border flex items-center justify-center shimmer"
+                  >
+                    <Loader2 size={24} className="text-ink-muted animate-spin" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // Show read-only variations view when toggled
-  if (showingVariations && currentPrompt) {
+  if (showingVariations && currentGeneration) {
     return (
       <PromptVariationsView
-        prompt={currentPrompt}
+        prompt={currentGeneration}
         onBack={() => setShowingVariations(false)}
       />
     );
@@ -90,24 +167,24 @@ export function MainStage() {
         <div className="flex items-center gap-3 min-w-0">
           {/* Title */}
           <div className="min-w-0 flex-1">
-            {currentPrompt ? (
+            {currentGeneration ? (
               <>
                 <h2 className="font-[family-name:var(--font-display)] text-base font-semibold text-ink truncate">
-                  {currentPrompt.title}
+                  {currentGeneration.title}
                 </h2>
                 {/* Show variation title as subtitle when available */}
-                {currentPrompt.images[currentImageIndex]?.variation_title && (
+                {currentGeneration.images[currentImageIndex]?.variation_title && (
                   <p className="text-sm text-ink-secondary truncate">
-                    {currentPrompt.images[currentImageIndex].variation_title}
+                    {currentGeneration.images[currentImageIndex].variation_title}
                   </p>
                 )}
-                {currentPrompt.basePrompt && (
-                  <p className="text-xs text-ink-tertiary mt-0.5" title={currentPrompt.basePrompt}>
-                    <span className="text-ink-muted">Based on:</span> "{currentPrompt.basePrompt.slice(0, 50)}{currentPrompt.basePrompt.length > 50 ? '...' : ''}"
+                {currentGeneration.basePrompt && (
+                  <p className="text-xs text-ink-tertiary mt-0.5" title={currentGeneration.basePrompt}>
+                    <span className="text-ink-muted">Based on:</span> "{currentGeneration.basePrompt.slice(0, 50)}{currentGeneration.basePrompt.length > 50 ? '...' : ''}"
                   </p>
                 )}
                 <p className="text-xs text-ink-muted">
-                  {currentImageIndex + 1} of {currentPrompt.images.length} images
+                  {currentImageIndex + 1} of {currentGeneration.images.length} images
                 </p>
               </>
             ) : currentCollection ? (
@@ -172,7 +249,7 @@ export function MainStage() {
           <div className="w-px h-6 bg-border" />
 
           {/* Variations button - only show when viewing a prompt */}
-          {currentPrompt && currentPrompt.images.some(img => img.varied_prompt) && (
+          {currentGeneration && currentGeneration.images.some(img => img.varied_prompt) && (
             <Button
               size="sm"
               variant="secondary"

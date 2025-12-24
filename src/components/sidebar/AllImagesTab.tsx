@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Images, Check, Square, CheckSquare, Search, X, Loader2 } from 'lucide-react';
+import { Images, Check, Square, CheckSquare, Search, X, Loader2, Folder, ChevronDown, Plus } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ImageContextMenu, type ContextMenuPosition } from '../ui';
@@ -19,8 +19,12 @@ function useDebounce<T>(value: T, delay: number): T {
   return debouncedValue;
 }
 
+type SessionFilter = 'current' | 'all' | string;
+
 export function AllImagesTab() {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for search to work across all images
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const selectionMode = useStore((s) => s.selectionMode);
   const selectedIds = useStore((s) => s.selectedIds);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
@@ -30,6 +34,8 @@ export function AllImagesTab() {
   const setCurrentGeneration = useStore((s) => s.setCurrentGeneration);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const setCurrentCollection = useStore((s) => s.setCurrentCollection);
+  const sessions = useStore((s) => s.sessions);
+  const currentSessionId = useStore((s) => s.currentSessionId);
 
   // Semantic search state from store
   const searchMode = useStore((s) => s.searchMode);
@@ -43,6 +49,7 @@ export function AllImagesTab() {
   const indexedImageIds = useStore((s) => s.indexedImageIds);
   const findSimilar = useStore((s) => s.findSimilar);
   const deleteImage = useStore((s) => s.deleteImage);
+  const archiveImage = useStore((s) => s.archiveImage);
 
   // Context menu state
   const [contextMenu, setContextMenu] = useState<{
@@ -58,9 +65,41 @@ export function AllImagesTab() {
     });
   };
 
+  const createSession = useStore((s) => s.createSession);
+
   // Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [conceptFilter, setConceptFilter] = useState<ConceptFilter>('all');
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>('current');
+  const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [newSessionName, setNewSessionName] = useState('');
+
+  // Get session name by ID
+  const getSessionName = (sessionId: string | undefined | null): string => {
+    if (!sessionId) return 'No session';
+    const session = sessions.find((s) => s.id === sessionId);
+    return session?.name || 'Unknown session';
+  };
+
+  // Get current filter label
+  const getFilterLabel = (): string => {
+    if (sessionFilter === 'all') {
+      return 'All sessions';
+    }
+    // For 'current' or specific session ID
+    const targetSessionId = sessionFilter === 'current' ? currentSessionId : sessionFilter;
+    return targetSessionId ? getSessionName(targetSessionId) : 'All sessions';
+  };
+
+  const handleCreateSession = async () => {
+    if (newSessionName.trim()) {
+      await createSession(newSessionName.trim());
+      setNewSessionName('');
+      setIsCreatingSession(false);
+      setIsSessionDropdownOpen(false);
+    }
+  };
 
   // Debounce semantic search
   const debouncedQuery = useDebounce(searchQuery, 300);
@@ -85,6 +124,7 @@ export function AllImagesTab() {
       promptTitle: string;
       indexInPrompt: number;
       isConcept: boolean;
+      sessionId?: string;
     }[] = [];
     for (const prompt of prompts) {
       prompt.images.forEach((image, index) => {
@@ -94,6 +134,7 @@ export function AllImagesTab() {
           promptTitle: prompt.title,
           indexInPrompt: index,
           isConcept: prompt.is_concept ?? false,
+          sessionId: prompt.session_id,
         });
       });
     }
@@ -111,6 +152,17 @@ export function AllImagesTab() {
     }
     return map;
   }, [allImages]);
+
+  // Helper to check if item matches session filter
+  const matchesSessionFilter = (item: { sessionId?: string }): boolean => {
+    if (sessionFilter === 'all') return true;
+    if (sessionFilter === 'current') {
+      // Match items with same session as current, or both null
+      return item.sessionId === currentSessionId;
+    }
+    // Specific session ID
+    return item.sessionId === sessionFilter;
+  };
 
   // Apply filters - different logic for semantic vs text search
   const filteredImages = useMemo(() => {
@@ -137,16 +189,20 @@ export function AllImagesTab() {
         }
       }
 
-      // Apply concept filter
+      // Apply concept filter and session filter
       return results.filter((item) => {
         if (conceptFilter === 'concepts' && !item.isConcept) return false;
         if (conceptFilter === 'non-concepts' && item.isConcept) return false;
+        if (!matchesSessionFilter(item)) return false;
         return true;
       });
     }
 
     // Text search mode - use local client-side filtering
     return allImages.filter((item) => {
+      // Session filter
+      if (!matchesSessionFilter(item)) return false;
+
       // Text search
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
@@ -164,7 +220,7 @@ export function AllImagesTab() {
 
       return true;
     });
-  }, [allImages, imageDataMap, searchQuery, conceptFilter, searchMode, semanticResults, similarToImageId]);
+  }, [allImages, imageDataMap, searchQuery, conceptFilter, searchMode, semanticResults, similarToImageId, sessionFilter, currentSessionId]);
 
   const isSelectMode = selectionMode === 'select';
 
@@ -202,7 +258,7 @@ export function AllImagesTab() {
     );
   }
 
-  const hasActiveFilters = searchQuery || conceptFilter !== 'all';
+  const hasActiveFilters = searchQuery || conceptFilter !== 'all' || sessionFilter !== 'current';
 
   return (
     <div className="flex flex-col h-full">
@@ -242,6 +298,133 @@ export function AllImagesTab() {
             {isSelectMode ? 'Done' : 'Select'}
           </Button>
         </div>
+      </div>
+
+      {/* Session filter dropdown */}
+      <div className="relative px-2 py-1.5 border-b border-border">
+        <button
+          onClick={() => setIsSessionDropdownOpen(!isSessionDropdownOpen)}
+          className={clsx(
+            'w-full flex items-center justify-between px-2.5 py-1.5 rounded-md',
+            'text-xs text-ink-secondary',
+            'hover:bg-canvas-subtle transition-colors',
+            isSessionDropdownOpen && 'bg-canvas-subtle'
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            <Folder size={12} className="text-ink-muted" />
+            <span>{getFilterLabel()}</span>
+          </div>
+          <ChevronDown
+            size={12}
+            className={clsx(
+              'text-ink-muted transition-transform duration-200',
+              isSessionDropdownOpen && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {isSessionDropdownOpen && (
+          <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-surface border border-border rounded-md shadow-lg py-1">
+            {/* All sessions */}
+            <button
+              onClick={() => {
+                setSessionFilter('all');
+                setIsSessionDropdownOpen(false);
+              }}
+              className={clsx(
+                'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                'hover:bg-canvas-subtle transition-colors',
+                sessionFilter === 'all' && 'text-brass font-medium'
+              )}
+            >
+              <span>All sessions</span>
+              {sessionFilter === 'all' && <span className="ml-auto text-brass">✓</span>}
+            </button>
+
+            {/* Divider if there are sessions */}
+            {sessions.length > 0 && <div className="h-px bg-border my-1" />}
+
+            {/* Individual sessions */}
+            {sessions.map((session) => {
+              const isSelected = sessionFilter === session.id ||
+                (sessionFilter === 'current' && currentSessionId === session.id);
+              return (
+                <button
+                  key={session.id}
+                  onClick={() => {
+                    setSessionFilter(session.id);
+                    setIsSessionDropdownOpen(false);
+                  }}
+                  className={clsx(
+                    'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                    'hover:bg-canvas-subtle transition-colors',
+                    isSelected && 'text-brass font-medium'
+                  )}
+                >
+                  <span className="truncate">{session.name}</span>
+                  {isSelected && <span className="ml-auto text-brass">✓</span>}
+                </button>
+              );
+            })}
+
+            {/* Divider before new session */}
+            <div className="h-px bg-border my-1" />
+
+            {/* New session */}
+            {isCreatingSession ? (
+              <div className="px-2 py-1.5 flex items-center gap-1">
+                <input
+                  type="text"
+                  value={newSessionName}
+                  onChange={(e) => setNewSessionName(e.target.value)}
+                  placeholder="Session name"
+                  autoFocus
+                  className={clsx(
+                    'flex-1 px-2 py-1 text-xs rounded',
+                    'bg-canvas-muted border border-transparent',
+                    'focus:outline-none focus:border-brass focus:bg-surface',
+                    'placeholder:text-ink-muted'
+                  )}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateSession();
+                    if (e.key === 'Escape') {
+                      setIsCreatingSession(false);
+                      setNewSessionName('');
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleCreateSession}
+                  disabled={!newSessionName.trim()}
+                  className="p-1 rounded text-success hover:bg-success/10 disabled:opacity-50"
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsCreatingSession(false);
+                    setNewSessionName('');
+                  }}
+                  className="p-1 rounded text-ink-muted hover:text-ink hover:bg-canvas-muted"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsCreatingSession(true)}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                  'text-ink-muted hover:bg-canvas-subtle hover:text-ink transition-colors'
+                )}
+              >
+                <Plus size={12} />
+                <span>New session</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Filter controls */}
@@ -365,6 +548,7 @@ export function AllImagesTab() {
                 onClick={() => {
                   setSearchQuery('');
                   setConceptFilter('all');
+                  setSessionFilter('current');
                 }}
                 className="text-xs text-brass hover:underline mt-1"
               >
@@ -454,6 +638,11 @@ export function AllImagesTab() {
         onFindSimilar={
           contextMenu
             ? () => findSimilar(contextMenu.imageId)
+            : undefined
+        }
+        onArchive={
+          contextMenu
+            ? () => archiveImage(contextMenu.imageId)
             : undefined
         }
         onDelete={

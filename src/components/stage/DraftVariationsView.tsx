@@ -40,7 +40,9 @@ export function DraftVariationsView({ draft }: DraftVariationsViewProps) {
   const generateFromDraft = useStore((s) => s.generateFromDraft);
   const deleteDraft = useStore((s) => s.deleteDraft);
   const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for context image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const streamingText = useStore((s) => s.streamingText);
 
   // Check if THIS draft is generating images

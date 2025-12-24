@@ -1,13 +1,15 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion } from 'framer-motion';
-import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, Archive } from 'lucide-react';
+import { Loader2, ImageIcon, Trash2, CheckSquare, Square, X, FileEdit, Sparkles, Plus, RotateCcw, Archive, ChevronDown, ExternalLink, Folder, Pencil, Check } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl } from '../../api';
 import { Button, ConfirmDialog } from '../ui';
 
 export function GenerationsTab() {
-  const generations = useStore((s) => s.generations);
+  // Use filtered generations for display (respects session filter)
+  const getFilteredGenerations = useStore((s) => s.getFilteredGenerations);
+  const generations = getFilteredGenerations();
   const pendingGenerations = useStore((s) => s.pendingGenerations);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const generatingImageDraftIds = useStore((s) => s.generatingImageDraftIds);
@@ -35,9 +37,25 @@ export function GenerationsTab() {
   const setReeditData = useStore((s) => s.setReeditData);
   const currentPendingId = useStore((s) => s.currentPendingId);
   const setCurrentPending = useStore((s) => s.setCurrentPending);
+  const sessions = useStore((s) => s.sessions);
+  const currentSessionId = useStore((s) => s.currentSessionId);
+  const sessionFilter = useStore((s) => s.sessionFilter);
+  const setSessionFilter = useStore((s) => s.setSessionFilter);
+  const switchSession = useStore((s) => s.switchSession);
+  const createSession = useStore((s) => s.createSession);
+  const renameSession = useStore((s) => s.renameSession);
+  const deleteSession = useStore((s) => s.deleteSession);
 
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [isSessionDropdownOpen, setIsSessionDropdownOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [newSessionName, setNewSessionName] = useState('');
+
+  // Session edit/delete state
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionName, setEditingSessionName] = useState('');
+  const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
 
   // Count concept images for the pinned Design Library entry
   const conceptCount = useMemo(() => {
@@ -57,12 +75,14 @@ export function GenerationsTab() {
     itemType: 'draft' | 'pending' | 'prompt';
     created_at: string;
     prompt?: string;
+    basePrompt?: string; // Original user input (for reedit)
     thumbnail?: string;
     variationCount?: number;
     isGenerating?: boolean; // Per-draft generating variations state
     isGeneratingImages?: boolean; // Per-draft generating images state
     imageIds?: string[]; // Image IDs for "Add to Context" action
     contextImageIds?: string[]; // Context image IDs used for generation
+    session_id?: string; // Session this generation belongs to
   };
 
   const allItems: PromptItem[] = [
@@ -74,6 +94,7 @@ export function GenerationsTab() {
       itemType: 'draft' as const,
       created_at: d.createdAt,
       prompt: d.basePrompt,
+      basePrompt: d.basePrompt,
       variationCount: d.variations.length,
       isGenerating: d.isGenerating,
       isGeneratingImages: generatingImageDraftIds.has(d.id),
@@ -97,12 +118,14 @@ export function GenerationsTab() {
         id: g.id,
         title: g.title,
         prompt: g.prompt,
+        basePrompt: g.basePrompt,
         count: g.images.length,
         itemType: 'prompt' as const,
         created_at: g.created_at,
         thumbnail: g.images[0]?.image_path,
         imageIds: g.images.map((img) => img.id),
         contextImageIds: g.context_image_ids,
+        session_id: g.session_id,
       })),
   ];
 
@@ -143,6 +166,32 @@ export function GenerationsTab() {
 
   // Show empty state only if no items AND no concept images
   const showEmptyState = allItems.length === 0 && conceptCount === 0;
+
+  // Get session name by ID
+  const getSessionName = (sessionId: string | undefined | null): string => {
+    if (!sessionId) return 'No session';
+    const session = sessions.find((s) => s.id === sessionId);
+    return session?.name || 'Unknown session';
+  };
+
+  // Get current filter label
+  const getFilterLabel = (): string => {
+    if (sessionFilter === 'all') {
+      return 'All sessions';
+    }
+    // For 'current' or specific session ID
+    const targetSessionId = sessionFilter === 'current' ? currentSessionId : sessionFilter;
+    return targetSessionId ? getSessionName(targetSessionId) : 'All sessions';
+  };
+
+  const handleCreateSession = async () => {
+    if (newSessionName.trim()) {
+      await createSession(newSessionName.trim());
+      setNewSessionName('');
+      setIsCreatingSession(false);
+      setIsSessionDropdownOpen(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -221,6 +270,206 @@ export function GenerationsTab() {
             >
               Select
             </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Session filter dropdown */}
+      <div className="relative px-2 py-1.5 border-b border-border">
+        <button
+          onClick={() => setIsSessionDropdownOpen(!isSessionDropdownOpen)}
+          className={clsx(
+            'w-full flex items-center justify-between px-2.5 py-1.5 rounded-md',
+            'text-xs text-ink-secondary',
+            'hover:bg-canvas-subtle transition-colors',
+            isSessionDropdownOpen && 'bg-canvas-subtle'
+          )}
+        >
+          <div className="flex items-center gap-1.5">
+            <Folder size={12} className="text-ink-muted" />
+            <span>{getFilterLabel()}</span>
+          </div>
+          <ChevronDown
+            size={12}
+            className={clsx(
+              'text-ink-muted transition-transform duration-200',
+              isSessionDropdownOpen && 'rotate-180'
+            )}
+          />
+        </button>
+
+        {isSessionDropdownOpen && (
+          <div className="absolute left-2 right-2 top-full mt-1 z-10 bg-surface border border-border rounded-md shadow-lg py-1">
+            {/* All sessions */}
+            <button
+              onClick={() => {
+                setSessionFilter('all');
+                setIsSessionDropdownOpen(false);
+              }}
+              className={clsx(
+                'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                'hover:bg-canvas-subtle transition-colors',
+                sessionFilter === 'all' && 'text-brass font-medium'
+              )}
+            >
+              <span>All sessions</span>
+              {sessionFilter === 'all' && <span className="ml-auto text-brass">✓</span>}
+            </button>
+
+            {/* Divider if there are sessions */}
+            {sessions.length > 0 && <div className="h-px bg-border my-1" />}
+
+            {/* Individual sessions */}
+            {sessions.map((session) => {
+              const isSelected = sessionFilter === session.id ||
+                (sessionFilter === 'current' && currentSessionId === session.id);
+              const isEditing = editingSessionId === session.id;
+
+              return (
+                <div
+                  key={session.id}
+                  className={clsx(
+                    'flex items-center gap-1 px-3 py-1.5',
+                    'hover:bg-canvas-subtle transition-colors',
+                    isSelected && 'text-brass font-medium'
+                  )}
+                >
+                  {isEditing ? (
+                    // Editing mode
+                    <div className="flex-1 flex items-center gap-1">
+                      <input
+                        type="text"
+                        value={editingSessionName}
+                        onChange={(e) => setEditingSessionName(e.target.value)}
+                        autoFocus
+                        className={clsx(
+                          'flex-1 px-2 py-0.5 text-xs rounded',
+                          'bg-canvas-muted border border-transparent',
+                          'focus:outline-none focus:border-brass focus:bg-surface'
+                        )}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && editingSessionName.trim()) {
+                            renameSession(session.id, editingSessionName.trim());
+                            setEditingSessionId(null);
+                          }
+                          if (e.key === 'Escape') {
+                            setEditingSessionId(null);
+                          }
+                        }}
+                      />
+                      <button
+                        onClick={() => {
+                          if (editingSessionName.trim()) {
+                            renameSession(session.id, editingSessionName.trim());
+                          }
+                          setEditingSessionId(null);
+                        }}
+                        className="p-1 rounded text-success hover:bg-success/10"
+                      >
+                        <Check size={12} />
+                      </button>
+                      <button
+                        onClick={() => setEditingSessionId(null)}
+                        className="p-1 rounded text-ink-muted hover:bg-canvas-muted"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ) : (
+                    // Normal mode
+                    <>
+                      <button
+                        onClick={() => {
+                          setSessionFilter(session.id);
+                          setIsSessionDropdownOpen(false);
+                        }}
+                        className="flex-1 flex items-center gap-2 text-xs text-left min-w-0"
+                      >
+                        <span className="truncate">{session.name}</span>
+                        {isSelected && <Check size={12} className="text-brass flex-shrink-0" />}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingSessionId(session.id);
+                          setEditingSessionName(session.name);
+                        }}
+                        className="p-1 rounded text-ink-muted hover:text-ink hover:bg-canvas-muted transition-colors"
+                        title="Rename session"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteSessionId(session.id);
+                        }}
+                        className="p-1 rounded text-ink-muted hover:text-error hover:bg-error/10 transition-colors"
+                        title="Delete session"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Divider before new session */}
+            <div className="h-px bg-border my-1" />
+
+            {/* New session */}
+            {isCreatingSession ? (
+              <div className="px-2 py-1.5 flex items-center gap-1">
+                <input
+                  type="text"
+                  value={newSessionName}
+                  onChange={(e) => setNewSessionName(e.target.value)}
+                  placeholder="Session name"
+                  autoFocus
+                  className={clsx(
+                    'flex-1 px-2 py-1 text-xs rounded',
+                    'bg-canvas-muted border border-transparent',
+                    'focus:outline-none focus:border-brass focus:bg-surface',
+                    'placeholder:text-ink-muted'
+                  )}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateSession();
+                    if (e.key === 'Escape') {
+                      setIsCreatingSession(false);
+                      setNewSessionName('');
+                    }
+                  }}
+                />
+                <button
+                  onClick={handleCreateSession}
+                  disabled={!newSessionName.trim()}
+                  className="p-1 rounded text-success hover:bg-success/10 disabled:opacity-50"
+                >
+                  <Plus size={14} />
+                </button>
+                <button
+                  onClick={() => {
+                    setIsCreatingSession(false);
+                    setNewSessionName('');
+                  }}
+                  className="p-1 rounded text-ink-muted hover:text-ink hover:bg-canvas-muted"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsCreatingSession(true)}
+                className={clsx(
+                  'w-full flex items-center gap-2 px-3 py-1.5 text-xs text-left',
+                  'text-ink-muted hover:bg-canvas-subtle hover:text-ink transition-colors'
+                )}
+              >
+                <Plus size={12} />
+                <span>New session</span>
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -322,7 +571,7 @@ export function GenerationsTab() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.02 }}
               className={clsx(
-                'group relative flex items-center gap-2 rounded-lg overflow-visible',
+                'group relative flex items-center gap-2 rounded-lg overflow-hidden',
                 'transition-all duration-150',
                 isPending && !isActive && 'shimmer',
                 isDraft && 'border border-dashed border-brass/40',
@@ -424,15 +673,23 @@ export function GenerationsTab() {
 
                   {/* Content */}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <h3
-                        className={clsx(
-                          'text-sm font-medium truncate',
-                          isActive ? 'text-ink' : 'text-ink-secondary'
-                        )}
-                      >
-                        {item.title}
-                      </h3>
+                    <h3
+                      className={clsx(
+                        'text-sm font-medium truncate',
+                        isActive ? 'text-ink' : 'text-ink-secondary'
+                      )}
+                    >
+                      {item.title}
+                    </h3>
+
+                    {item.prompt && (
+                      <p className="text-xs text-ink-muted truncate mt-0.5 font-[family-name:var(--font-mono)]">
+                        {item.prompt.slice(0, 50)}{item.prompt.length > 50 ? '...' : ''}
+                      </p>
+                    )}
+
+                    <div className="flex items-center gap-2 mt-1">
+                      {/* Count badge - positioned before date */}
                       <span
                         className={clsx(
                           'flex-shrink-0 text-[0.625rem] font-medium px-1.5 py-0.5 rounded',
@@ -445,74 +702,86 @@ export function GenerationsTab() {
                       >
                         {isDraft ? 'Draft' : item.count}
                       </span>
-                    </div>
-
-                    {item.prompt && (
-                      <p className="text-xs text-ink-muted truncate mt-0.5 font-[family-name:var(--font-mono)]">
-                        {item.prompt.slice(0, 50)}{item.prompt.length > 50 ? '...' : ''}
+                      <p className="text-[0.625rem] text-ink-muted">
+                        {isDraft
+                          ? item.isGeneratingImages
+                            ? 'Generating images...'
+                            : item.isGenerating
+                            ? 'Creating variations...'
+                            : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
+                          : isPending
+                          ? 'Generating...'
+                          : new Date(item.created_at).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              hour: 'numeric',
+                              minute: '2-digit',
+                            })}
                       </p>
-                    )}
-
-                    <p className="text-[0.625rem] text-ink-muted mt-1">
-                      {isDraft
-                        ? item.isGeneratingImages
-                          ? 'Generating images...'
-                          : item.isGenerating
-                          ? 'Creating variations...'
-                          : `${item.variationCount} variation${item.variationCount !== 1 ? 's' : ''}`
-                        : isPending
-                        ? 'Generating...'
-                        : new Date(item.created_at).toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            hour: 'numeric',
-                            minute: '2-digit',
-                          })}
-                    </p>
+                      {/* Session badge - show when viewing all sessions */}
+                      {sessionFilter === 'all' && isPrompt && item.session_id && (
+                        <span className="text-[0.5rem] px-1.5 py-0.5 rounded bg-canvas-muted text-ink-tertiary truncate max-w-[80px]">
+                          {getSessionName(item.session_id)}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               </button>
 
-              {/* Action buttons (prompts only, on hover) - in flex flow with opacity transition */}
+              {/* Action buttons (prompts only, on hover) - slide-out right edge */}
               {isPrompt && item.imageIds && item.imageIds.length > 0 && !isSelectionMode && (
-                <div className="flex-shrink-0 pr-2 self-center opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                  {/* Reedit button - loads prompt + context into Generate tab */}
-                  {item.prompt && item.contextImageIds && item.contextImageIds.length > 0 && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      leftIcon={<RotateCcw size={12} />}
+                <div className="absolute right-0 top-0 bottom-0 flex items-center opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0 transition-all duration-200">
+                  <div className="flex flex-col gap-0.5 py-1 px-1 bg-surface/95 rounded-l-md shadow-md border-l border-y border-border">
+                    {/* Go to session button - only show if viewing all sessions or a different session */}
+                    {item.session_id && item.session_id !== currentSessionId && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          switchSession(item.session_id!);
+                        }}
+                        title={`Go to ${getSessionName(item.session_id)}`}
+                        className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                      >
+                        <ExternalLink size={14} />
+                      </button>
+                    )}
+                    {/* Reedit button - loads base prompt + context into Generate tab */}
+                    {(item.basePrompt || item.prompt) && item.contextImageIds && item.contextImageIds.length > 0 && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setReeditData(item.basePrompt || item.prompt!, item.contextImageIds!);
+                          setRightTab('generate');
+                        }}
+                        title="Reedit"
+                        className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                      >
+                        <RotateCcw size={14} />
+                      </button>
+                    )}
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        setReeditData(item.prompt!, item.contextImageIds!);
+                        addContextImages(item.imageIds!);
                         setRightTab('generate');
                       }}
+                      title="Add to Context"
+                      className="p-1.5 rounded hover:bg-brass/20 text-brass hover:text-brass transition-colors"
                     >
-                      Reedit
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    leftIcon={<Plus size={12} />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      addContextImages(item.imageIds!);
-                      setRightTab('generate');
-                    }}
-                  >
-                    Add to Context
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    leftIcon={<Archive size={12} />}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      archiveGeneration(item.id);
-                    }}
-                    title="Archive"
-                  />
+                      <Plus size={14} />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        archiveGeneration(item.id);
+                      }}
+                      title="Archive"
+                      className="p-1.5 rounded hover:bg-canvas-subtle text-ink-muted hover:text-ink transition-colors"
+                    >
+                      <Archive size={14} />
+                    </button>
+                  </div>
                 </div>
               )}
             </motion.div>
@@ -527,6 +796,22 @@ export function GenerationsTab() {
         onConfirm={handleDeleteSelected}
         title="Delete Prompts"
         message={`Are you sure you want to delete ${selectedGenerationIds.size} prompt${selectedGenerationIds.size !== 1 ? 's' : ''} and all their images? This action cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+      />
+
+      {/* Delete session confirmation dialog */}
+      <ConfirmDialog
+        isOpen={!!deleteSessionId}
+        onClose={() => setDeleteSessionId(null)}
+        onConfirm={() => {
+          if (deleteSessionId) {
+            deleteSession(deleteSessionId, true);
+            setDeleteSessionId(null);
+          }
+        }}
+        title="Delete Session"
+        message="Are you sure you want to delete this session and all its generations? This action cannot be undone."
         confirmLabel="Delete"
         variant="danger"
       />

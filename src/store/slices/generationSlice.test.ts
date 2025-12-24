@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createGenerationSlice, type GenerationSlice } from './generationSlice'
+import { useStore } from '../index'
 
 describe('generationSlice', () => {
   let slice: GenerationSlice
@@ -195,4 +196,170 @@ describe('generationSlice', () => {
     })
   })
 
+})
+
+describe('reedit functionality (main store)', () => {
+  beforeEach(() => {
+    // Reset the store before each test
+    useStore.setState({
+      reeditPrompt: null,
+      reeditContextIds: null,
+      contextImageIds: [],
+    })
+  })
+
+  describe('initial state', () => {
+    it('has null reeditPrompt', () => {
+      expect(useStore.getState().reeditPrompt).toBeNull()
+    })
+
+    it('has null reeditContextIds', () => {
+      expect(useStore.getState().reeditContextIds).toBeNull()
+    })
+  })
+
+  describe('setReeditData', () => {
+    it('sets reedit prompt and context IDs', () => {
+      useStore.getState().setReeditData('Test prompt', ['ctx-1', 'ctx-2'])
+
+      expect(useStore.getState().reeditPrompt).toBe('Test prompt')
+      expect(useStore.getState().reeditContextIds).toEqual(['ctx-1', 'ctx-2'])
+    })
+
+    it('can set empty context IDs', () => {
+      useStore.getState().setReeditData('Test prompt', [])
+
+      expect(useStore.getState().reeditPrompt).toBe('Test prompt')
+      expect(useStore.getState().reeditContextIds).toEqual([])
+    })
+  })
+
+  describe('clearReeditData', () => {
+    it('clears reedit data', () => {
+      // First set some data
+      useStore.getState().setReeditData('Test prompt', ['ctx-1'])
+      expect(useStore.getState().reeditPrompt).toBe('Test prompt')
+
+      // Then clear it
+      useStore.getState().clearReeditData()
+
+      expect(useStore.getState().reeditPrompt).toBeNull()
+      expect(useStore.getState().reeditContextIds).toBeNull()
+    })
+  })
+})
+
+describe('archive functionality (main store)', () => {
+  beforeEach(() => {
+    // Reset the store before each test
+    useStore.setState({
+      archivedPrompts: [],
+      generations: [],
+    })
+  })
+
+  describe('initial state', () => {
+    it('has empty archivedPrompts', () => {
+      expect(useStore.getState().archivedPrompts).toEqual([])
+    })
+  })
+
+  describe('archivedPrompts state', () => {
+    it('can store archived prompts', () => {
+      const archivedPrompt = {
+        id: 'prompt-1',
+        prompt: 'Test prompt',
+        title: 'Test Title',
+        created_at: '2024-01-01T00:00:00Z',
+        archived: true,
+        images: [{ id: 'img-1', image_path: 'test.jpg' }],
+        context_image_ids: [],
+      }
+
+      useStore.setState({ archivedPrompts: [archivedPrompt] })
+
+      expect(useStore.getState().archivedPrompts).toHaveLength(1)
+      expect(useStore.getState().archivedPrompts[0].id).toBe('prompt-1')
+      expect(useStore.getState().archivedPrompts[0].archived).toBe(true)
+    })
+
+    it('can store multiple archived prompts', () => {
+      const archivedPrompts = [
+        {
+          id: 'prompt-1',
+          prompt: 'First prompt',
+          title: 'First',
+          created_at: '2024-01-01T00:00:00Z',
+          archived: true,
+          images: [{ id: 'img-1', image_path: 'test1.jpg' }],
+          context_image_ids: [],
+        },
+        {
+          id: 'prompt-2',
+          prompt: 'Second prompt',
+          title: 'Second',
+          created_at: '2024-01-02T00:00:00Z',
+          archived: true,
+          images: [{ id: 'img-2', image_path: 'test2.jpg' }],
+          context_image_ids: [],
+        },
+      ]
+
+      useStore.setState({ archivedPrompts })
+
+      expect(useStore.getState().archivedPrompts).toHaveLength(2)
+    })
+
+    it('archived prompts with individual archived images', () => {
+      const archivedPrompt = {
+        id: 'prompt-1',
+        prompt: 'Test prompt',
+        title: 'Test',
+        created_at: '2024-01-01T00:00:00Z',
+        archived: false, // Prompt not archived, but has archived images
+        images: [
+          { id: 'img-1', image_path: 'test1.jpg', archived: true },
+          { id: 'img-2', image_path: 'test2.jpg', archived: false },
+        ],
+        context_image_ids: [],
+      }
+
+      useStore.setState({ archivedPrompts: [archivedPrompt] })
+
+      const stored = useStore.getState().archivedPrompts[0]
+      expect(stored.archived).toBe(false)
+      expect(stored.images[0].archived).toBe(true)
+      expect(stored.images[1].archived).toBe(false)
+    })
+  })
+
+  describe('archive action types exist', () => {
+    it('has archiveImage action', () => {
+      expect(typeof useStore.getState().archiveImage).toBe('function')
+    })
+
+    it('has archiveGeneration action', () => {
+      expect(typeof useStore.getState().archiveGeneration).toBe('function')
+    })
+
+    it('has archiveSelectedImages action', () => {
+      expect(typeof useStore.getState().archiveSelectedImages).toBe('function')
+    })
+
+    it('has archiveSelectedGenerations action', () => {
+      expect(typeof useStore.getState().archiveSelectedGenerations).toBe('function')
+    })
+
+    it('has unarchiveImage action', () => {
+      expect(typeof useStore.getState().unarchiveImage).toBe('function')
+    })
+
+    it('has unarchiveGeneration action', () => {
+      expect(typeof useStore.getState().unarchiveGeneration).toBe('function')
+    })
+
+    it('has refreshArchived action', () => {
+      expect(typeof useStore.getState().refreshArchived).toBe('function')
+    })
+  })
 })

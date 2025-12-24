@@ -20,7 +20,9 @@ interface TokenDetailViewProps {
 }
 
 export function TokenDetailView({ token, onClose }: TokenDetailViewProps) {
-  const prompts = useStore((s) => s.generations);
+  // Use all generations (including archived) for image lookup
+  const getAllGenerations = useStore((s) => s.getAllGenerations);
+  const prompts = getAllGenerations();
   const setCurrentGenerationId = useStore((s) => s.setCurrentGeneration);
   const setCurrentImageIndex = useStore((s) => s.setCurrentImageIndex);
   const setViewMode = useStore((s) => s.setViewMode);
