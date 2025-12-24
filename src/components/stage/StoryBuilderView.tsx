@@ -18,6 +18,7 @@ import {
   Download,
   Lightbulb,
   RefreshCw,
+  ArrowLeft,
 } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, storySuggestChapters, storyRewriteNarrative } from '../../api';
@@ -38,6 +39,7 @@ export function StoryBuilderView({ story }: StoryBuilderViewProps) {
   const deleteChapter = useStore((s) => s.deleteChapter);
   const currentChapterId = useStore((s) => s.currentChapterId);
   const setCurrentChapter = useStore((s) => s.setCurrentChapter);
+  const setCurrentStory = useStore((s) => s.setCurrentStory);
 
   // For "Generate for Chapter" functionality
   const characters = useStore((s) => s.characters);
@@ -353,6 +355,14 @@ export function StoryBuilderView({ story }: StoryBuilderViewProps) {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface">
         <div className="flex items-center gap-3 min-w-0">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            tooltip="Exit story"
+            onClick={() => setCurrentStory(null)}
+          >
+            <ArrowLeft size={16} />
+          </IconButton>
           <BookOpen size={18} className="text-brass flex-shrink-0" />
           <div className="min-w-0">
             <h2 className="font-[family-name:var(--font-display)] text-base font-semibold text-ink truncate">
