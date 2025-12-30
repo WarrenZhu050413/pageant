@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Grid,
   Maximize2,
-  Square,
   Loader2,
   FileEdit,
   FolderOpen,
@@ -17,25 +16,23 @@ import { GridView } from './GridView';
 import { SelectionTray } from './SelectionTray';
 import { DraftVariationsView } from './DraftVariationsView';
 import { PromptVariationsView } from './PromptVariationsView';
-import { StoryBuilderView } from './StoryBuilderView';
 import { AllImagesGalleryView } from './AllImagesGalleryView';
 
 export function MainStage() {
   // Select primitive values and stable arrays to avoid infinite re-renders
   const generations = useStore((s) => s.generations);
   const collections = useStore((s) => s.collections);
-  const stories = useStore((s) => s.stories);
   const draftPrompts = useStore((s) => s.draftPrompts);
   const currentGenerationId = useStore((s) => s.currentGenerationId);
   const currentDraftId = useStore((s) => s.currentDraftId);
   const currentCollectionId = useStore((s) => s.currentCollectionId);
-  const currentStoryId = useStore((s) => s.currentStoryId);
   const isViewingAllImages = useStore((s) => s.isViewingAllImages);
   const currentImageIndex = useStore((s) => s.currentImageIndex);
   const viewMode = useStore((s) => s.viewMode);
   const setViewMode = useStore((s) => s.setViewMode);
   const selectionMode = useStore((s) => s.selectionMode);
   const setSelectionMode = useStore((s) => s.setSelectionMode);
+  const clearSelection = useStore((s) => s.clearSelection);
   const pendingGenerations = useStore((s) => s.pendingGenerations);
   const currentPendingId = useStore((s) => s.currentPendingId);
   const isGeneratingVariations = useStore((s) => s.isGeneratingVariations);
@@ -54,11 +51,6 @@ export function MainStage() {
   const currentCollection = useMemo(
     () => collections.find((c) => c.id === currentCollectionId) || null,
     [collections, currentCollectionId]
-  );
-
-  const currentStory = useMemo(
-    () => stories.find((s) => s.id === currentStoryId) || null,
-    [stories, currentStoryId]
   );
 
   const currentCollectionImages = useMemo(() => {
@@ -89,11 +81,6 @@ export function MainStage() {
   // Draft takes over full stage when present
   if (currentDraft) {
     return <DraftVariationsView draft={currentDraft} />;
-  }
-
-  // Story builder view takes over when a story is selected
-  if (currentStory) {
-    return <StoryBuilderView story={currentStory} />;
   }
 
   // All images gallery view
@@ -274,13 +261,17 @@ export function MainStage() {
           {/* Selection mode toggle */}
           <Button
             size="sm"
-            variant={selectionMode === 'select' ? 'brass' : 'secondary'}
-            leftIcon={<Square size={14} />}
-            onClick={() =>
-              setSelectionMode(selectionMode === 'select' ? 'none' : 'select')
-            }
+            variant={selectionMode === 'select' ? 'primary' : 'secondary'}
+            onClick={() => {
+              if (selectionMode === 'select') {
+                clearSelection();
+                setSelectionMode('none');
+              } else {
+                setSelectionMode('select');
+              }
+            }}
           >
-            Select (S)
+            {selectionMode === 'select' ? 'Done' : 'Select'}
           </Button>
         </div>
       </header>

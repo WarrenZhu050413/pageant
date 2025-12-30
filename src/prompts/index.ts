@@ -13,26 +13,6 @@ export { REFERENCE_TEMPLATE } from './templates/reference';
 export { CONCEPT_TEMPLATE, buildConceptPrompt } from './templates/concept';
 export type { ConceptPromptOptions } from './templates/concept';
 
-// Story context building for sequential generation
-export {
-  buildStoryChapterContext,
-  buildStoryNarrativeSection,
-  MAX_CONTEXT_IMAGES,
-} from './storyContext';
-export type {
-  StoryContextImage,
-  StoryContextResult,
-  BuildStoryContextOptions,
-} from './storyContext';
-
-// Design momentum for visual consistency across story chapters
-export {
-  aggregateStoryDesignInfo,
-  buildDesignMomentumPrompt,
-  createDefaultMomentum,
-} from './designMomentum';
-export type { AggregatedDesignInfo, AggregateDesignMomentumOptions } from './designMomentum';
-
 // Import for internal use
 import { VARIATION_TEMPLATE } from './templates/variation';
 import { REFERENCE_TEMPLATE } from './templates/reference';
@@ -63,30 +43,33 @@ export function buildPrompt(options: PromptBuildOptions): string {
   // Build title context
   let titleContext = '';
   if (title) {
-    titleContext = `USER-PROVIDED TITLE: "${title}"
-Use this title as context for your variations. You may refine it or use it as-is for the output title.`;
+    titleContext = `<user_title>
+"${title}"
+You may refine this title or use it as-is for the output.
+</user_title>`;
   }
 
   // Build context section
   let contextSection = '';
   if (contextImageCount > 0) {
+    // The image model (Nano Banana Pro / gemini-2.0-flash-preview-image-generation) can only use 14 images max
+    const maxImagesPerVariation = Math.min(14, contextImageCount);
     contextSection = `
-CONTEXT IMAGE POOL:
+<context_images>
 You have access to ${contextImageCount} reference images (shown below with their IDs and captions).
 
-CRITICAL: For EACH variation, SELECT 0-3 images that BEST match that specific variation.
-DO NOT include all ${contextImageCount} images - be selective!
+IMAGE MODEL CONSTRAINT: The image generation model can use at most 14 reference images per variation.
+${contextImageCount > 14 ? `You have ${contextImageCount} images available - select the ${maxImagesPerVariation} most appropriate ones per variation.` : ''}
 
-For EACH variation you generate:
-1. Review the pool and SELECT only 0-3 images that align with THIS specific variation
-2. Consider: Does the image's mood, style, composition, or color palette match THIS variation's intent?
-3. Put ONLY the selected image IDs in recommended_context_ids (leave empty if none are good matches)
-4. Explain your selection reasoning in context_reasoning
+For EACH variation:
+1. SELECT images that align with THIS specific variation (0-${maxImagesPerVariation} max)
+2. Consider: Does the image's mood, style, composition match THIS variation's intent?
+3. Put selected image IDs in recommended_context_ids (empty if none fit)
+4. Explain selection in context_reasoning
+5. IMPORTANT: Never recommend more than 14 images per variation (image model limit)
 
 Different variations SHOULD use different images. Not every variation needs context images.
-If an image doesn't enhance a particular variation, don't include it.
-
-If any image's caption is inadequate for generation context, suggest improvements in caption_suggestions.
+</context_images>
 `;
   }
 
@@ -97,29 +80,31 @@ If any image's caption is inadequate for generation context, suggest improvement
   let exploreSection = '';
   if (exploreRatio === 0) {
     exploreSection = `
-CRITICAL - VARIATION STYLE: FAITHFUL
-ALL ${count} scenes must faithfully interpret the prompt exactly as written.
-- DO NOT add unexpected elements, themes, or creative departures
-- DO NOT reinterpret or transform the core concept
-- Vary only technical aspects: lighting angles, camera positions, color grading
-- Keep the same subject, mood, and intent the user specified
-- Think of these as ${count} different "takes" of the same scene`;
+<variation_style>
+ALL ${count} scenes: FAITHFUL
+- Interpret the prompt exactly as written
+- Vary only technical aspects: lighting, camera, color grading
+- Same subject, mood, and intent
+- Think of these as ${count} different "takes" of the same scene
+</variation_style>`;
   } else if (exploreRatio === 100) {
     exploreSection = `
-CRITICAL - VARIATION STYLE: EXPLORATORY
-ALL ${count} scenes should explore unexpected creative directions.
+<variation_style>
+ALL ${count} scenes: EXPLORATORY
 - Push boundaries and surprise the user
 - Take artistic liberties with the prompt
 - Reinterpret the concept in unexpected ways
-- Vary subjects, moods, styles, and themes dramatically
-- Think of these as ${count} different "remixes" of the original idea`;
+- Think of these as ${count} different "remixes" of the original idea
+</variation_style>`;
   } else {
     exploreSection = `
-CRITICAL - VARIATION STYLE: MIXED
-- ${faithfulCount} scene(s): FAITHFUL - interpret the prompt exactly, vary only technical aspects (lighting, angle, color grading)
-- ${exploreCount} scene(s): EXPLORATORY - take creative liberties, reinterpret, surprise
+<variation_style>
+MIXED APPROACH:
+- ${faithfulCount} scene(s) FAITHFUL: interpret exactly, vary only technical aspects
+- ${exploreCount} scene(s) EXPLORATORY: creative liberties, reinterpret, surprise
 
-Clearly distinguish between faithful takes and exploratory remixes in your ${count} variations.`;
+Clearly distinguish faithful takes vs exploratory remixes.
+</variation_style>`;
   }
 
   // Substitute placeholders

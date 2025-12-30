@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, FolderPlus, Trash2, CheckSquare, Square, Download, Plus, User } from 'lucide-react';
+import { X, FolderPlus, Trash2, CheckSquare, Square, Download, Plus } from 'lucide-react';
 import { useStore } from '../../store';
 import { getImageUrl, batchDownload } from '../../api';
-import { Button, Dialog, IconButton, CollectionDialog, CharacterDialog } from '../ui';
+import { Button, Dialog, IconButton, CollectionDialog } from '../ui';
 import { DEFAULT_MAX_CONTEXT_IMAGES } from '../../types';
 
 export function SelectionTray() {
@@ -52,7 +52,6 @@ export function SelectionTray() {
   const contextImageIds = useStore((s) => s.contextImageIds);
 
   const [isCollectionDialogOpen, setIsCollectionDialogOpen] = useState(false);
-  const [isCharacterDialogOpen, setIsCharacterDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -101,11 +100,6 @@ export function SelectionTray() {
   };
 
   const handleCollectionDialogSuccess = () => {
-    clearSelection();
-    setSelectionMode('none');
-  };
-
-  const handleCharacterDialogSuccess = () => {
     clearSelection();
     setSelectionMode('none');
   };
@@ -233,14 +227,6 @@ export function SelectionTray() {
           <Button
             variant="secondary"
             size="sm"
-            leftIcon={<User size={14} />}
-            onClick={() => setIsCharacterDialogOpen(true)}
-          >
-            Create Character
-          </Button>
-          <Button
-            variant="secondary"
-            size="sm"
             leftIcon={<Download size={14} />}
             onClick={handleDownload}
             disabled={isDownloading}
@@ -265,14 +251,6 @@ export function SelectionTray() {
         onClose={() => setIsCollectionDialogOpen(false)}
         imageIds={Array.from(selectedIds)}
         onSuccess={handleCollectionDialogSuccess}
-      />
-
-      {/* Character dialog */}
-      <CharacterDialog
-        isOpen={isCharacterDialogOpen}
-        onClose={() => setIsCharacterDialogOpen(false)}
-        imageIds={Array.from(selectedIds)}
-        onSuccess={handleCharacterDialogSuccess}
       />
 
       {/* Delete confirmation dialog */}

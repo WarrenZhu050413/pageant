@@ -110,6 +110,8 @@ export interface ImageData {
   variation_type?: string;
   notes?: string;
   annotation?: string;  // User annotation for AI context (free text)
+  // Context images used for THIS specific image generation (per-variation)
+  context_image_ids?: string[];
   // Design dimension system - Rich AI analysis per axis
   design_dimensions?: Record<string, DesignDimension>;  // axis -> dimension with tags, description, etc.
   liked_axes?: LikedAxes;  // User's liked tags per axis
@@ -141,8 +143,6 @@ export interface Generation {
   is_concept?: boolean;      // True if this is a concept image (design token)
   concept_axis?: string;     // Which axis this concept represents (e.g., "lighting")
   source_image_id?: string;  // Image ID the concept was derived from
-  // Character references used in this generation
-  character_ids?: string[];
 }
 
 // Legacy alias - Backend uses "Prompt", frontend uses "Generation"
@@ -220,57 +220,6 @@ export interface Collection {
   image_ids: string[];
   thumbnail_id?: string;
   created_at: string;
-}
-
-// Character Reference - for consistent character appearance across generations
-export interface CharacterReferenceImage {
-  image_id: string;
-  annotation?: string;  // Per-image annotation, e.g., "front view", "full body"
-}
-
-export interface CharacterReference {
-  id: string;
-  name: string;  // e.g., "Luna", "The Old Wizard"
-  description?: string;  // User-provided character description
-  reference_images: CharacterReferenceImage[];
-  created_at: string;
-  updated_at: string;
-}
-
-// Story & Chapter - for sequential narrative generation
-export type ChapterLayout = 'text_above' | 'text_below' | 'text_left' | 'text_right' | 'image_only';
-
-export interface Chapter {
-  id: string;
-  title: string;
-  text: string;  // Narrative text
-  image_ids: string[];  // Images for this chapter
-  layout: ChapterLayout;
-}
-
-/**
- * Design momentum - aggregated design preferences for a story
- * Tracks which visual elements should carry forward across chapters
- */
-export interface StoryDesignMomentum {
-  // Locked design dimensions (axis -> dimension name) that should persist
-  locked_dimensions?: Record<string, string>;
-  // Aggregated liked tags from chapter images
-  aggregated_liked_axes?: LikedAxes;
-  // Style instructions that apply to all chapters
-  style_prompt?: string;
-}
-
-export interface Story {
-  id: string;
-  title: string;
-  description?: string;
-  chapters: Chapter[];  // Ordered array (position = index)
-  character_ids: string[];  // Characters in this story
-  // Design momentum - visual consistency settings
-  design_momentum?: StoryDesignMomentum;
-  created_at: string;
-  updated_at: string;
 }
 
 // Image generation parameter options
@@ -441,7 +390,7 @@ export interface UploadResponse {
 
 // UI State types
 export type ViewMode = 'single' | 'grid';
-export type LeftTab = 'generations' | 'collections' | 'all-images' | 'characters' | 'stories';
+export type LeftTab = 'generations' | 'collections' | 'all-images';
 export type GenerationFilter = 'all' | 'active' | 'hidden';
 export type RightTab = 'generate' | 'settings' | 'import';
 export type SelectionMode = 'none' | 'select';

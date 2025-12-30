@@ -26,6 +26,10 @@ import type {
   CreateTokenRequest,
   CreateTokenResponse,
   GenerateTokenConceptResponse,
+  DraftPrompt,
+  PromptVariation,
+  ImageGenerationParams,
+  AnnotationSuggestion,
 } from '../types';
 import {
   request,
@@ -108,45 +112,67 @@ function extractCompleteScenesFromPartialJson(
   // Extract content after the array start
   const afterArrayStart = accumulatedText.slice(arrayStart + 1);
 
-  // Use bracket counting to find complete objects
+  // Use bracket counting to find complete objects, properly handling strings
   let depth = 0;
   let objectStart = -1;
   let sceneIndex = 0;
+  let inString = false;
+  let escapeNext = false;
 
   for (let i = 0; i < afterArrayStart.length; i++) {
     const char = afterArrayStart[i];
 
-    if (char === '{') {
-      if (depth === 0) {
-        objectStart = i;
-      }
-      depth++;
-    } else if (char === '}') {
-      depth--;
-      if (depth === 0 && objectStart !== -1) {
-        // Found a complete object
-        if (sceneIndex >= alreadyParsedCount) {
-          const objectStr = afterArrayStart.slice(objectStart, i + 1);
-          try {
-            const scene = JSON.parse(objectStr);
-            // Convert backend schema to frontend schema
-            scenes.push({
-              id: scene.id || String(sceneIndex + 1),
-              text: scene.description || '',
-              title: scene.title || '',
-              mood: scene.mood || '',
-              type: scene.type || '',
-              design: scene.design || {},
-              design_dimensions: scene.design_dimensions || [],
-              recommended_context_ids: scene.recommended_context_ids || [],
-              context_reasoning: scene.context_reasoning || '',
-            });
-          } catch {
-            // Incomplete or malformed JSON, skip
-          }
+    // Handle escape sequences inside strings
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+
+    // Toggle string mode on unescaped quotes
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    // Only count braces when NOT inside a string
+    if (!inString) {
+      if (char === '{') {
+        if (depth === 0) {
+          objectStart = i;
         }
-        sceneIndex++;
-        objectStart = -1;
+        depth++;
+      } else if (char === '}') {
+        depth--;
+        if (depth === 0 && objectStart !== -1) {
+          // Found a complete object
+          if (sceneIndex >= alreadyParsedCount) {
+            const objectStr = afterArrayStart.slice(objectStart, i + 1);
+            try {
+              const scene = JSON.parse(objectStr);
+              // Convert backend schema to frontend schema
+              scenes.push({
+                id: scene.id || String(sceneIndex + 1),
+                text: scene.description || '',
+                title: scene.title || '',
+                mood: scene.mood || '',
+                type: scene.type || '',
+                design: scene.design || {},
+                design_dimensions: scene.design_dimensions || [],
+                recommended_context_ids: scene.recommended_context_ids || [],
+                context_reasoning: scene.context_reasoning || '',
+              });
+            } catch {
+              // Incomplete or malformed JSON, skip
+            }
+          }
+          sceneIndex++;
+          objectStart = -1;
+        }
       }
     }
   }
@@ -157,16 +183,16 @@ function extractCompleteScenesFromPartialJson(
 export async function* generatePromptVariationsStream(
   data: GeneratePromptsRequest
 ): AsyncGenerator<StreamEvent> {
-  // Frontend sends the complete prompt (includes template + user input)
-  const params = new URLSearchParams({
-    prompt: data.prompt,
-    count: String(data.count || 4),
+  // Use POST with JSON body to avoid URL length limits (431 errors)
+  const response = await fetch('/api/generate-prompts/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt: data.prompt,
+      count: data.count || 4,
+      context_image_ids: data.context_image_ids || [],
+    }),
   });
-  if (data.context_image_ids?.length) {
-    params.append('context_image_ids', data.context_image_ids.join(','));
-  }
-
-  const response = await fetch(`/api/generate-prompts/stream?${params}`);
 
   if (!response.ok) {
     yield { type: 'error', error: `HTTP ${response.status}` };
@@ -770,142 +796,6 @@ export async function peOptimizePrompt(
 }
 
 // =============================================================================
-// Character Creation Assistant
-// =============================================================================
-
-export interface CharacterOption {
-  label: string;
-  description: string;
-}
-
-export interface CharacterQuestion {
-  question: string;
-  header: string;
-  options: CharacterOption[];
-  multiSelect: boolean;
-}
-
-export interface CharacterQuestionsRequest {
-  image_ids: string[];
-  name?: string;
-  description?: string;
-}
-
-export interface CharacterQuestionsResponse {
-  success: boolean;
-  questions: CharacterQuestion[];
-  suggested_name?: string;
-  error?: string;
-}
-
-export interface CharacterDescribeRequest {
-  image_ids: string[];
-  name: string;
-  questions: CharacterQuestion[];
-  answers: Record<string, string | string[]>;
-  initial_description?: string;
-}
-
-export interface CharacterDescribeResponse {
-  success: boolean;
-  description: string;
-  summary: Record<string, string>;
-  error?: string;
-}
-
-/**
- * Generate clarifying questions for character creation.
- * Analyzes reference images to suggest targeted questions.
- */
-export async function characterGenerateQuestions(
-  data: CharacterQuestionsRequest
-): Promise<CharacterQuestionsResponse> {
-  return request<CharacterQuestionsResponse>('/character/questions', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-/**
- * Generate a character description based on images and Q&A.
- */
-export async function characterGenerateDescription(
-  data: CharacterDescribeRequest
-): Promise<CharacterDescribeResponse> {
-  return request<CharacterDescribeResponse>('/character/describe', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-// =============================================================================
-// Story Writing Assistant API
-// =============================================================================
-
-export interface StoryChapter {
-  title: string;
-  text: string;
-}
-
-export interface SuggestChaptersRequest {
-  story_title: string;
-  story_description?: string;
-  existing_chapters: StoryChapter[];
-  character_names: string[];
-  num_suggestions?: number;
-}
-
-export interface ChapterSuggestion {
-  title: string;
-  narrative: string;
-  rationale: string;
-}
-
-export interface SuggestChaptersResponse {
-  success: boolean;
-  suggestions: ChapterSuggestion[];
-  error?: string;
-}
-
-export interface RewriteNarrativeRequest {
-  narrative: string;
-  chapter_title?: string;
-  story_context?: string;
-  instruction?: string;
-}
-
-export interface RewriteNarrativeResponse {
-  success: boolean;
-  narrative?: string;
-  changes_summary?: string;
-  error?: string;
-}
-
-/**
- * Get AI suggestions for next chapters based on story context.
- */
-export async function storySuggestChapters(
-  data: SuggestChaptersRequest
-): Promise<SuggestChaptersResponse> {
-  return request<SuggestChaptersResponse>('/story/suggest-chapters', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-/**
- * Rewrite/improve a chapter narrative for visual storytelling.
- */
-export async function storyRewriteNarrative(
-  data: RewriteNarrativeRequest
-): Promise<RewriteNarrativeResponse> {
-  return request<RewriteNarrativeResponse>('/story/rewrite-narrative', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-}
-
-// =============================================================================
 // Image Analysis & Enhancement (for uploaded images)
 // =============================================================================
 
@@ -991,5 +881,136 @@ export async function enhanceImages(
     method: 'POST',
     body: JSON.stringify({ image_ids: imageIds }),
   });
+}
+
+// =============================================================================
+// Draft Prompts (Server-side persistence)
+// =============================================================================
+
+// Transform draft variation from API snake_case to frontend camelCase
+function transformDraftVariation(v: PromptVariation & {
+  recommended_context_ids?: string[];
+  context_reasoning?: string;
+  user_notes?: string;
+  is_edited?: boolean;
+  emphasized_tags?: string[];
+  design_dimensions?: PromptVariation['design_dimensions'];
+}): PromptVariation {
+  return {
+    id: v.id,
+    text: v.text,
+    title: v.title,
+    mood: v.mood,
+    type: v.type,
+    design: v.design,
+    design_dimensions: v.design_dimensions,
+    recommended_context_ids: v.recommended_context_ids,
+    context_reasoning: v.context_reasoning,
+    userNotes: v.user_notes || v.userNotes,
+    isEdited: v.is_edited ?? v.isEdited,
+    emphasizedTags: v.emphasized_tags || v.emphasizedTags,
+  };
+}
+
+// Transform draft from API snake_case to frontend camelCase
+function transformDraft(draft: DraftPrompt & {
+  base_prompt?: string;
+  created_at?: string;
+  image_params?: ImageGenerationParams;
+  context_image_ids?: string[];
+  annotation_suggestions?: AnnotationSuggestion[];
+  is_generating?: boolean;
+  auto_generate?: boolean;
+  explore_ratio?: number;
+}): DraftPrompt {
+  return {
+    id: draft.id,
+    basePrompt: draft.base_prompt || draft.basePrompt,
+    title: draft.title,
+    variations: (draft.variations || []).map(transformDraftVariation),
+    createdAt: draft.created_at || draft.createdAt,
+    imageParams: draft.image_params || draft.imageParams,
+    contextImageIds: draft.context_image_ids || draft.contextImageIds,
+    annotationSuggestions: draft.annotation_suggestions || draft.annotationSuggestions,
+    isGenerating: draft.is_generating ?? draft.isGenerating,
+    autoGenerate: draft.auto_generate ?? draft.autoGenerate,
+    exploreRatio: draft.explore_ratio ?? draft.exploreRatio,
+  };
+}
+
+// Transform draft to API snake_case for sending
+function toDraftApiFormat(draft: Partial<DraftPrompt>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+
+  if (draft.basePrompt !== undefined) result.base_prompt = draft.basePrompt;
+  if (draft.title !== undefined) result.title = draft.title;
+  if (draft.createdAt !== undefined) result.created_at = draft.createdAt;
+  if (draft.imageParams !== undefined) result.image_params = draft.imageParams;
+  if (draft.contextImageIds !== undefined) result.context_image_ids = draft.contextImageIds;
+  if (draft.annotationSuggestions !== undefined) result.annotation_suggestions = draft.annotationSuggestions;
+  if (draft.isGenerating !== undefined) result.is_generating = draft.isGenerating;
+  if (draft.autoGenerate !== undefined) result.auto_generate = draft.autoGenerate;
+  if (draft.exploreRatio !== undefined) result.explore_ratio = draft.exploreRatio;
+
+  if (draft.variations !== undefined) {
+    result.variations = draft.variations.map(v => ({
+      id: v.id,
+      text: v.text,
+      title: v.title,
+      mood: v.mood,
+      type: v.type,
+      design: v.design,
+      design_dimensions: v.design_dimensions,
+      recommended_context_ids: v.recommended_context_ids,
+      context_reasoning: v.context_reasoning,
+      user_notes: v.userNotes,
+      is_edited: v.isEdited,
+      emphasized_tags: v.emphasizedTags,
+    }));
+  }
+
+  return result;
+}
+
+/**
+ * Fetch all drafts from server.
+ */
+export async function fetchDrafts(): Promise<DraftPrompt[]> {
+  const response = await request<{ drafts: DraftPrompt[] }>('/drafts');
+  return (response.drafts || []).map(transformDraft);
+}
+
+/**
+ * Create a new draft on server.
+ */
+export async function createDraft(
+  draft: Omit<DraftPrompt, 'id'>
+): Promise<DraftPrompt> {
+  const response = await request<{ draft: DraftPrompt }>('/drafts', {
+    method: 'POST',
+    body: JSON.stringify(toDraftApiFormat(draft)),
+  });
+  return transformDraft(response.draft);
+}
+
+/**
+ * Update an existing draft on server.
+ */
+export async function updateDraft(
+  id: string,
+  draft: Partial<DraftPrompt>
+): Promise<DraftPrompt> {
+  const response = await request<{ draft: DraftPrompt }>(`/drafts/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(toDraftApiFormat(draft)),
+  });
+  return transformDraft(response.draft);
+}
+
+/**
+ * Delete a draft from server.
+ */
+export async function deleteDraft(id: string): Promise<void> {
+  await request(`/drafts/${id}`, { method: 'DELETE' });
 }
 

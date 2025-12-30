@@ -116,13 +116,6 @@ gemini = GeminiService(api_key=config.get_gemini_api_key())
 # Initialize Prompt Engineering service
 pe_service = PromptEngineeringService(api_key=config.get_gemini_api_key())
 
-# Initialize Character Assistant service
-from character_assistant import CharacterAssistantService
-character_service = CharacterAssistantService(api_key=config.get_gemini_api_key())
-
-# Initialize Story Assistant service
-from story_assistant import StoryAssistantService
-story_assistant = StoryAssistantService(api_key=config.get_gemini_api_key())
 
 
 # Image generation parameter options (matching frontend)
@@ -258,6 +251,44 @@ class SessionUpdateRequest(BaseModel):
     notes: str | None = None
 
 
+# Draft models - for server-side draft persistence
+class DraftVariation(BaseModel):
+    id: str
+    text: str
+    title: str | None = None
+    mood: str = ""
+    type: str = ""
+    design: dict[str, list[str]] | None = None
+    design_dimensions: list[dict] | None = None
+    recommended_context_ids: list[str] | None = None
+    context_reasoning: str | None = None
+    user_notes: str | None = None
+    is_edited: bool | None = None
+    emphasized_tags: list[str] | None = None
+
+
+class DraftRequest(BaseModel):
+    base_prompt: str
+    title: str = ""
+    variations: list[DraftVariation] = []
+    image_params: dict | None = None
+    context_image_ids: list[str] | None = None
+    annotation_suggestions: list[dict] | None = None
+    auto_generate: bool | None = None
+    explore_ratio: int | None = None
+
+
+class DraftUpdateRequest(BaseModel):
+    base_prompt: str | None = None
+    title: str | None = None
+    variations: list[DraftVariation] | None = None
+    image_params: dict | None = None
+    context_image_ids: list[str] | None = None
+    annotation_suggestions: list[dict] | None = None
+    auto_generate: bool | None = None
+    explore_ratio: int | None = None
+
+
 class PromptResponse(BaseModel):
     success: bool
     prompt_id: str | None = None
@@ -303,55 +334,6 @@ class CollectionUpdateRequest(BaseModel):
 
 class CollectionImagesRequest(BaseModel):
     image_ids: list[str]
-
-
-# === Stories ===
-class CreateStoryRequest(BaseModel):
-    title: str
-    description: str = ""
-
-
-class StoryDesignMomentum(BaseModel):
-    """Design momentum for visual consistency across story chapters."""
-    locked_dimensions: dict[str, str] | None = None
-    aggregated_liked_axes: dict[str, list[str]] | None = None
-    style_prompt: str | None = None
-
-
-class UpdateStoryRequest(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    character_ids: list[str] | None = None
-    design_momentum: StoryDesignMomentum | None = None
-
-
-class ChapterRequest(BaseModel):
-    title: str = ""
-    text: str = ""
-    image_ids: list[str] = []
-    layout: str = "text_below"
-
-
-class ReorderChaptersRequest(BaseModel):
-    chapter_ids: list[str]
-
-
-# === Characters ===
-class CharacterReferenceImageRequest(BaseModel):
-    image_id: str
-    annotation: str | None = None
-
-
-class CreateCharacterRequest(BaseModel):
-    name: str
-    description: str | None = None
-    reference_images: list[CharacterReferenceImageRequest] = []
-
-
-class UpdateCharacterRequest(BaseModel):
-    name: str | None = None
-    description: str | None = None
-    reference_images: list[CharacterReferenceImageRequest] | None = None
 
 
 # === Settings ===
@@ -672,12 +654,14 @@ def _load_context_image_pool(metadata: dict, image_ids: list[str]) -> list[tuple
 # TWO-PHASE GENERATION: Prompt Variations → Image Generation
 # ============================================================
 
-@app.get("/api/generate-prompts/stream")
-async def generate_prompt_variations_stream(
-    prompt: str,
-    count: int = 4,
-    context_image_ids: str | None = None,  # Comma-separated IDs
-):
+class GeneratePromptsStreamRequest(BaseModel):
+    prompt: str
+    count: int = 4
+    context_image_ids: list[str] | None = None
+
+
+@app.post("/api/generate-prompts/stream")
+async def generate_prompt_variations_stream(request: GeneratePromptsStreamRequest):
     """Stream prompt variation generation via Server-Sent Events.
 
     Frontend sends the complete prompt (including template text).
@@ -688,14 +672,12 @@ async def generate_prompt_variations_stream(
     - {"type": "complete", "variations": [...], ...} - Final parsed result
     - {"type": "error", "error": "..."} - Error message
     """
-    count = min(max(1, count), 10)
+    prompt = request.prompt
+    count = min(max(1, request.count), 10)
+    image_ids = request.context_image_ids or []
 
-    # Parse context_image_ids from comma-separated string
-    image_ids = []
-    if context_image_ids:
-        image_ids = [id.strip() for id in context_image_ids.split(",") if id.strip()]
-
-    logger.info(f"[SSE] Generate prompts stream: count={count}, prompt='{prompt[:50]}...', context_images={len(image_ids)}")
+    logger.info(f"[SSE] Generate prompts stream: count={count}, context_images={len(image_ids)}")
+    logger.info(f"[SSE] Full prompt:\n{prompt}")
 
     # Load context images as a pool with IDs
     metadata = load_metadata()
@@ -997,6 +979,10 @@ async def generate_images_from_prompts(req: GenerateFromPromptsRequest):
                         result["design_dimensions"] = {
                             dim["axis"]: dim for dim in dims_list
                         }
+                # Store per-image context_image_ids (actual images used for this variation)
+                per_var_context = req.prompts[i].get("recommended_context_ids", [])
+                if per_var_context:
+                    result["context_image_ids"] = per_var_context
             images.append(result)
         else:
             errors.append(f"#{result.get('index', '?')}: {result.get('error', 'Unknown error')}")
@@ -2803,293 +2789,6 @@ async def delete_collection(collection_id: str):
     raise HTTPException(status_code=404, detail="Collection not found")
 
 
-# === Story CRUD Endpoints ===
-
-@app.post("/api/stories")
-async def create_story(req: CreateStoryRequest):
-    """Create a new story."""
-    metadata = load_metadata()
-
-    # Ensure stories array exists
-    if "stories" not in metadata:
-        metadata["stories"] = []
-
-    story_id = f"story-{uuid.uuid4().hex[:8]}"
-    now = datetime.now().isoformat()
-
-    story = {
-        "id": story_id,
-        "title": req.title,
-        "description": req.description,
-        "chapters": [],
-        "created_at": now,
-        "updated_at": now,
-    }
-
-    metadata["stories"].append(story)
-    save_metadata(metadata)
-
-    return story
-
-
-@app.get("/api/stories")
-async def list_stories():
-    """List all stories."""
-    metadata = load_metadata()
-    return {"stories": metadata.get("stories", [])}
-
-
-@app.get("/api/stories/{story_id}")
-async def get_story(story_id: str):
-    """Get a specific story."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            return story
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.put("/api/stories/{story_id}")
-async def update_story(story_id: str, req: UpdateStoryRequest):
-    """Update story metadata."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            if req.title is not None:
-                story["title"] = req.title
-            if req.description is not None:
-                story["description"] = req.description
-            if req.character_ids is not None:
-                story["character_ids"] = req.character_ids
-            if req.design_momentum is not None:
-                story["design_momentum"] = req.design_momentum.model_dump(exclude_none=True)
-            story["updated_at"] = datetime.now().isoformat()
-
-            save_metadata(metadata)
-            return story
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.delete("/api/stories/{story_id}")
-async def delete_story(story_id: str):
-    """Delete a story."""
-    metadata = load_metadata()
-    stories = metadata.get("stories", [])
-
-    for i, story in enumerate(stories):
-        if story["id"] == story_id:
-            stories.pop(i)
-            save_metadata(metadata)
-            return {"success": True, "deleted_id": story_id}
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.post("/api/stories/{story_id}/chapters")
-async def add_chapter(story_id: str, req: ChapterRequest):
-    """Add a chapter to a story."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            chapter_id = f"ch-{uuid.uuid4().hex[:8]}"
-            sequence = len(story["chapters"]) + 1
-
-            chapter = {
-                "id": chapter_id,
-                "title": req.title,
-                "text": req.text,
-                "image_ids": req.image_ids,
-                "layout": req.layout,
-                "sequence": sequence,
-            }
-
-            story["chapters"].append(chapter)
-            story["updated_at"] = datetime.now().isoformat()
-            save_metadata(metadata)
-
-            return story
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.put("/api/stories/{story_id}/chapters/{chapter_id}")
-async def update_chapter(story_id: str, chapter_id: str, req: ChapterRequest):
-    """Update a chapter."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            for chapter in story["chapters"]:
-                if chapter["id"] == chapter_id:
-                    if req.title:
-                        chapter["title"] = req.title
-                    if req.text:
-                        chapter["text"] = req.text
-                    if req.image_ids:
-                        chapter["image_ids"] = req.image_ids
-                    if req.layout:
-                        chapter["layout"] = req.layout
-
-                    story["updated_at"] = datetime.now().isoformat()
-                    save_metadata(metadata)
-                    return story
-
-            raise HTTPException(status_code=404, detail="Chapter not found")
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.delete("/api/stories/{story_id}/chapters/{chapter_id}")
-async def delete_chapter(story_id: str, chapter_id: str):
-    """Delete a chapter from a story."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            chapters = story["chapters"]
-            for i, chapter in enumerate(chapters):
-                if chapter["id"] == chapter_id:
-                    chapters.pop(i)
-                    # Resequence remaining chapters
-                    for j, ch in enumerate(chapters):
-                        ch["sequence"] = j + 1
-                    story["updated_at"] = datetime.now().isoformat()
-                    save_metadata(metadata)
-                    return story
-
-            raise HTTPException(status_code=404, detail="Chapter not found")
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-@app.post("/api/stories/{story_id}/chapters/reorder")
-async def reorder_chapters(story_id: str, req: ReorderChaptersRequest):
-    """Reorder chapters in a story."""
-    metadata = load_metadata()
-
-    for story in metadata.get("stories", []):
-        if story["id"] == story_id:
-            # Create a map of chapter_id -> chapter
-            chapter_map = {ch["id"]: ch for ch in story["chapters"]}
-
-            # Verify all IDs are valid
-            for ch_id in req.chapter_ids:
-                if ch_id not in chapter_map:
-                    raise HTTPException(
-                        status_code=400,
-                        detail=f"Chapter {ch_id} not found in story",
-                    )
-
-            # Reorder chapters
-            new_chapters = []
-            for i, ch_id in enumerate(req.chapter_ids):
-                ch = chapter_map[ch_id]
-                ch["sequence"] = i + 1
-                new_chapters.append(ch)
-
-            story["chapters"] = new_chapters
-            story["updated_at"] = datetime.now().isoformat()
-            save_metadata(metadata)
-
-            return story
-
-    raise HTTPException(status_code=404, detail="Story not found")
-
-
-# ============================================================
-# FEATURE 5B: Character References
-# ============================================================
-
-
-@app.post("/api/characters")
-async def create_character(req: CreateCharacterRequest):
-    """Create a new character reference."""
-    metadata = load_metadata()
-
-    if "characters" not in metadata:
-        metadata["characters"] = []
-
-    now = datetime.now().isoformat()
-    character = {
-        "id": f"char-{uuid.uuid4().hex[:8]}",
-        "name": req.name,
-        "description": req.description or "",
-        "reference_images": [
-            {"image_id": img.image_id, "annotation": img.annotation}
-            for img in req.reference_images
-        ],
-        "created_at": now,
-        "updated_at": now,
-    }
-
-    metadata["characters"].append(character)
-    save_metadata(metadata)
-
-    return character
-
-
-@app.get("/api/characters")
-async def list_characters():
-    """List all characters."""
-    metadata = load_metadata()
-    return {"characters": metadata.get("characters", [])}
-
-
-@app.get("/api/characters/{character_id}")
-async def get_character(character_id: str):
-    """Get a specific character."""
-    metadata = load_metadata()
-
-    for character in metadata.get("characters", []):
-        if character["id"] == character_id:
-            return character
-
-    raise HTTPException(status_code=404, detail="Character not found")
-
-
-@app.put("/api/characters/{character_id}")
-async def update_character(character_id: str, req: UpdateCharacterRequest):
-    """Update character metadata."""
-    metadata = load_metadata()
-
-    for character in metadata.get("characters", []):
-        if character["id"] == character_id:
-            if req.name is not None:
-                character["name"] = req.name
-            if req.description is not None:
-                character["description"] = req.description
-            if req.reference_images is not None:
-                character["reference_images"] = [
-                    {"image_id": img.image_id, "annotation": img.annotation}
-                    for img in req.reference_images
-                ]
-            character["updated_at"] = datetime.now().isoformat()
-            save_metadata(metadata)
-            return character
-
-    raise HTTPException(status_code=404, detail="Character not found")
-
-
-@app.delete("/api/characters/{character_id}")
-async def delete_character(character_id: str):
-    """Delete a character."""
-    metadata = load_metadata()
-    characters = metadata.get("characters", [])
-
-    for i, character in enumerate(characters):
-        if character["id"] == character_id:
-            del characters[i]
-            save_metadata(metadata)
-            return {"success": True}
-
-    raise HTTPException(status_code=404, detail="Character not found")
-
-
 # ============================================================
 # FEATURE 6: Design Axis System (Tags & Preferences)
 # ============================================================
@@ -3444,6 +3143,107 @@ async def remove_prompts_from_session(session_id: str, prompt_ids: list[str]):
     save_metadata(metadata)
     logger.info(f"Removed {len(removed)} prompts from session {session_id}")
     return {"success": True, "removed": removed}
+
+
+# === Draft Endpoints (Server-side persistence) ===
+
+
+@app.get("/api/drafts")
+async def list_drafts():
+    """List all drafts."""
+    metadata = load_metadata()
+    drafts = metadata.get("drafts", [])
+    return {"drafts": drafts}
+
+
+@app.post("/api/drafts")
+async def create_draft(req: DraftRequest):
+    """Create a new draft."""
+    metadata = load_metadata()
+    if "drafts" not in metadata:
+        metadata["drafts"] = []
+
+    draft_id = f"draft-{uuid.uuid4().hex[:8]}"
+    now = datetime.now().isoformat()
+
+    draft = {
+        "id": draft_id,
+        "basePrompt": req.base_prompt,
+        "title": req.title,
+        "variations": [v.model_dump() for v in req.variations],
+        "createdAt": now,
+        "updatedAt": now,
+        "imageParams": req.image_params,
+        "contextImageIds": req.context_image_ids,
+        "annotationSuggestions": req.annotation_suggestions,
+        "autoGenerate": req.auto_generate,
+        "exploreRatio": req.explore_ratio,
+    }
+
+    metadata["drafts"].append(draft)
+    save_metadata(metadata)
+    logger.info(f"Created draft: {draft_id}")
+    return {"draft": draft}
+
+
+@app.get("/api/drafts/{draft_id}")
+async def get_draft(draft_id: str):
+    """Get a single draft."""
+    metadata = load_metadata()
+
+    for draft in metadata.get("drafts", []):
+        if draft["id"] == draft_id:
+            return draft
+
+    raise HTTPException(status_code=404, detail="Draft not found")
+
+
+@app.put("/api/drafts/{draft_id}")
+async def update_draft(draft_id: str, req: DraftUpdateRequest):
+    """Update a draft (auto-save)."""
+    metadata = load_metadata()
+
+    for draft in metadata.get("drafts", []):
+        if draft["id"] == draft_id:
+            if req.base_prompt is not None:
+                draft["basePrompt"] = req.base_prompt
+            if req.title is not None:
+                draft["title"] = req.title
+            if req.variations is not None:
+                draft["variations"] = [v.model_dump() for v in req.variations]
+            if req.image_params is not None:
+                draft["imageParams"] = req.image_params
+            if req.context_image_ids is not None:
+                draft["contextImageIds"] = req.context_image_ids
+            if req.annotation_suggestions is not None:
+                draft["annotationSuggestions"] = req.annotation_suggestions
+            if req.auto_generate is not None:
+                draft["autoGenerate"] = req.auto_generate
+            if req.explore_ratio is not None:
+                draft["exploreRatio"] = req.explore_ratio
+
+            draft["updatedAt"] = datetime.now().isoformat()
+            save_metadata(metadata)
+            logger.info(f"Updated draft: {draft_id}")
+            return {"draft": draft}
+
+    raise HTTPException(status_code=404, detail="Draft not found")
+
+
+@app.delete("/api/drafts/{draft_id}")
+async def delete_draft(draft_id: str):
+    """Delete a draft."""
+    metadata = load_metadata()
+    drafts = metadata.get("drafts", [])
+
+    for i, draft in enumerate(drafts):
+        if draft["id"] == draft_id:
+            drafts.pop(i)
+            save_metadata(metadata)
+            logger.info(f"Deleted draft: {draft_id}")
+            return {"success": True}
+
+    raise HTTPException(status_code=404, detail="Draft not found")
 
 
 # === Settings Endpoints ===
@@ -3887,296 +3687,6 @@ async def pe_optimize_prompt(request: PEOptimizeRequest):
     except Exception as e:
         logger.error(f"[PE] Prompt optimization failed: {e}")
         return PEOptimizeResponse(success=False, error=str(e))
-
-
-# =============================================================================
-# Character Creation Assistant Endpoints
-# =============================================================================
-
-
-class CharacterQuestionsRequest(BaseModel):
-    """Request for generating character questions."""
-
-    image_ids: list[str]  # Reference image IDs
-    name: str | None = None  # Optional character name
-    description: str | None = None  # Optional initial description
-
-
-class CharacterOptionResponse(BaseModel):
-    """Single option in a character question."""
-
-    label: str
-    description: str
-
-
-class CharacterQuestionResponse(BaseModel):
-    """Single character question with options."""
-
-    question: str
-    header: str
-    options: list[CharacterOptionResponse]
-    multiSelect: bool
-
-
-class CharacterQuestionsResponse(BaseModel):
-    """Response with generated character questions."""
-
-    success: bool
-    questions: list[CharacterQuestionResponse] = []
-    suggested_name: str | None = None
-    error: str | None = None
-
-
-class CharacterDescribeRequest(BaseModel):
-    """Request for generating character description."""
-
-    image_ids: list[str]  # Reference image IDs
-    name: str
-    questions: list[dict]  # Questions that were asked
-    answers: dict  # User's answers keyed by question text
-    initial_description: str | None = None
-
-
-class CharacterDescribeResponse(BaseModel):
-    """Response with generated character description."""
-
-    success: bool
-    description: str = ""
-    summary: dict[str, str] = {}
-    error: str | None = None
-
-
-@app.post("/api/character/questions", response_model=CharacterQuestionsResponse)
-async def character_generate_questions(request: CharacterQuestionsRequest):
-    """Generate clarifying questions for character creation.
-
-    Analyzes reference images and generates targeted questions to help
-    users define consistent character descriptions.
-    """
-    logger.info(f"[Character] Generating questions for {len(request.image_ids)} images")
-
-    try:
-        # Load reference images
-        reference_images = []
-        async with _metadata_manager.atomic() as data:
-            for img_id in request.image_ids:
-                img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
-                if img_data:
-                    img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
-                    if img_path.exists():
-                        img_bytes = img_path.read_bytes()
-                        mime_type = _detect_image_mime_type(img_bytes)
-                        reference_images.append((img_bytes, mime_type))
-
-        if not reference_images:
-            return CharacterQuestionsResponse(
-                success=False,
-                error="No valid reference images found"
-            )
-
-        # Generate questions
-        result = await character_service.generate_questions(
-            reference_images=reference_images,
-            name=request.name,
-            initial_description=request.description,
-        )
-
-        # Convert to response format
-        questions = []
-        for q in result.questions:
-            questions.append(
-                CharacterQuestionResponse(
-                    question=q.question,
-                    header=q.header,
-                    options=[
-                        CharacterOptionResponse(label=o.label, description=o.description)
-                        for o in q.options
-                    ],
-                    multiSelect=q.multiSelect,
-                )
-            )
-
-        return CharacterQuestionsResponse(
-            success=True,
-            questions=questions,
-            suggested_name=result.suggested_name,
-        )
-
-    except Exception as e:
-        logger.error(f"[Character] Question generation failed: {e}")
-        return CharacterQuestionsResponse(success=False, error=str(e))
-
-
-@app.post("/api/character/describe", response_model=CharacterDescribeResponse)
-async def character_generate_description(request: CharacterDescribeRequest):
-    """Generate a character description based on images and Q&A.
-
-    Takes reference images and user's answers to questions,
-    returns a detailed character description for image generation.
-    """
-    logger.info(f"[Character] Generating description for '{request.name}' with {len(request.questions)} Q&A pairs")
-
-    try:
-        # Load reference images
-        reference_images = []
-        async with _metadata_manager.atomic() as data:
-            for img_id in request.image_ids:
-                img_data, _ = _metadata_manager.find_image_by_id(data, img_id)
-                if img_data:
-                    img_path = IMAGES_DIR / img_data.get("image_path", f"{img_id}.png")
-                    if img_path.exists():
-                        img_bytes = img_path.read_bytes()
-                        mime_type = _detect_image_mime_type(img_bytes)
-                        reference_images.append((img_bytes, mime_type))
-
-        if not reference_images:
-            return CharacterDescribeResponse(
-                success=False,
-                error="No valid reference images found"
-            )
-
-        # Generate description
-        result = await character_service.generate_description(
-            reference_images=reference_images,
-            name=request.name,
-            questions=request.questions,
-            answers=request.answers,
-            initial_description=request.initial_description,
-        )
-
-        return CharacterDescribeResponse(
-            success=True,
-            description=result.description,
-            summary=result.summary,
-        )
-
-    except Exception as e:
-        logger.error(f"[Character] Description generation failed: {e}")
-        return CharacterDescribeResponse(success=False, error=str(e))
-
-
-# =============================================================================
-# Story Writing Assistant Endpoints
-# =============================================================================
-
-
-class StoryChapterRequest(BaseModel):
-    """Existing chapter info for suggestions."""
-
-    title: str
-    text: str = ""
-
-
-class SuggestChaptersRequest(BaseModel):
-    """Request for chapter suggestions."""
-
-    story_title: str
-    story_description: str | None = None
-    existing_chapters: list[StoryChapterRequest] = []
-    character_names: list[str] = []
-    num_suggestions: int = 3
-
-
-class ChapterSuggestionResponse(BaseModel):
-    """A single chapter suggestion."""
-
-    title: str
-    narrative: str
-    rationale: str
-
-
-class SuggestChaptersResponse(BaseModel):
-    """Response with chapter suggestions."""
-
-    success: bool
-    suggestions: list[ChapterSuggestionResponse] = []
-    error: str | None = None
-
-
-class RewriteNarrativeRequest(BaseModel):
-    """Request for narrative rewriting."""
-
-    narrative: str
-    chapter_title: str | None = None
-    story_context: str | None = None
-    instruction: str | None = None
-
-
-class RewriteNarrativeResponse(BaseModel):
-    """Response with rewritten narrative."""
-
-    success: bool
-    narrative: str | None = None
-    changes_summary: str | None = None
-    error: str | None = None
-
-
-@app.post("/api/story/suggest-chapters", response_model=SuggestChaptersResponse)
-async def story_suggest_chapters(request: SuggestChaptersRequest):
-    """Suggest next chapter(s) for a story.
-
-    Analyzes story context and existing chapters to suggest
-    natural narrative continuations.
-    """
-    logger.info(f"[Story] Suggesting chapters for '{request.story_title}'")
-
-    try:
-        existing_chapters = [
-            {"title": ch.title, "text": ch.text}
-            for ch in request.existing_chapters
-        ]
-
-        result = await story_assistant.suggest_chapters(
-            story_title=request.story_title,
-            story_description=request.story_description,
-            existing_chapters=existing_chapters if existing_chapters else None,
-            character_names=request.character_names if request.character_names else None,
-            num_suggestions=min(max(request.num_suggestions, 1), 4),
-        )
-
-        return SuggestChaptersResponse(
-            success=True,
-            suggestions=[
-                ChapterSuggestionResponse(
-                    title=s.title,
-                    narrative=s.narrative,
-                    rationale=s.rationale,
-                )
-                for s in result.suggestions
-            ],
-        )
-
-    except Exception as e:
-        logger.error(f"[Story] Chapter suggestion failed: {e}")
-        return SuggestChaptersResponse(success=False, error=str(e))
-
-
-@app.post("/api/story/rewrite-narrative", response_model=RewriteNarrativeResponse)
-async def story_rewrite_narrative(request: RewriteNarrativeRequest):
-    """Improve/expand a chapter narrative for visual storytelling.
-
-    Takes an existing narrative and rewrites it with better
-    visual details and atmosphere.
-    """
-    logger.info(f"[Story] Rewriting narrative" + (f" for '{request.chapter_title}'" if request.chapter_title else ""))
-
-    try:
-        result = await story_assistant.rewrite_narrative(
-            original_narrative=request.narrative,
-            chapter_title=request.chapter_title,
-            story_context=request.story_context,
-            instruction=request.instruction,
-        )
-
-        return RewriteNarrativeResponse(
-            success=True,
-            narrative=result.narrative,
-            changes_summary=result.changes_summary,
-        )
-
-    except Exception as e:
-        logger.error(f"[Story] Narrative rewrite failed: {e}")
-        return RewriteNarrativeResponse(success=False, error=str(e))
 
 
 # Serve static files
