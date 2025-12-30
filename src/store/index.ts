@@ -1547,17 +1547,26 @@ export const useStore = create<AppStore>()(
           const updatedGeneratingIds = new Set(get().generatingImageDraftIds);
           updatedGeneratingIds.delete(draftId);
 
+          // Clear any pending debounced save timer BEFORE deleting
+          // (prevents race condition where save recreates the draft)
+          const existingTimer = draftSaveTimers.get(draftId);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+            draftSaveTimers.delete(draftId);
+          }
+
+          // Delete draft from server FIRST (before updating local state)
+          // This ensures refreshData won't restore it
+          await api.deleteDraft(draftId).catch(err => {
+            console.error('Failed to delete draft from server:', err);
+          });
+
           set({
             draftPrompts: get().draftPrompts.filter((d) => d.id !== draftId),
             currentDraftId: null,
             generatingImageDraftIds: updatedGeneratingIds,
             isGenerating: updatedGeneratingIds.size > 0, // Derive from set
             contextAnnotationOverrides: {}, // Clear overrides after successful generation
-          });
-
-          // Delete draft from server (prevents refreshData from restoring it)
-          await api.deleteDraft(draftId).catch(err => {
-            console.error('Failed to delete draft from server:', err);
           });
 
           await get().refreshGenerations();
@@ -1599,8 +1608,17 @@ export const useStore = create<AppStore>()(
             }
           }
           // Refresh to sync state with backend after restoration
+          // But preserve the draft deletion - don't let refreshData restore a deleted draft
           if (Object.keys(originalAnnotations).length > 0) {
-            await get().refreshData();
+            const [generations, designTokens, collections, drafts] = await Promise.all([
+              api.fetchPrompts(),
+              api.fetchTokens(),
+              api.fetchCollections(),
+              api.fetchDrafts(),
+            ]);
+            // Filter out the draft we just deleted (in case of race condition with server)
+            const filteredDrafts = drafts.filter((d: DraftPrompt) => d.id !== draftId);
+            set({ generations, designTokens, collections, draftPrompts: filteredDrafts });
           }
         }
       },
