@@ -414,7 +414,7 @@ export function GenerationsTab() {
                     <>
                       <button
                         onClick={() => {
-                          setSessionFilter(session.id);
+                          switchSession(session.id);
                           setIsSessionDropdownOpen(false);
                         }}
                         className="flex-1 flex items-center gap-2 text-xs text-left min-w-0"
@@ -819,6 +819,24 @@ export function GenerationsTab() {
                 </div>
               </button>
               </div>
+
+              {/* Discard button for drafts (on hover) */}
+              {isDraft && !isSelectionMode && (
+                <div className="overflow-hidden transition-all duration-200 max-h-0 group-hover:max-h-10 opacity-0 group-hover:opacity-100 ml-[62px] -mt-1">
+                  <div className="flex items-center gap-0.5 pt-1 pb-2">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteDraft(item.id);
+                      }}
+                      title="Discard draft"
+                      className="p-1.5 rounded hover:bg-error/20 text-ink-muted hover:text-error transition-colors"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Action buttons (prompts only, on hover) - row below title */}
               {isPrompt && item.imageIds && item.imageIds.length > 0 && !isSelectionMode && (
